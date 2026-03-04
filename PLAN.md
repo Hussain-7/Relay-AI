@@ -563,3 +563,184 @@ Phase 4:
   - command allow/deny policy enforced before execution
   - hard timeout + max output bytes per command
 - This keeps the main agent fast and stateful while preserving safety and full filesystem continuity.
+
+## 18) Product UX Flow Redesign (New Priority)
+
+This section defines the target product experience to replace the current single-page console/debug UI.
+
+### 18.1 Target User Journey
+
+1. Public landing page on first domain visit.
+2. User clicks `Get Started` and sees Google auth.
+3. First successful auth routes to onboarding wizard.
+4. User completes required setup (BYOK at minimum), optional setup (GitHub, connectors, MCP), and finishes onboarding.
+5. User lands in full chat workspace:
+
+- left sidebar for conversations + `New Chat`
+- main chat pane with assistant/user turns
+- agent activity/timeline view for tool calls, approvals, and step outputs
+
+6. Connectors/MCP/provider keys live under profile/settings (not on main chat surface).
+
+### 18.2 App Information Architecture (Next.js routes)
+
+- `/(public)/page.tsx`
+  - marketing/landing page.
+- `/(auth)/sign-in/page.tsx`
+  - Google sign-in entry.
+- `/(onboarding)/page.tsx`
+  - guarded wizard for first-time users.
+- `/(app)/chat/page.tsx`
+  - default new chat view.
+- `/(app)/chat/[conversationId]/page.tsx`
+  - existing conversation view.
+- `/(app)/settings/page.tsx`
+  - profile + settings shell with tabs:
+    - `providers` (BYOK)
+    - `models`
+    - `github`
+    - `connectors`
+    - `mcp`
+    - `tools`
+    - `account`
+
+### 18.3 UX Requirements by Surface
+
+#### Landing page
+
+- Polished product-first page with clear value proposition, trust/feature sections, and primary CTA (`Continue with Google`).
+- Do not expose internal debug forms.
+
+#### Auth + Onboarding
+
+- If no valid session: redirect to sign-in.
+- If session exists and onboarding is incomplete: hard redirect to onboarding wizard.
+- Onboarding wizard steps:
+  - Step 1: Provider keys (required: at least one of OpenAI/Anthropic).
+  - Step 2: Model defaults/preferences (optional but recommended).
+  - Step 3: GitHub app connect (optional, needed for coding PR flow).
+  - Step 4: Connectors and MCP quick setup (optional skip).
+  - Step 5: Review + finish.
+- Persist progress so onboarding can resume.
+
+#### Chat workspace
+
+- Left rail:
+  - conversation list (recent, searchable, paginated).
+  - `New Chat` button.
+  - profile/settings menu entry.
+- Main pane:
+  - message thread.
+  - composer (mode switcher chat/agent/coding, model selector, submit).
+  - streaming assistant response.
+- Agent activity pane (inline or right drawer):
+  - run phases (`created`, `running`, `awaiting approval`, `completed`, `failed`).
+  - tool call cards with:
+    - tool name
+    - input preview
+    - output preview/status
+    - duration and timestamp
+  - approval cards with approve/reject actions.
+  - coding-specific cards for repo prep, delegated executor logs, diff summary, PR link.
+
+### 18.4 API/Backend Work Needed for New UX
+
+- Conversation APIs for sidebar UX:
+  - `GET /api/conversations` (list with pagination/search)
+  - `POST /api/conversations` (create)
+  - `PATCH /api/conversations/:id` (rename/archive metadata)
+  - `DELETE /api/conversations/:id` (soft delete/archive)
+- Message fetch API:
+  - `GET /api/conversations/:id/messages` (paginated history)
+- Onboarding state:
+  - add persisted onboarding table/state (`isCompleted`, `currentStep`, `completedAt`, step metadata).
+  - add `GET/POST /api/onboarding`.
+- Keep existing run APIs and events; reshape client consumption for timeline cards.
+
+### 18.5 UI Component Plan
+
+- `LandingPage`, `AuthGate`, `OnboardingWizard`.
+- `AppShell` with `Sidebar`, `TopBar`, `ProfileMenu`.
+- `ConversationList`, `ChatComposer`, `MessageThread`.
+- `RunTimeline` with typed cards:
+  - `RunStatusCard`
+  - `ToolCallCard`
+  - `ApprovalCard`
+  - `CodingProgressCard`
+  - `ErrorCard`
+- `SettingsModal` or `SettingsPage` with tabbed sections.
+
+### 18.6 Data and State Plan
+
+- Client query cache (React Query or equivalent) for:
+  - conversations
+  - messages
+  - active run
+  - run events
+  - onboarding state
+- Realtime:
+  - keep Supabase channel `run:{runId}` subscription.
+  - merge realtime events into timeline state with idempotent event map.
+
+### 18.7 Migration Plan (from current console UI)
+
+1. Introduce new route groups and layout shells without removing current APIs.
+2. Ship landing + auth gate + onboarding guard.
+3. Ship chat workspace using existing run/chat endpoints.
+4. Move connector/MCP/tool forms into settings pages.
+5. Remove `AppConsole` debug surface from root.
+6. Keep an internal `/dev/console` route only for engineering diagnostics (non-production).
+
+### 18.8 Delivery Phases and Acceptance Criteria
+
+Phase UX-1 (Routing + guards)
+
+- Done when:
+  - unauthenticated users always see landing/sign-in flow.
+  - first-time users always land in onboarding.
+  - returning users land directly in chat workspace.
+
+Phase UX-2 (Onboarding wizard)
+
+- Done when:
+  - onboarding progress persists across reloads.
+  - at least one provider key is required to complete onboarding.
+  - user can skip optional GitHub/connectors/MCP steps.
+
+Phase UX-3 (Chat workspace)
+
+- Done when:
+  - sidebar lists chats and supports new chat creation.
+  - messages load per selected conversation.
+  - streaming responses and run timeline are visible in one workflow.
+
+Phase UX-4 (Agentic visibility + approvals)
+
+- Done when:
+  - tool calls and approvals are rendered as structured timeline cards.
+  - approval actions can be taken directly from timeline cards.
+  - coding run progress (repo prep/delegate/diff/PR) is clearly visible.
+
+Phase UX-5 (Settings consolidation + cleanup)
+
+- Done when:
+  - providers/models/connectors/MCP/tools are managed only in settings.
+  - root no longer shows debug forms.
+  - all existing backend checks still pass.
+
+### 18.9 Skill-Guided Standards (for implementation quality)
+
+- `web-design-guidelines` standards will be enforced during UI implementation and review:
+  - accessibility-first controls (labels, aria, keyboard, focus-visible)
+  - semantic structure and predictable navigation patterns
+  - motion safety (`prefers-reduced-motion`) and no `transition: all`
+  - resilient content handling (truncate/clamp/break long text)
+- `vercel-react-best-practices` will guide React/Next architecture:
+  - eliminate async waterfalls in route/layout data loading
+  - split heavy workspace panels with dynamic imports
+  - reduce rerenders in chat thread + timeline via memoized boundaries
+  - keep server/client boundaries clean to reduce hydration mismatch risk
+- `vercel-composition-patterns` will shape component APIs:
+  - avoid boolean-prop explosion for chat/timeline variants
+  - use compound components for chat shell and settings shell
+  - lift shared state into providers and keep leaf components declarative
