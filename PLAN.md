@@ -1,7 +1,50 @@
 # Endless Dev: Agent Harness Plan (Next.js + AI SDK + BYOK + MCP + Remote Coding)
-Last updated: 2026-03-03
+
+Last updated: 2026-03-04
+
+## Implementation Status (Current Repo)
+
+- Implemented in this codebase:
+  - Next.js unified UI + API app at repo root.
+  - Prisma schema for users, BYOK credentials, connectors/tools, runs/events/approvals, MCP servers, GitHub installations, coding sessions, artifacts.
+  - Google OAuth endpoints via Supabase Auth (`/api/auth/google/start`, `/api/auth/google/callback`).
+  - BYOK key vault API with encryption and provider key validation (`/api/providers/keys`).
+  - Model catalog seeding and provider-gated model listing (`/api/models`).
+  - Chat endpoint (`/api/chat`) and complete run lifecycle APIs (`/api/agent/runs*`).
+  - MCP recommendation + approval preflight integrated into run creation.
+  - Connector + Custom Tool Builder APIs (CRUD/test/publish/versioning).
+  - MCP server management APIs (`/api/mcp/servers*`).
+  - Coding session APIs with E2B connect/exec (`/api/coding/sessions*`).
+  - GitHub App install/callback APIs (`/api/github/*`) and draft PR tool path in runtime.
+  - Internal runner event ingest API (`/api/internal/runs/:id/events`).
+  - Inngest-backed async coding orchestration:
+    - coding runs enqueue background jobs (`agent/coding-run.requested`)
+    - Inngest function dispatches runner into E2B
+    - runner lifecycle callbacks update run terminal states and final assistant messages
+  - Agent runtime with core tools:
+    - `web_search`
+    - `http_fetch` (SSRF/host guardrails)
+    - `memory_put`, `memory_get`, `memory_search`
+    - `artifacts_read`, `attachments_context`
+    - `mcp_remote_call` for approved remote MCP servers
+    - `mcp_local_preflight` for approved local MCP server bootstrap in coding mode
+    - `e2b_container_connect`, `e2b_container_exec`
+    - repo tools (`clone`, `checkout`, `search`, `read_file`, `apply_patch`, `run_tests`, `status_diff`, `commit`, `push_branch`, `create_draft_pr`)
+    - delegated executor tool (`delegate_codegen` for `claude`/`codex`, gated by BYOK provider availability).
+  - Tool telemetry events (`tool.started`, `tool.completed`, `tool.failed`) persisted and emitted during runs.
+  - Tool approval gating persisted in `run_approvals` for high-risk actions (shell exec, push, delegated executor, gated/destructive custom tools).
+  - Provider fallback execution path when primary model/provider fails and alternate BYOK provider is available.
+  - Realtime run event fan-out via Supabase Realtime broadcast channel `run:{runId}` (best-effort).
+  - In-app console UI at `/` for operating all major capabilities.
+  - In-app run event stream viewer with realtime subscription + manual refresh.
+- Validation status:
+  - `pnpm prisma:generate` passes
+  - `pnpm typecheck` passes
+  - `pnpm lint` passes
+  - `pnpm build` passes
 
 ## 1) Scope
+
 - Build a single Next.js (UI + API) codebase that supports:
   - Google-authenticated user accounts for app sign-in and session management.
   - Normal chat (fast streaming, minimal friction).
@@ -15,6 +58,7 @@ Last updated: 2026-03-03
 - Exclude Ephor-specific business/library functionality; keep generic agent mechanics.
 
 ## 2) Hard Decisions (Locked)
+
 - App framework: Next.js (App Router) for UI + backend APIs in one repo.
 - Providers (v1): OpenAI + Anthropic via AI SDK; coding mode also supports delegated CLI executors inside E2B.
 - Streaming: use AI SDK streaming primitives; no provider-specific SSE chunk conversion layer.
@@ -36,27 +80,35 @@ Last updated: 2026-03-03
   - Local MCP servers that require cloning/installing/running via stdio.
 
 ## 3) Modes and Execution Targets
+
 ### 3.1 Chat Mode (Default)
+
 - Goal: fast normal interaction.
 - Runs on: Vercel only.
 - Tools: none by default (pure LLM). Optional: safe, non-sandbox tools can be enabled later, but must not require E2B.
 
 ### 3.2 Agent Mode (Tool Loop, Non-Coding)
+
 - Goal: generic agent behavior (tool loop + MCP + approvals + memory) without local filesystem/process requirements.
 - Runs on: Vercel only.
 - Tools allowed: `web.search`, remote MCP tools, safe HTTP fetch, memory tools, attachments/context tools.
 - Constraints: enforce serverless-friendly budgets (max steps + wall time) so runs do not exceed Vercel limits.
 
 ### 3.3 Coding Mode (Repo + Local MCP)
+
 - Goal: remote coding session with repo checkout and PR automation; local MCP stdio support.
 - Runs on: E2B sandbox.
 - Tools allowed: repo tools, shell tools, local MCP stdio tools, delegated CLI executor tools, plus all Agent Mode tools.
 - UX: chat + live logs + diff view + one-click Draft PR.
 
 ## 4) Architecture Overview
+
 - Next.js app (Vercel):
   - UI pages (chat, settings, coding session view, connectors/tool builder).
   - API routes for auth, runs, approvals, provider keys, MCP servers, custom connectors/tools, GitHub app install.
+- Inngest:
+  - background job execution for coding-run dispatch and retries.
+  - webhook endpoint at `/api/inngest`.
 - Prisma + Supabase:
   - Prisma: all database models, queries, and migrations.
   - Supabase Postgres: underlying relational database.
@@ -67,18 +119,20 @@ Last updated: 2026-03-03
   - Runs the agent loop for coding mode and pushes events back to Supabase.
 
 ## 5) Repo Structure (Greenfield)
+
 Recommended monorepo layout (still "one place", one repo):
+
 - apps/web
   - Next.js UI + API routes
-- packages/agent-core
-  - provider adapters, model router, tool registry, MCP gateway, policy engine, run state machine
 - packages/runner
   - E2B sandbox entrypoint CLI that runs coding-mode agent loop and emits run events
 
 (Alternative if you want simpler tooling: keep everything under one Next.js repo and add a `src/runner` build target. Default here is the monorepo layout to keep serverless vs runner code clean.)
 
 ## 6) Data Model (Prisma + Supabase Postgres)
+
 Minimum tables:
+
 - user_profiles
   - user_id, email, full_name, avatar_url, created_at, updated_at
 - connector_configs
@@ -115,11 +169,13 @@ Minimum tables:
   - user_id, run_id, kind, storage_path, meta_json, created_at
 
 Access model:
+
 - Prisma enforces tenant scoping in backend service queries.
 - Supabase Auth is source of user identity (Google OAuth provider enabled).
 - Optional defense-in-depth: keep RLS enabled on exposed tables/channels where applicable.
 
 ## 7) BYOK Vault (Encryption)
+
 - Store provider keys encrypted at rest.
 - Encryption scheme: AES-256-GCM with key versioning.
 - Master key: Vercel env var (base64) with rotation support.
@@ -127,8 +183,11 @@ Access model:
 - Validate key on save (provider ping or lightweight model call) and store `validated_at`.
 
 ## 8) Providers + Model Routing
+
 ### 8.1 Provider Adapters
+
 Define `ProviderAdapter`:
+
 - id: 'openai' | 'anthropic'
 - createModel(modelId, apiKey): returns AI SDK model instance
 - validateKey(apiKey): returns ok/error
@@ -137,6 +196,7 @@ Define `ProviderAdapter`:
 Implement adapters using AI SDK provider packages (exact package names may vary; use current AI SDK docs at implementation).
 
 ### 8.2 Model Catalog + Aliases
+
 - Maintain a curated model catalog (DB seeded).
 - Define aliases:
   - openai:best, openai:fast
@@ -146,6 +206,7 @@ Implement adapters using AI SDK provider packages (exact package names may vary;
   - fallback to the other connected provider only on failure/capability mismatch
 
 ### 8.3 Provider Gating Rules (BYOK)
+
 - Minimum requirement: at least one provider key (`OpenAI` or `Anthropic`) is required before starting model-backed chat/agent/coding runs.
 - If user has only OpenAI key:
   - show only OpenAI models, route only OpenAI model calls
@@ -158,8 +219,11 @@ Implement adapters using AI SDK provider packages (exact package names may vary;
   - both delegated executors are available, selected by run policy
 
 ## 9) Tooling System (Extensible)
+
 ### 9.1 Tool Plugin Interface
+
 `ToolPlugin` fields:
+
 - name, description
 - inputSchema (zod)
 - riskLevel: safe | gated | destructive
@@ -167,6 +231,7 @@ Implement adapters using AI SDK provider packages (exact package names may vary;
 - run(ctx, input) -> result
 
 ### 9.2 Tool Policy Engine
+
 - Auto-run safe reads and standard checks.
 - Require explicit approval for:
   - destructive operations (git push without PR flow, deleting files, force operations)
@@ -175,7 +240,9 @@ Implement adapters using AI SDK provider packages (exact package names may vary;
 - All approvals are persisted in `run_approvals` and drive run pause/resume.
 
 ### 9.3 Core Tool Set (v1)
+
 Vercel/either tools:
+
 - web.search (default research tool; provider-backed web search strategy)
 - http.fetch (SSRF-safe, size/time limits, allowlist/denylist)
 - memory.get / memory.put / memory.search (Supabase-backed)
@@ -183,6 +250,7 @@ Vercel/either tools:
 - artifacts.read (load stored artifacts)
 
 E2B-only tools:
+
 - e2b.container.connect (create or attach to sandbox session; returns `containerSessionId`)
 - e2b.container.exec (run one or multiple commands in connected container; streams stdout/stderr and exit codes)
 - repo.clone / repo.checkout
@@ -196,6 +264,7 @@ E2B-only tools:
 - delegate.codegen (runs external coding CLI inside sandbox and returns structured result)
 
 ### 9.4 Custom Tool Builder (Connectors + APIs)
+
 - Builder UI supports:
   - create connector (`rest`, `graphql`, or `mcp`)
   - define tool metadata, input/output schemas, and execution target (`vercel` or `e2b`)
@@ -210,7 +279,9 @@ E2B-only tools:
   - disable/rollback tool versions without deleting historical run references
 
 ## 10) MCP Integration (Remote + Local)
+
 ### 10.1 Server Types
+
 - Remote MCP:
   - executed from Vercel
   - transports: SSE/HTTP as supported by AI SDK MCP client
@@ -219,6 +290,7 @@ E2B-only tools:
   - supports cloning/installing MCP server code when required
 
 ### 10.2 Dynamic Recommend + Approve Flow
+
 - Step A: MCP recommender (LLM) proposes needed MCP servers/tools given:
   - user query, connected MCP servers, basic tool descriptions
 - Step B: API returns approval payload if needed:
@@ -227,15 +299,18 @@ E2B-only tools:
   - approved MCP toolsets are materialized into the tool registry for that run/session
 
 ### 10.3 Local MCP Preflight (E2B)
+
 For each local MCP server config:
+
 - ensure repo code is available (clone or pull)
 - run install steps (config-defined)
 - start MCP via stdio transport (spawned by MCP client)
 
 ## 11) Agent Harness (Generic Loop)
-- One shared run state machine (in `agent-core`) used by:
-  - Vercel agent mode
-  - E2B coding mode (runner)
+
+- One shared run state machine is currently implemented in app runtime (`src/lib/agent/runtime.ts`).
+- Future hardening item:
+  - extract shared run state machine to a dedicated package if/when multiple runtimes need independent versioning.
 - Uses AI SDK tool-calling with:
   - maxSteps
   - onToolCall/onToolResult/onFinish hooks to emit `run_events`
@@ -251,15 +326,18 @@ For each local MCP server config:
   - optional summarization when exceeding budgets (v1 can ship truncation-only; summarization can be phase 2)
 
 Budgets:
+
 - Chat: maxSteps=1
 - Agent (Vercel): maxSteps ~10 and wall-time budget to fit Vercel
 - Coding (E2B): maxSteps ~30 with longer wall-time
 
 Cancellation:
+
 - API sets `agent_runs.cancelled_at`
 - runner checks before each step and aborts promptly
 
 ## 12) Eventing + UI Rendering
+
 - Persist structured events in `run_events`.
 - Publish via Supabase Realtime channel `run:{runId}`.
 - UI subscribes and renders:
@@ -270,7 +348,9 @@ Cancellation:
   - PR created
 
 ## 13) Identity + GitHub Integration
+
 ### 13.1 Google Auth (App Sign-In)
+
 - Auth provider: Google OAuth through Supabase Auth.
 - Session model:
   - browser obtains Supabase session via Google login
@@ -279,6 +359,7 @@ Cancellation:
   - create or upsert `user_profiles` from Auth identity metadata.
 
 ### 13.2 GitHub App Integration (Repo Access)
+
 - Endpoints:
   - GET /api/github/install-url
   - GET /api/github/callback
@@ -293,6 +374,7 @@ Cancellation:
   - risks and follow-ups
 
 ## 14) API Surface (v1)
+
 - GET /api/auth/google/start
   - starts Google OAuth flow (or redirects to Supabase auth endpoint)
 - GET /api/auth/google/callback
@@ -329,7 +411,9 @@ Cancellation:
   - executes command(s) in the connected E2B session and returns structured output
 
 ## 15) Testing and Acceptance
+
 Unit:
+
 - BYOK gating for providers/models
 - key encryption roundtrip + versioning
 - tool policy decisions
@@ -337,6 +421,7 @@ Unit:
 - model router selection + fallback
 
 Integration:
+
 - chat streaming endpoint
 - agent run approve/resume path
 - remote MCP tool invocation (no sandbox)
@@ -344,6 +429,7 @@ Integration:
 - custom connector test + custom tool invocation path with schema validation
 
 E2E:
+
 - Google login creates/updates app user profile and opens chat app successfully
 - user creates connector + publishes custom tool + agent successfully invokes it in a run
 - OpenAI-only key shows only OpenAI
@@ -352,27 +438,35 @@ E2E:
 - coding task produces a draft PR with reviewable diff
 
 ## 16) Phased Delivery
+
 Phase 1:
+
 - Prisma schema/migrations on Supabase Postgres + Supabase Auth (Google enabled) + provider vault + model catalog/aliases
 - Chat UI + /api/chat
 
 Phase 2:
+
 - Agent mode on Vercel: tool registry, remote MCP, approvals, run events UI
 - Custom Tool Builder (connectors + custom API tools) UI and APIs
 
 Phase 3:
+
 - E2B coding mode: runner, repo tools, local MCP stdio, diff + draft PR UX
 
 Phase 4:
+
 - Hardening: allowlists, rate limits, audit logs, sandbox cleanup, cost controls
 
 ## 17) E2B Code-Change Execution Strategy (Detailed)
+
 ### 17.1 Which agent runs inside E2B
+
 - The coding agent is our own Node runner process from `packages/runner`, not a separate third-party coding app.
-- The runner imports shared logic from `packages/agent-core` (same tool registry, policy engine, model router, MCP gateway).
+- The runner is currently a standalone execution worker (`packages/runner`) that is dispatched by the API/Inngest layer.
 - Model calls inside E2B still use AI SDK with user-selected/quality-routed OpenAI or Anthropic models.
 
 ### 17.2 Sandbox bootstrap and credentials
+
 - `POST /api/coding/sessions` creates `coding_session` + `agent_run`, then starts an E2B sandbox.
 - The API injects short-lived secrets into sandbox env only for that run:
   - GitHub installation token
@@ -381,11 +475,13 @@ Phase 4:
 - Runner command starts with `runId`, `sessionId`, `repo`, `baseBranch`, `workingBranch`.
 
 ### 17.3 Repo checkout and workspace prep
+
 - Runner clones target repo into sandbox workspace and checks out `baseBranch`.
 - Runner creates/uses `workingBranch` (default: `agent/<runId>`).
 - Runner captures baseline commit SHA and publishes initial `run_events` (`repo.cloned`, `branch.created`).
 
 ### 17.4 How code changes are actually applied
+
 - Primary edit tool is `repo.apply_patch` with unified diff payload from the model.
 - Tool validation before applying:
   - reject path traversal or writes outside workspace
@@ -398,6 +494,7 @@ Phase 4:
 - Follow-up tools (`repo.read_file`, `repo.search`, `repo.status_diff`) are used by the model to verify edits before commit.
 
 ### 17.5 Validation and commit pipeline
+
 - Runner executes configured checks (if present): lint/typecheck/tests in policy-approved order.
 - If checks fail, tool result includes failing command output and agent loops to fix.
 - Commit is only allowed when policy requirements are met (or explicit user override is approved).
@@ -406,6 +503,7 @@ Phase 4:
   - body: files changed + test status + run id metadata
 
 ### 17.6 Push and draft PR creation
+
 - `repo.push_branch` uses GitHub installation token over HTTPS remote.
 - `repo.create_draft_pr` calls GitHub API with:
   - title from user task + final change summary
@@ -414,6 +512,7 @@ Phase 4:
 - PR URL is persisted to `coding_sessions.pr_url` and emitted as `run_events`.
 
 ### 17.7 Failure handling and cleanup
+
 - On cancellation/failure, runner:
   - persists terminal error event
   - uploads logs/diff artifact
@@ -424,6 +523,7 @@ Phase 4:
   - patch-logic retries stay in-agent loop with structured feedback, not blind reruns
 
 ### 17.8 Delegated CLI executor path (`claude` / `codex`)
+
 - Purpose:
   - allow full "agent finishes task before returning" behavior by delegating code execution to a sandbox CLI agent process
 - Runner tool: `delegate.codegen`
@@ -451,6 +551,7 @@ Phase 4:
   - commit/push/PR is still performed through our controlled repo tools and policy checks
 
 ### 17.9 Persistent E2B container command loop (speed path)
+
 - At coding-run start, runner opens or reuses one container session and stores `containerSessionId` in `coding_sessions`.
 - `e2b.container.exec` is the main command primitive for iterative coding loops:
   - supports single-command mode for deterministic steps

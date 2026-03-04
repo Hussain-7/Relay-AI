@@ -1,6 +1,66 @@
 {
   "version": 1,
   "skills": {
+    "ai-elements": {
+      "source": "vercel/ai-elements",
+      "sourceType": "github",
+      "computedHash": "fb5f5a85b48db9b410595b02b84fdf48f7299b9f8e1dcd5964001fb3d9705808"
+    },
+    "ai-sdk": {
+      "source": "vercel/ai",
+      "sourceType": "github",
+      "computedHash": "58ce68f628890c3925aea2b5435a649251ac182057541045c68fc19a27aaa0ec"
+    },
+    "building-components": {
+      "source": "vercel/components.build",
+      "sourceType": "github",
+      "computedHash": "ca96444b70257eb3f4f4c76dfdd4a32312c835fe3c8755d2e3d75ac78d384bfd"
+    },
+    "cra-to-next-migration": {
+      "source": "vercel-labs/migration-skills",
+      "sourceType": "github",
+      "computedHash": "e81e89e8327a66784a926250cbd897ec0232c5ae4068b1cb04578a53d4bb3353"
+    },
+    "inngest-durable-functions": {
+      "source": "inngest/inngest-skills",
+      "sourceType": "github",
+      "computedHash": "a540b098e99c48f8eba800a756d2c0170128e88147a66f80ebbf16eecdf1d51f"
+    },
+    "inngest-events": {
+      "source": "inngest/inngest-skills",
+      "sourceType": "github",
+      "computedHash": "fc7b26058d06099c171cbf102125d1a98fe71d723f37704fc208920895222956"
+    },
+    "inngest-flow-control": {
+      "source": "inngest/inngest-skills",
+      "sourceType": "github",
+      "computedHash": "6a51d0e26309202b4cb4ef853f63d4b3203b2374cb4569eef35f4e6638a6d3d8"
+    },
+    "inngest-middleware": {
+      "source": "inngest/inngest-skills",
+      "sourceType": "github",
+      "computedHash": "1e586e0167bfc7a52f4cd4099de53e0d87f0743d93d7c88c7055a16dc6e70772"
+    },
+    "inngest-setup": {
+      "source": "inngest/inngest-skills",
+      "sourceType": "github",
+      "computedHash": "2c40971e280ac95500e4bf0000dd134c8bf124df4ed01ab2591786cf8f3fb5e7"
+    },
+    "inngest-steps": {
+      "source": "inngest/inngest-skills",
+      "sourceType": "github",
+      "computedHash": "748640680d8432c578049e5c5fa69e729a9f0f24c6e1d4fb9917baffdb0d1dc3"
+    },
+    "next-best-practices": {
+      "source": "vercel-labs/next-skills",
+      "sourceType": "github",
+      "computedHash": "515ba75178bd44875812d9a560bdf14651f86709f89cf1d4f209638e879807f3"
+    },
+    "next-cache-components": {
+      "source": "vercel-labs/next-skills",
+      "sourceType": "github",
+      "computedHash": "a94b83ddcd2ff1c30722577f693b1bfe32f2e1a83abdd6c08c2d6cc6753b53c8"
+    },
     "prisma-cli": {
       "source": "prisma/skills",
       "sourceType": "github",
@@ -31,10 +91,20 @@
       "sourceType": "github",
       "computedHash": "a3944954fcaabe06285ad866ca7ba19de0a8ab73ff988cbccd795a7694ecdcd6"
     },
+    "streamdown": {
+      "source": "vercel/streamdown",
+      "sourceType": "github",
+      "computedHash": "fb49b9edaf9d645d5fe56af9105050d7ae4765179d4996cb89efc049a7ecb000"
+    },
     "supabase-postgres-best-practices": {
       "source": "supabase/agent-skills",
       "sourceType": "github",
       "computedHash": "9c87c315aed143ee3b34bec8117100f5035e0df09e6b23e1ecc772cff434c9ad"
+    },
+    "turborepo": {
+      "source": "vercel/turborepo",
+      "sourceType": "github",
+      "computedHash": "b5aaaabb937a6253241ba98e63ca7ab902767e52dcce6bbc9b376efd1cf7418c"
     },
     "vercel-composition-patterns": {
       "source": "vercel-labs/agent-skills",
