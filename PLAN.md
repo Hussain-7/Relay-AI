@@ -744,3 +744,148 @@ Phase UX-5 (Settings consolidation + cleanup)
   - avoid boolean-prop explosion for chat/timeline variants
   - use compound components for chat shell and settings shell
   - lift shared state into providers and keep leaf components declarative
+
+### 18.10 Skill Coverage Matrix (All Local Skills Reviewed)
+
+The following local skills were reviewed and mapped to this UX re-architecture plan:
+
+- `web-design-guidelines`
+  - UI quality and accessibility compliance gates for landing, onboarding, chat shell, timeline cards.
+- `building-components`
+  - component API design (controlled/uncontrolled patterns, accessibility contracts, composable structure).
+- `vercel-composition-patterns`
+  - app shell and chat/timeline compound component patterns to avoid boolean-prop sprawl.
+- `vercel-react-best-practices`
+  - Next.js/React performance constraints (avoid waterfalls, split heavy panels, minimize rerenders).
+- `ai-elements`
+  - candidate base primitives for conversation/message/composer components where it accelerates delivery.
+- `streamdown`
+  - markdown + code + diagram rendering plan for assistant output and tool payload previews.
+- `ai-sdk`
+  - streaming + tool-call event handling model for chat/timeline UX behavior.
+- `inngest-setup`
+  - background workflow endpoint/client setup validation for async coding runs.
+- `inngest-events`
+  - event naming/schema normalization for timeline rendering fidelity.
+- `inngest-steps`
+  - step granularity and deterministic step design for coding orchestration.
+- `inngest-flow-control`
+  - concurrency/rate/debounce guardrails for coding run dispatch and retries.
+- `inngest-middleware`
+  - cross-cutting logging, trace metadata injection, and error instrumentation in workflows.
+- `inngest-durable-functions`
+  - durable execution/retry/idempotency design for async run lifecycle.
+- `prisma-database-setup`
+  - schema change safety and environment setup for onboarding/conversation expansion.
+- `prisma-cli`
+  - migration execution flow and CLI discipline.
+- `prisma-client-api`
+  - query patterns for conversation list/messages/history APIs.
+- `prisma-driver-adapter-implementation`
+  - no direct scope change now (documented as non-goal for this UX phase).
+- `prisma-postgres`
+  - DB provisioning/ops notes where needed.
+- `prisma-upgrade-v7`
+  - compatibility checkpoint (avoid accidental v7 migration in UX workstream).
+- `supabase-postgres-best-practices`
+  - indexing/access-pattern guidance for conversation/event queries and onboarding reads.
+
+### 18.11 Detailed Implementation Backlog (Execution Plan)
+
+#### Epic A: Route Architecture and App Shell
+
+- Create route groups:
+  - `src/app/(public)/page.tsx`
+  - `src/app/(auth)/sign-in/page.tsx`
+  - `src/app/(onboarding)/page.tsx`
+  - `src/app/(app)/chat/page.tsx`
+  - `src/app/(app)/chat/[conversationId]/page.tsx`
+  - `src/app/(app)/settings/page.tsx`
+- Add shared app shell:
+  - left sidebar (conversations/new chat)
+  - top bar (mode/model/profile)
+  - right activity pane toggle
+- Keep existing APIs functional while migrating UI.
+
+#### Epic B: Auth and Onboarding Guards
+
+- Add server-side guard utility:
+  - if unauthenticated -> sign-in
+  - if authenticated and onboarding incomplete -> onboarding
+  - else -> chat workspace
+- Add onboarding persistence model:
+  - `onboarding_state` table (or equivalent in existing schema)
+  - fields: `userId`, `isCompleted`, `currentStep`, `stepDataJson`, `completedAt`, timestamps
+- Add onboarding endpoints:
+  - `GET /api/onboarding`
+  - `POST /api/onboarding` (step save + completion)
+
+#### Epic C: Conversation and Message UX APIs
+
+- Add conversation endpoints:
+  - `GET /api/conversations?cursor=&q=`
+  - `POST /api/conversations`
+  - `PATCH /api/conversations/:id`
+  - `DELETE /api/conversations/:id` (soft archive)
+- Add message history endpoint:
+  - `GET /api/conversations/:id/messages?cursor=`
+- Add DB indexes:
+  - conversations `(user_id, updated_at desc)`
+  - messages `(conversation_id, created_at asc)`
+
+#### Epic D: Onboarding Wizard UI
+
+- Step 1 (required): BYOK provider keys
+  - validate at least one active key.
+- Step 2: model defaults
+  - per-provider preferred model alias.
+- Step 3: GitHub connect (optional)
+  - show install/callback status.
+- Step 4: connectors/MCP bootstrap (optional)
+  - quick add and skip path.
+- Step 5: review/finish
+  - summary and continue to workspace.
+
+#### Epic E: Chat Workspace and Agent Timeline
+
+- Build chat thread UX:
+  - streaming assistant bubbles
+  - markdown output with safe rendering
+  - composer with mode selector (`chat|agent|coding`)
+- Build agent timeline cards from run events:
+  - status transitions
+  - tool call input/output cards
+  - approval cards (approve/reject actions inline)
+  - coding cards (repo prepare/delegate/diff/PR)
+- Realtime merge logic:
+  - idempotent event map by `event.id`
+  - fallback poll for missed broadcasts.
+
+#### Epic F: Settings/Profile Consolidation
+
+- Move operational forms out of main chat:
+  - provider keys
+  - model settings
+  - GitHub integration
+  - connectors
+  - MCP servers
+  - custom tools
+- Add profile menu entry points for each settings tab.
+
+#### Epic G: Remove Legacy Debug Surface
+
+- Remove root `AppConsole` as primary UX.
+- Keep optional internal debug route (`/dev/console`) behind non-production guard.
+
+### 18.12 Definition of Done for This UX Re-architecture
+
+- Primary user journey works end-to-end:
+  - landing -> Google auth -> onboarding -> chat workspace.
+- Chat layout is production-ready:
+  - left chat list + main chat + agent timeline.
+- Tool-calling transparency is clear:
+  - every important run step is visible and understandable.
+- Setup/configuration is not mixed into chat:
+  - all connector/MCP/BYOK actions are in onboarding or settings.
+- Performance and accessibility baseline met:
+  - keyboard navigation, focus states, mobile/desktop layout, no major waterfall regressions.
