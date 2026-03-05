@@ -1,6 +1,9 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { createSupabasePublicClient } from "@/lib/supabase";
+import {
+  createSupabasePublicClient,
+  createSupabaseServerClient,
+} from "@/lib/supabase";
 
 export type AuthSource = "supabase" | "header" | "query" | "body";
 
@@ -35,30 +38,60 @@ async function resolveSupabaseUser(
 
   const supabase = createSupabasePublicClient();
   const { data, error } = await supabase.auth.getUser(bearerToken);
-  if (error || !data.user) {
+  if (error) {
     throw new Error("Unauthorized: invalid Supabase access token");
   }
+  if (!data.user) {
+    return null;
+  }
 
-  await prisma.userProfile.upsert({
-    where: { userId: data.user.id },
-    update: {
-      email: data.user.email ?? `${data.user.id}@local.invalid`,
-      fullName: data.user.user_metadata?.full_name ?? null,
-      avatarUrl: data.user.user_metadata?.avatar_url ?? null,
-    },
-    create: {
-      userId: data.user.id,
-      email: data.user.email ?? `${data.user.id}@local.invalid`,
-      fullName: data.user.user_metadata?.full_name ?? null,
-      avatarUrl: data.user.user_metadata?.avatar_url ?? null,
-    },
-  });
+  await upsertUserProfile(data.user);
 
   return {
     userId: data.user.id,
     email: data.user.email ?? undefined,
     source: "supabase",
   };
+}
+
+async function resolveSupabaseUserFromCookie(): Promise<AuthContext | null> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.auth.getUser();
+  if (error || !data.user) {
+    return null;
+  }
+
+  await upsertUserProfile(data.user);
+
+  return {
+    userId: data.user.id,
+    email: data.user.email ?? undefined,
+    source: "supabase",
+  };
+}
+
+async function upsertUserProfile(user: {
+  id: string;
+  email?: string | null;
+  user_metadata?: {
+    full_name?: string | null;
+    avatar_url?: string | null;
+  } | null;
+}): Promise<void> {
+  await prisma.userProfile.upsert({
+    where: { userId: user.id },
+    update: {
+      email: user.email ?? `${user.id}@local.invalid`,
+      fullName: user.user_metadata?.full_name ?? null,
+      avatarUrl: user.user_metadata?.avatar_url ?? null,
+    },
+    create: {
+      userId: user.id,
+      email: user.email ?? `${user.id}@local.invalid`,
+      fullName: user.user_metadata?.full_name ?? null,
+      avatarUrl: user.user_metadata?.avatar_url ?? null,
+    },
+  });
 }
 
 export async function resolveAuthContext(
@@ -68,6 +101,11 @@ export async function resolveAuthContext(
   const supabaseUser = await resolveSupabaseUser(request);
   if (supabaseUser) {
     return supabaseUser;
+  }
+
+  const cookieUser = await resolveSupabaseUserFromCookie();
+  if (cookieUser) {
+    return cookieUser;
   }
 
   if (!canUseInsecureHeaderFallback()) {

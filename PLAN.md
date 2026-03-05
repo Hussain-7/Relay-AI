@@ -74,6 +74,8 @@ Last updated: 2026-03-04
 - Supabase usage: Postgres host + Auth + Storage + Realtime; avoid direct Supabase DB CRUD in core services.
 - Default tool baseline: always include `web.search` for research in Agent/Coding modes.
 - E2B command baseline: include `e2b.container.connect` + `e2b.container.exec` as first-class coding tools.
+- E2B boot model: use a custom E2B template alias/id (`E2B_TEMPLATE`) so coding sandboxes start preconfigured with major dependencies.
+- Git workflow in sandbox: prefer E2B `sandbox.git` APIs for clone/push auth flows; keep shell git fallback for unsupported edge cases.
 - Deployment: Next.js on Vercel serverless.
 - Sandbox: E2B is used only when required for:
   - GitHub repo operations (clone/edit/test/commit/push/PR).
@@ -468,6 +470,9 @@ Phase 4:
 ### 17.2 Sandbox bootstrap and credentials
 
 - `POST /api/coding/sessions` creates `coding_session` + `agent_run`, then starts an E2B sandbox.
+- Sandbox creation is template-first:
+  - use `E2B_TEMPLATE` (or `E2B_TEMPLATE_ID`) when configured
+  - fallback to default E2B base template only when no custom template is provided
 - The API injects short-lived secrets into sandbox env only for that run:
   - GitHub installation token
   - provider API key (decrypted server-side just in time)
@@ -477,6 +482,8 @@ Phase 4:
 ### 17.3 Repo checkout and workspace prep
 
 - Runner clones target repo into sandbox workspace and checks out `baseBranch`.
+- For host-managed coding tools, clone/push should use E2B git integration (`sandbox.git.clone`, `sandbox.git.push`) with token auth fields instead of embedding secrets in URLs.
+- Existing repo refresh operations can continue to use shell `git fetch/pull` where it is simpler/more compatible.
 - Runner creates/uses `workingBranch` (default: `agent/<runId>`).
 - Runner captures baseline commit SHA and publishes initial `run_events` (`repo.cloned`, `branch.created`).
 
@@ -563,6 +570,26 @@ Phase 4:
   - command allow/deny policy enforced before execution
   - hard timeout + max output bytes per command
 - This keeps the main agent fast and stateful while preserving safety and full filesystem continuity.
+
+### 17.10 Custom E2B template baseline (pre-setup container)
+
+- Build one shared template for coding runs that includes:
+  - git, node, pnpm, build essentials, common language runtimes needed for target repos
+  - delegated executor prerequisites (`claude` and/or `codex` CLI setup paths as policy allows)
+  - optional local MCP runtime dependencies (stdio servers commonly used)
+- Include template `start` and `ready` commands so sandboxes are considered ready before runner launch.
+- Version template with tags and promote to `:stable` only after smoke tests.
+- Keep template config in infra docs and expose selected template via env (`E2B_TEMPLATE`) in app runtime.
+
+### 17.11 Git credential model in sandbox
+
+- GitHub App installation token remains the source of repo auth for clone/push/PR.
+- Token handling rules:
+  - mint short-lived token server-side
+  - pass only for the active run/session
+  - do not persist token in DB or logs
+  - prefer E2B git auth options (`username/password`) over token-in-URL remotes
+- PR creation still happens via GitHub API from trusted backend using the same installation identity.
 
 ## 18) Product UX Flow Redesign (New Priority)
 

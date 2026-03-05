@@ -5,6 +5,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 enum ProviderId {
@@ -71,6 +72,18 @@ model UserProfile {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("user_profiles")
+}
+
+model OnboardingState {
+  userId      String   @id @map("user_id")
+  isCompleted Boolean  @default(false) @map("is_completed")
+  currentStep String   @default("providers") @map("current_step")
+  stepDataJson Json?   @map("step_data_json")
+  completedAt DateTime? @map("completed_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("onboarding_state")
 }
 
 model ProviderCredential {

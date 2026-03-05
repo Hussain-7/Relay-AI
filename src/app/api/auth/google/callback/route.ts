@@ -13,12 +13,12 @@ export async function GET(request: NextRequest) {
 
   if (authError) {
     return NextResponse.redirect(
-      `${baseUrl}/?auth_error=${encodeURIComponent(authError)}`,
+      `${baseUrl}/sign-in?auth_error=${encodeURIComponent(authError)}`,
     );
   }
 
   if (!code) {
-    return NextResponse.redirect(`${baseUrl}/?auth_error=missing_code`);
+    return NextResponse.redirect(`${baseUrl}/sign-in?auth_error=missing_code`);
   }
 
   const supabase = await createSupabaseServerClient();
@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
 
   if (error) {
     return NextResponse.redirect(
-      `${baseUrl}/?auth_error=${encodeURIComponent(error.message)}`,
+      `${baseUrl}/sign-in?auth_error=${encodeURIComponent(error.message)}`,
     );
   }
 
@@ -47,5 +47,5 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  return NextResponse.redirect(`${baseUrl}/?auth=google_connected`);
+  return NextResponse.redirect(`${baseUrl}/onboarding?auth=google_connected`);
 }

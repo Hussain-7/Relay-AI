@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
 
     if (!installationId || !state) {
       return NextResponse.redirect(
-        `${redirectBase}/?github_error=missing_parameters`,
+        `${redirectBase}/onboarding?github_error=missing_parameters`,
       );
     }
 
@@ -79,12 +79,12 @@ export async function GET(request: NextRequest) {
     });
 
     return NextResponse.redirect(
-      `${redirectBase}/?github=connected&installation_id=${encodeURIComponent(installationId)}`,
+      `${redirectBase}/onboarding?github=connected&installation_id=${encodeURIComponent(installationId)}`,
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown_error";
     return NextResponse.redirect(
-      `${redirectBase}/?github_error=${encodeURIComponent(message)}`,
+      `${redirectBase}/onboarding?github_error=${encodeURIComponent(message)}`,
     );
   }
 }

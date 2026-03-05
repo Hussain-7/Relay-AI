@@ -203,6 +203,90 @@ async function runSessionCommand(params: {
   });
 }
 
+function toExecCommandResult(params: {
+  command: string;
+  cwd?: string;
+  result: {
+    stdout: string;
+    stderr: string;
+    exitCode: number;
+    error?: string;
+  };
+}): ExecCommandResult {
+  return {
+    command: params.command,
+    cwd: params.cwd,
+    stdout: params.result.stdout,
+    stderr: params.result.stderr,
+    exitCode: params.result.exitCode,
+    error: params.result.error,
+  };
+}
+
+async function runSessionGitClone(params: {
+  userId: string;
+  codingSessionId: string;
+  url: string;
+  destination: string;
+  branch?: string;
+  depth?: number;
+  username?: string;
+  password?: string;
+  timeoutMs?: number;
+}): Promise<ExecCommandResult> {
+  const session = await ensureCodingSession(params.userId, params.codingSessionId);
+  if (!session.sandboxId) {
+    throw new Error("Coding session is not connected to a sandbox");
+  }
+
+  const sandbox = await connectSandbox(session.sandboxId);
+  const result = await sandbox.git.clone(params.url, {
+    path: params.destination,
+    branch: params.branch,
+    depth: params.depth ?? 1,
+    username: params.username,
+    password: params.password,
+    timeoutMs: params.timeoutMs ?? 300_000,
+  });
+
+  return toExecCommandResult({
+    command: `git clone ${params.url} ${params.destination}`,
+    result,
+  });
+}
+
+async function runSessionGitPush(params: {
+  userId: string;
+  codingSessionId: string;
+  cwd: string;
+  remote: string;
+  branch: string;
+  username?: string;
+  password?: string;
+  timeoutMs?: number;
+}): Promise<ExecCommandResult> {
+  const session = await ensureCodingSession(params.userId, params.codingSessionId);
+  if (!session.sandboxId) {
+    throw new Error("Coding session is not connected to a sandbox");
+  }
+
+  const sandbox = await connectSandbox(session.sandboxId);
+  const result = await sandbox.git.push(params.cwd, {
+    remote: params.remote,
+    branch: params.branch,
+    setUpstream: true,
+    username: params.username,
+    password: params.password,
+    timeoutMs: params.timeoutMs ?? 180_000,
+  });
+
+  return toExecCommandResult({
+    command: `git push -u ${params.remote} ${params.branch}`,
+    cwd: params.cwd,
+    result,
+  });
+}
+
 async function readGitStatus(
   userId: string,
   codingSessionId: string,
@@ -890,20 +974,42 @@ async function buildCoreTools(params: {
       const session = await ensureCodingSession(params.userId, codingSessionId);
       const repo = repoFullName ?? session.repoFullName;
       const githubToken = await getGithubTokenForUser(params.userId);
-      const cloneUrl = githubToken
-        ? `https://x-access-token:${githubToken}@github.com/${repo}.git`
-        : `https://github.com/${repo}.git`;
+      const cloneUrl = `https://github.com/${repo}.git`;
 
-      const cloneCommand = branch
-        ? `mkdir -p /workspace && if [ -d ${shellEscape(destination)}/.git ]; then git -C ${shellEscape(destination)} fetch --all --prune; else git clone --depth 1 --branch ${shellEscape(branch)} ${shellEscape(cloneUrl)} ${shellEscape(destination)}; fi`
-        : `mkdir -p /workspace && if [ -d ${shellEscape(destination)}/.git ]; then git -C ${shellEscape(destination)} fetch --all --prune; else git clone --depth 1 ${shellEscape(cloneUrl)} ${shellEscape(destination)}; fi`;
-
-      const result = await runSessionCommand({
+      await runSessionCommand({
         userId: params.userId,
         codingSessionId,
-        command: cloneCommand,
-        timeoutMs: 300_000,
+        command: "mkdir -p /workspace",
+        timeoutMs: 30_000,
       });
+
+      const existsResult = await runSessionCommand({
+        userId: params.userId,
+        codingSessionId,
+        command: `if [ -d ${shellEscape(destination)}/.git ]; then echo exists; else echo missing; fi`,
+        timeoutMs: 30_000,
+      });
+
+      const exists = existsResult.stdout.trim() === "exists";
+
+      const result = exists
+        ? await runSessionCommand({
+            userId: params.userId,
+            codingSessionId,
+            command: `git -C ${shellEscape(destination)} fetch --all --prune`,
+            timeoutMs: 180_000,
+          })
+        : await runSessionGitClone({
+            userId: params.userId,
+            codingSessionId,
+            url: cloneUrl,
+            destination,
+            branch,
+            depth: 1,
+            username: githubToken ? "x-access-token" : undefined,
+            password: githubToken ?? undefined,
+            timeoutMs: 300_000,
+          });
 
       return {
         ...result,
@@ -1126,6 +1232,20 @@ async function buildCoreTools(params: {
           cwd,
         },
       });
+
+      const githubToken = await getGithubTokenForUser(params.userId);
+      if (githubToken) {
+        return runSessionGitPush({
+          userId: params.userId,
+          codingSessionId,
+          cwd,
+          remote,
+          branch,
+          username: "x-access-token",
+          password: githubToken,
+          timeoutMs: 180_000,
+        });
+      }
 
       return runSessionCommand({
         userId: params.userId,

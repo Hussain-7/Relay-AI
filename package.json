@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "eslint . && pnpm -r --filter './packages/*' lint",
     "typecheck": "tsc --noEmit && pnpm -r --filter './packages/*' typecheck",
+    "env:check": "node scripts/env-check.mjs",
     "inngest:dev": "npx inngest-cli@latest dev -u http://localhost:3000/api/inngest",
     "prisma": "prisma",
     "prisma:generate": "prisma generate",

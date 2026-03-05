@@ -14,6 +14,7 @@ End-to-end Next.js agent platform for chat, research, tool-calling, MCP, and rem
   - `@ai-sdk/anthropic`
 - BYOK encrypted vault (AES-256-GCM) for provider keys and connector secrets
 - E2B sandboxes for coding sessions and command execution
+  - optional custom template bootstrap via `E2B_TEMPLATE` for preinstalled dependencies
 - GitHub App integration for installation-based repo access + draft PR creation
 - Workspace packages:
   - `packages/runner`
@@ -89,6 +90,7 @@ End-to-end Next.js agent platform for chat, research, tool-calling, MCP, and rem
 ```bash
 pnpm install
 cp .env.example .env.local
+pnpm env:check
 pnpm prisma:generate
 pnpm prisma:push
 pnpm dev
@@ -97,6 +99,8 @@ npx inngest-cli@latest dev -u http://localhost:3000/api/inngest
 ```
 
 Open `http://localhost:3000` and use the console UI.
+
+See full environment variable mapping in `ENVIRONMENT.md`.
 
 ## Auth Notes
 

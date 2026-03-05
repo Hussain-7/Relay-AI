@@ -1,12 +1,12 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f7f8fa;
-  --foreground: #10121a;
+  --background: #eef3ff;
+  --foreground: #0f1a2d;
   --panel: #ffffff;
-  --muted: #636b7a;
-  --accent: #0a5bd8;
-  --accent-2: #0a7f6f;
+  --muted: #5c6b83;
+  --accent: #0b4fd9;
+  --accent-2: #0f8a68;
 }
 
 @theme inline {
@@ -16,23 +16,54 @@
   --color-muted: var(--muted);
   --color-accent: var(--accent);
   --color-accent-2: var(--accent-2);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-primary-sans);
+  --font-mono: var(--font-primary-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0f1319;
-    --foreground: #ecf0f7;
-    --panel: #171d25;
-    --muted: #a4b0c2;
-    --accent: #6da6ff;
-    --accent-2: #52d6c0;
-  }
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
 }
 
 body {
-  background: var(--background);
+  margin: 0;
   color: var(--foreground);
-  font-family: var(--font-geist-sans), "Segoe UI", sans-serif;
+  background:
+    radial-gradient(1300px 520px at 0% -10%, rgba(36, 117, 255, 0.2), transparent 60%),
+    radial-gradient(1000px 420px at 95% 2%, rgba(28, 198, 151, 0.18), transparent 60%),
+    linear-gradient(180deg, #f4f8ff 0%, #edf2fd 42%, #edf1f7 100%);
+  font-family: var(--font-primary-sans), "Avenir Next", "Segoe UI", sans-serif;
+}
+
+pre,
+code {
+  font-family: var(--font-primary-mono), "SFMono-Regular", Menlo, monospace;
+}
+
+.landing-root {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.58), rgba(255, 255, 255, 0.2)),
+    radial-gradient(circle at 30% 24%, rgba(13, 96, 255, 0.12), transparent 52%);
+  border-radius: 30px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .landing-root {
+    animation: intro-fade 450ms ease-out;
+  }
+}
+
+@keyframes intro-fade {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }

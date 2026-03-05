@@ -24,15 +24,33 @@ function getE2BApiKey(): string {
   return apiKey;
 }
 
+function getE2BTemplate(): string | undefined {
+  const fromTemplate = process.env.E2B_TEMPLATE?.trim();
+  if (fromTemplate) {
+    return fromTemplate;
+  }
+
+  const fromTemplateId = process.env.E2B_TEMPLATE_ID?.trim();
+  if (fromTemplateId) {
+    return fromTemplateId;
+  }
+
+  return undefined;
+}
+
 export async function createSandbox(
   timeoutMs = 60 * 60 * 1000,
   metadata?: Record<string, string>,
 ) {
-  const sandbox = await Sandbox.create({
+  const options = {
     apiKey: getE2BApiKey(),
     timeoutMs,
     metadata,
-  });
+  };
+  const template = getE2BTemplate();
+  const sandbox = template
+    ? await Sandbox.create(template, options)
+    : await Sandbox.create(options);
 
   return sandbox;
 }
