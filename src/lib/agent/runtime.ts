@@ -393,6 +393,20 @@ function parseApprovedMcpServerIds(approvedMcp: unknown): string[] {
   return raw.filter((item): item is string => typeof item === "string");
 }
 
+function parseRunCodingSessionId(approvedTools: unknown): string | null {
+  if (!approvedTools || typeof approvedTools !== "object") {
+    return null;
+  }
+
+  const raw = (approvedTools as { codingSessionId?: unknown }).codingSessionId;
+  if (typeof raw !== "string") {
+    return null;
+  }
+
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 async function invokeApprovedRemoteMcpServer(
   server: MCPServer,
   toolName: string,
@@ -466,7 +480,19 @@ function buildSystemPrompt(mode: RunMode): string {
     return `${base}\nAgent mode rules: use web search and approved tools to produce reliable outcomes with source context.`;
   }
 
-  return `${base}\nChat mode rules: answer directly unless the user explicitly requests tool use.`;
+  return `${base}\nChat mode rules: prefer direct answers, but use tools when freshness, verification, or user request requires it.`;
+}
+
+function getMaxStepsForMode(mode: RunMode): number {
+  if (mode === RunMode.CODING) {
+    return 30;
+  }
+
+  if (mode === RunMode.AGENT) {
+    return 10;
+  }
+
+  return 8;
 }
 
 function mapStepSummary(step: unknown) {
@@ -537,7 +563,9 @@ async function buildCoreTools(params: {
   runId: string;
   mode: RunMode;
   approvedMcp: unknown;
+  approvedTools: unknown;
 }): Promise<ToolSet> {
+  // Add always-on core tools here to extend chat/agent capabilities.
   const tools: ToolSet = {
     web_search: createTrackedTool({
       runId: params.runId,
@@ -550,7 +578,7 @@ async function buildCoreTools(params: {
       execute: async ({ query, maxResults }) => {
         const results = await webSearch(query, maxResults);
         return {
-          query,
+          query, 
           count: results.length,
           results,
         };
@@ -803,7 +831,8 @@ async function buildCoreTools(params: {
     });
   }
 
-  if (params.mode !== RunMode.CODING) {
+  const runCodingSessionId = parseRunCodingSessionId(params.approvedTools);
+  if (params.mode !== RunMode.CODING && !runCodingSessionId) {
     return tools;
   }
 
@@ -1432,7 +1461,7 @@ async function runModelInference(params: {
     userId: params.userId,
     preferredProvider: params.preferredProvider,
     preferredModelId: params.preferredModelId,
-    requireTools: params.run.mode !== RunMode.CHAT,
+    requireTools: true,
   });
 
   const model = resolveLanguageModel(selectedModel);
@@ -1441,6 +1470,7 @@ async function runModelInference(params: {
     runId: params.run.id,
     mode: params.run.mode,
     approvedMcp: params.run.approvedMcp,
+    approvedTools: params.run.approvedTools,
   });
   const customTools = await buildCustomToolsForUser({
     userId: params.userId,
@@ -1457,11 +1487,11 @@ async function runModelInference(params: {
       model,
       prompt: params.userMessage,
       system: buildSystemPrompt(params.run.mode),
+      tools,
       ...(params.run.mode === RunMode.CHAT
         ? {}
         : {
-            tools,
-            maxSteps: params.run.mode === RunMode.CODING ? 30 : 10,
+            maxSteps: getMaxStepsForMode(params.run.mode),
           }),
     });
 

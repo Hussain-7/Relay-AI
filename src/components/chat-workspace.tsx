@@ -3,14 +3,14 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Streamdown } from "streamdown";
 
-type Mode = "chat" | "agent" | "coding";
-type ProviderChoice = "auto" | "openai" | "anthropic";
+type StoredMode = "chat" | "agent" | "coding";
 
 interface ConversationListItem {
   id: string;
   title: string;
-  defaultMode: Mode;
+  defaultMode: StoredMode;
   updatedAt: string;
   lastMessage: {
     role?: string;
@@ -97,10 +97,7 @@ export function ChatWorkspace(props: {
     props.initialConversationId ?? null,
   );
   const [messages, setMessages] = useState<ChatMessageRecord[]>([]);
-  const [streamingAssistant, setStreamingAssistant] = useState("");
 
-  const [mode, setMode] = useState<Mode>("chat");
-  const [provider, setProvider] = useState<ProviderChoice>("auto");
   const [modelId, setModelId] = useState<string>("");
   const [modelsPayload, setModelsPayload] = useState<ModelsPayload | null>(null);
 
@@ -116,9 +113,19 @@ export function ChatWorkspace(props: {
   } | null>(null);
   const [finalizedRunIds, setFinalizedRunIds] = useState<string[]>([]);
 
-  const [repoFullName, setRepoFullName] = useState("owner/repo");
+  const [repoFullName, setRepoFullName] = useState("");
   const [baseBranch, setBaseBranch] = useState("main");
   const [codingSessionId, setCodingSessionId] = useState<string | null>(null);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  const activeConversation = useMemo(
+    () => conversations.find((item) => item.id === conversationId) ?? null,
+    [conversationId, conversations],
+  );
+
+  const gridColumnsClass = isSidebarCollapsed
+    ? "lg:grid-cols-[72px_minmax(0,1fr)_320px]"
+    : "lg:grid-cols-[260px_minmax(0,1fr)_320px]";
 
   const filteredConversations = useMemo(() => {
     if (!conversationQuery.trim()) {
@@ -315,7 +322,7 @@ export function ChatWorkspace(props: {
           method: "POST",
           body: JSON.stringify({
             title: "New Chat",
-            defaultMode: mode,
+            defaultMode: "agent",
           }),
         },
       );
@@ -345,53 +352,6 @@ export function ChatWorkspace(props: {
     }
   }
 
-  async function sendChatStream(prompt: string) {
-    const response = await fetch("/api/chat", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        conversationId: conversationId ?? undefined,
-        userMessage: prompt,
-        provider: provider === "auto" ? undefined : provider,
-        modelId: modelId || undefined,
-      }),
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(text || `Chat request failed (${response.status})`);
-    }
-
-    const returnedConversationId = response.headers.get("x-conversation-id");
-    if (returnedConversationId && returnedConversationId !== conversationId) {
-      setConversationId(returnedConversationId);
-      router.push(`/chat/${returnedConversationId}`);
-    }
-
-    const reader = response.body?.getReader();
-    if (!reader) {
-      throw new Error("Streaming response body missing");
-    }
-
-    const decoder = new TextDecoder();
-    let collected = "";
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
-      collected += decoder.decode(value, { stream: true });
-      setStreamingAssistant(collected);
-    }
-    collected += decoder.decode();
-    setStreamingAssistant("");
-
-    setMessages((prev) => [...prev, { role: "assistant", text: collected }]);
-    await loadConversations();
-  }
-
   async function runAgent(prompt: string) {
     const data = await requestJson<{
       status: string;
@@ -403,14 +363,15 @@ export function ChatWorkspace(props: {
     }>("/api/agent/runs", {
       method: "POST",
       body: JSON.stringify({
-        mode,
+        mode: "agent",
         userMessage: prompt,
         conversationId: conversationId ?? undefined,
-        provider: provider === "auto" ? undefined : provider,
         modelId: modelId || undefined,
-        repoFullName: mode === "coding" ? repoFullName : undefined,
-        baseBranch: mode === "coding" ? baseBranch : undefined,
-        codingSessionId: mode === "coding" ? codingSessionId : undefined,
+        repoFullName: repoFullName.trim() || undefined,
+        baseBranch: repoFullName.trim()
+          ? baseBranch.trim() || "main"
+          : undefined,
+        codingSessionId: codingSessionId?.trim() || undefined,
       }),
     });
 
@@ -444,7 +405,7 @@ export function ChatWorkspace(props: {
         ...prev,
         {
           role: "assistant",
-          text: `Run started in ${mode} mode. I will stream tool activity in the timeline.`,
+          text: "Run started. I will stream tool activity in the timeline.",
         },
       ]);
     }
@@ -463,12 +424,7 @@ export function ChatWorkspace(props: {
       setIsSending(true);
       setInput("");
       setMessages((prev) => [...prev, { role: "user", text: prompt }]);
-
-      if (mode === "chat") {
-        await sendChatStream(prompt);
-      } else {
-        await runAgent(prompt);
-      }
+      await runAgent(prompt);
     } catch (sendError) {
       const message =
         sendError instanceof Error ? sendError.message : String(sendError);
@@ -495,7 +451,6 @@ export function ChatWorkspace(props: {
         body: JSON.stringify({
           approvalId: pendingApproval.approvalId,
           approve,
-          provider: provider === "auto" ? undefined : provider,
           modelId: modelId || undefined,
         }),
       });
@@ -543,201 +498,227 @@ export function ChatWorkspace(props: {
   }
 
   return (
-    <main className="min-h-screen px-4 py-4 md:px-6 md:py-6">
-      <div className="mx-auto grid w-full max-w-[1600px] gap-4 lg:grid-cols-[280px_minmax(0,1fr)_360px]">
-        <aside className="rounded-2xl border border-white/40 bg-white/70 p-4 shadow-[0_8px_30px_rgba(14,21,37,0.08)] backdrop-blur">
+    <main className="min-h-screen bg-[radial-gradient(circle_at_16%_0%,#1f2430_0,#14161b_48%,#101217_100%)] px-3 py-3 text-slate-100 md:px-4 md:py-4 lg:h-screen lg:overflow-hidden">
+      <div
+        className={`mx-auto grid h-full w-full max-w-[1680px] gap-3 ${gridColumnsClass}`}
+      >
+        <aside className="flex min-h-0 flex-col rounded-2xl border border-white/10 bg-[#101319]/92 p-2 shadow-[0_12px_40px_rgba(0,0,0,0.32)] backdrop-blur">
+          <div className="flex items-center justify-between px-2 pb-2 pt-1">
+            <div className="grid size-9 place-items-center rounded-lg border border-white/15 bg-white/5 text-sm font-semibold text-slate-100">
+              E
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsSidebarCollapsed((current) => !current)}
+              className="grid size-9 place-items-center rounded-lg border border-white/10 text-slate-400 transition hover:border-white/20 hover:text-slate-200"
+              aria-label={
+                isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"
+              }
+            >
+              <svg viewBox="0 0 20 20" className="size-4 fill-current" aria-hidden="true">
+                <path d="M3.5 4A1.5 1.5 0 0 0 2 5.5v9A1.5 1.5 0 0 0 3.5 16h13a1.5 1.5 0 0 0 1.5-1.5v-9A1.5 1.5 0 0 0 16.5 4h-13Zm0 1h3v10h-3a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5Z" />
+              </svg>
+            </button>
+          </div>
+
           <button
             type="button"
             onClick={createNewConversation}
-            className="w-full rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700"
+            className="mt-1 flex items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-slate-100 transition hover:bg-white/5"
           >
-            New Chat
+            <span className="text-lg leading-none text-slate-300">+</span>
+            {!isSidebarCollapsed ? <span>New chat</span> : null}
           </button>
-          <input
-            value={conversationQuery}
-            onChange={(event) => setConversationQuery(event.target.value)}
-            className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
-            placeholder="Search chats"
-          />
-          <div className="mt-4 max-h-[62vh] space-y-2 overflow-auto pr-1">
-            {filteredConversations.map((conversation) => (
-              <button
-                key={conversation.id}
-                type="button"
-                onClick={() => openConversation(conversation.id)}
-                className={`w-full rounded-xl border px-3 py-2 text-left transition ${
-                  conversation.id === conversationId
-                    ? "border-slate-900 bg-slate-900 text-white"
-                    : "border-slate-200 bg-white/80 text-slate-700 hover:border-slate-400"
-                }`}
-              >
-                <p className="truncate text-sm font-medium">{conversation.title}</p>
-                <p
-                  className={`mt-1 line-clamp-2 text-xs ${
+
+          {!isSidebarCollapsed ? (
+            <input
+              value={conversationQuery}
+              onChange={(event) => setConversationQuery(event.target.value)}
+              className="mt-2 rounded-xl border border-white/10 bg-[#151922] px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-white/25 focus:outline-none"
+              placeholder="Search chats"
+            />
+          ) : null}
+
+          <div className="mt-2 min-h-0 flex-1 overflow-y-auto pr-1">
+            <div className="space-y-1.5">
+              {filteredConversations.map((conversation) => (
+                <button
+                  key={conversation.id}
+                  type="button"
+                  onClick={() => openConversation(conversation.id)}
+                  title={conversation.title}
+                  className={`w-full rounded-xl px-3 py-2 text-left text-sm transition ${
                     conversation.id === conversationId
-                      ? "text-slate-200"
-                      : "text-slate-500"
+                      ? "bg-[#1e2431] text-slate-100"
+                      : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
                   }`}
                 >
-                  {conversation.lastMessage
-                    ? extractMessageText(conversation.lastMessage.contentJson)
-                    : "No messages yet"}
+                  {isSidebarCollapsed ? (
+                    <span className="block text-center text-xs font-semibold uppercase tracking-wide">
+                      {conversation.title.charAt(0)}
+                    </span>
+                  ) : (
+                    <span className="block truncate">{conversation.title}</span>
+                  )}
+                </button>
+              ))}
+              {filteredConversations.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-white/10 px-3 py-6 text-center text-xs text-slate-500">
+                  No chats yet.
                 </p>
-              </button>
-            ))}
-            {filteredConversations.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-slate-300 px-3 py-6 text-center text-sm text-slate-500">
-                No conversations yet.
-              </p>
-            ) : null}
+              ) : null}
+            </div>
           </div>
         </aside>
 
-        <section className="flex min-h-[80vh] flex-col rounded-2xl border border-white/40 bg-white/75 shadow-[0_8px_30px_rgba(14,21,37,0.08)] backdrop-blur">
-          <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 md:px-5">
-            <div>
-              <h1 className="text-lg font-semibold text-slate-900">
-                {conversationId ? "Conversation" : "New Conversation"}
+        <section className="flex min-h-0 flex-col rounded-2xl border border-white/10 bg-[#141820]/92 shadow-[0_12px_40px_rgba(0,0,0,0.28)] backdrop-blur">
+          <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3 md:px-5">
+            <div className="min-w-0">
+              <h1 className="truncate text-3xl font-medium tracking-tight text-slate-100">
+                {activeConversation?.title ?? "New chat"}
               </h1>
               <p className="text-xs text-slate-500">{props.user.email}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <select
-                value={mode}
-                onChange={(event) => setMode(event.target.value as Mode)}
-                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700"
-              >
-                <option value="chat">Chat</option>
-                <option value="agent">Agent</option>
-                <option value="coding">Coding</option>
-              </select>
-              <select
-                value={provider}
-                onChange={(event) =>
-                  setProvider(event.target.value as ProviderChoice)
-                }
-                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700"
-              >
-                <option value="auto">Auto Provider</option>
-                <option value="openai">OpenAI</option>
-                <option value="anthropic">Anthropic</option>
-              </select>
-              <select
-                value={modelId}
-                onChange={(event) => setModelId(event.target.value)}
-                className="max-w-[210px] rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700"
-              >
-                {modelsPayload?.models?.map((model) => (
-                  <option key={model.id} value={model.modelId}>
-                    {model.displayName}
-                  </option>
-                ))}
-                {!modelsPayload?.models?.length ? (
-                  <option value="">No connected models</option>
-                ) : null}
-              </select>
               <Link
                 href="/settings"
-                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:border-slate-400"
+                className="rounded-lg border border-white/12 bg-[#1b2029] px-3 py-1.5 text-sm text-slate-200 transition hover:border-white/25"
               >
                 Settings
               </Link>
               <button
                 type="button"
                 onClick={signOut}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:border-slate-400"
+                className="rounded-lg border border-white/12 bg-[#1b2029] px-3 py-1.5 text-sm text-slate-200 transition hover:border-white/25"
               >
                 Sign out
               </button>
             </div>
           </header>
 
-          {mode === "coding" ? (
-            <div className="grid gap-2 border-b border-slate-200 bg-slate-50/80 px-4 py-3 md:grid-cols-3 md:px-5">
-              <input
-                value={repoFullName}
-                onChange={(event) => setRepoFullName(event.target.value)}
-                placeholder="owner/repo"
-                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
-              />
-              <input
-                value={baseBranch}
-                onChange={(event) => setBaseBranch(event.target.value)}
-                placeholder="base branch"
-                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
-              />
-              <input
-                value={codingSessionId ?? ""}
-                onChange={(event) =>
-                  setCodingSessionId(event.target.value.trim() || null)
-                }
-                placeholder="existing coding session id (optional)"
-                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
-              />
-            </div>
-          ) : null}
-
-          <div className="flex-1 space-y-3 overflow-auto px-4 py-4 md:px-5">
-            {messages.map((message, index) => (
-              <article
-                key={`${message.role}-${message.id ?? index}`}
-                className={`max-w-[90%] rounded-2xl px-4 py-3 ${
-                  message.role === "user"
-                    ? "ml-auto bg-slate-900 text-white"
-                    : "bg-white text-slate-800 shadow-sm ring-1 ring-slate-200"
-                }`}
-              >
-                <p className="whitespace-pre-wrap text-sm leading-relaxed">
-                  {message.text}
-                </p>
-                {message.createdAt ? (
-                  <p
-                    className={`mt-2 text-[11px] ${
-                      message.role === "user" ? "text-slate-300" : "text-slate-500"
-                    }`}
-                  >
-                    {shortTime(message.createdAt)}
-                  </p>
-                ) : null}
-              </article>
-            ))}
-            {streamingAssistant ? (
-              <article className="max-w-[90%] rounded-2xl bg-white px-4 py-3 text-slate-800 shadow-sm ring-1 ring-slate-200">
-                <p className="whitespace-pre-wrap text-sm leading-relaxed">
-                  {streamingAssistant}
-                </p>
-              </article>
-            ) : null}
+          <div className="grid gap-2 border-b border-white/10 bg-[#12161f]/80 px-4 py-3 md:grid-cols-3 md:px-5">
+            <input
+              value={repoFullName}
+              onChange={(event) => setRepoFullName(event.target.value)}
+              placeholder="owner/repo (optional)"
+              className="rounded-lg border border-white/10 bg-[#1b2029] px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-white/25 focus:outline-none"
+            />
+            <input
+              value={baseBranch}
+              onChange={(event) => setBaseBranch(event.target.value)}
+              placeholder="base branch (optional)"
+              className="rounded-lg border border-white/10 bg-[#1b2029] px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-white/25 focus:outline-none"
+            />
+            <input
+              value={codingSessionId ?? ""}
+              onChange={(event) =>
+                setCodingSessionId(event.target.value.trim() || null)
+              }
+              placeholder="existing coding session id (optional)"
+              className="rounded-lg border border-white/10 bg-[#1b2029] px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-white/25 focus:outline-none"
+            />
           </div>
 
-          <footer className="border-t border-slate-200 px-4 py-4 md:px-5">
-            <form onSubmit={sendMessage} className="flex gap-2">
-              <textarea
-                value={input}
-                onChange={(event) => setInput(event.target.value)}
-                placeholder={
-                  mode === "coding"
-                    ? "Describe the coding task and expected checks..."
-                    : "Message the agent..."
-                }
-                className="h-20 flex-1 resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
-              />
-              <button
-                disabled={isSending}
-                type="submit"
-                className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700 disabled:opacity-50"
-              >
-                {isSending ? "Sending..." : "Send"}
-              </button>
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 md:px-5">
+            <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
+              {messages.map((message, index) => (
+                <article
+                  key={`${message.role}-${message.id ?? index}`}
+                  className={`${
+                    message.role === "user"
+                      ? "ml-auto max-w-[86%] rounded-2xl bg-[#202637] px-4 py-3 text-slate-100"
+                      : "mr-auto max-w-[94%] rounded-2xl border border-white/8 bg-[#10141d]/70 px-4 py-3 text-slate-200"
+                  }`}
+                >
+                  <Streamdown
+                    mode="static"
+                    controls={false}
+                    className={`text-sm leading-relaxed ${
+                      message.role === "user"
+                        ? "text-slate-100 [&_a]:text-slate-100 [&_code]:bg-white/10 [&_pre]:bg-[#0f1421]"
+                        : "text-slate-200 [&_a]:text-slate-100 [&_code]:bg-white/8 [&_pre]:bg-[#0d1118]"
+                    }`}
+                  >
+                    {message.text}
+                  </Streamdown>
+                  {message.createdAt ? (
+                    <p
+                      className={`mt-2 text-[11px] ${
+                        message.role === "user" ? "text-slate-300" : "text-slate-500"
+                      }`}
+                    >
+                      {shortTime(message.createdAt)}
+                    </p>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          </div>
+
+          <footer className="border-t border-white/10 px-4 pb-4 pt-3 md:px-5">
+            <form
+              onSubmit={sendMessage}
+              className="mx-auto w-full max-w-4xl rounded-[22px] border border-white/10 bg-[#0f131d] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+            >
+                <textarea
+                  value={input}
+                  onChange={(event) => setInput(event.target.value)}
+                  placeholder="Ask for follow-up changes..."
+                  className="h-14 w-full resize-none border-0 bg-transparent px-1 py-1 text-[15px] text-slate-100 placeholder:text-slate-500 focus:outline-none"
+                />
+              <div className="mt-2 flex items-center justify-between border-t border-white/10 pt-2">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="grid size-8 place-items-center rounded-full border border-white/12 text-lg text-slate-300 transition hover:border-white/25 hover:text-slate-100"
+                    aria-label="Attach context (coming soon)"
+                    title="Attach context (coming soon)"
+                  >
+                    +
+                  </button>
+                  <select
+                    value={modelId}
+                    onChange={(event) => setModelId(event.target.value)}
+                    className="max-w-[190px] rounded-lg border border-white/12 bg-[#171d28] px-2.5 py-1.5 text-xs text-slate-200 focus:border-white/25 focus:outline-none"
+                  >
+                    {modelsPayload?.models?.map((model) => (
+                      <option key={model.id} value={model.modelId}>
+                        {model.displayName}
+                      </option>
+                    ))}
+                    {!modelsPayload?.models?.length ? (
+                      <option value="">No connected models</option>
+                    ) : null}
+                  </select>
+                </div>
+                <button
+                  disabled={isSending}
+                  type="submit"
+                  className="grid size-9 place-items-center rounded-full bg-slate-200 text-slate-900 transition hover:bg-white disabled:opacity-50"
+                  aria-label={isSending ? "Sending message" : "Send message"}
+                >
+                  {isSending ? (
+                    <span className="text-xs font-semibold">...</span>
+                  ) : (
+                    <svg
+                      viewBox="0 0 20 20"
+                      aria-hidden="true"
+                      className="size-4 fill-current"
+                    >
+                      <path d="M10.75 3a.75.75 0 0 0-1.5 0v10.19L6.53 10.47a.75.75 0 0 0-1.06 1.06l4 4a.75.75 0 0 0 1.06 0l4-4a.75.75 0 0 0-1.06-1.06l-2.72 2.72V3z" />
+                    </svg>
+                  )}
+                </button>
+              </div>
             </form>
-            {feedback ? <p className="mt-2 text-xs text-emerald-600">{feedback}</p> : null}
-            {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
+            {feedback ? <p className="mt-2 text-xs text-emerald-400">{feedback}</p> : null}
+            {error ? <p className="mt-2 text-xs text-rose-400">{error}</p> : null}
           </footer>
         </section>
 
-        <aside className="rounded-2xl border border-white/40 bg-white/75 p-4 shadow-[0_8px_30px_rgba(14,21,37,0.08)] backdrop-blur">
+        <aside className="flex min-h-0 flex-col rounded-2xl border border-white/10 bg-[#11151c]/92 p-4 shadow-[0_12px_40px_rgba(0,0,0,0.3)] backdrop-blur">
           <div className="flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
+            <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400">
               Agent Activity
             </h2>
             <button
@@ -746,7 +727,10 @@ export function ChatWorkspace(props: {
                 if (!activeRunId) return;
                 void Promise.resolve()
                   .then(async () => {
-                    await Promise.all([loadRunEvents(activeRunId), syncRunState(activeRunId)]);
+                    await Promise.all([
+                      loadRunEvents(activeRunId),
+                      syncRunState(activeRunId),
+                    ]);
                   })
                   .catch((refreshError) => {
                     const message =
@@ -756,7 +740,7 @@ export function ChatWorkspace(props: {
                     setError(message);
                   });
               }}
-              className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs text-slate-600 hover:border-slate-400"
+              className="rounded-lg border border-white/10 px-2.5 py-1 text-xs text-slate-300 transition hover:border-white/25"
             >
               Refresh
             </button>
@@ -766,11 +750,9 @@ export function ChatWorkspace(props: {
           </p>
 
           {pendingApproval ? (
-            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
-              <p className="text-xs font-medium text-amber-800">
-                Approval required
-              </p>
-              <p className="mt-1 text-xs text-amber-700">
+            <div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-400/10 p-3">
+              <p className="text-xs font-medium text-amber-200">Approval required</p>
+              <p className="mt-1 text-xs text-amber-100/80">
                 This run needs permission before continuing.
               </p>
               <div className="mt-3 flex gap-2">
@@ -796,27 +778,25 @@ export function ChatWorkspace(props: {
             </div>
           ) : null}
 
-          <div className="mt-3 max-h-[70vh] space-y-2 overflow-auto pr-1">
+          <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
             {runEvents.map((event) => (
               <article
                 key={event.id}
-                className="rounded-xl border border-slate-200 bg-white p-3"
+                className="rounded-xl border border-white/10 bg-[#161b25] p-3"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-300">
                     {event.type}
                   </p>
-                  <p className="text-[11px] text-slate-500">
-                    {shortTime(event.ts)}
-                  </p>
+                  <p className="text-[11px] text-slate-500">{shortTime(event.ts)}</p>
                 </div>
-                <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap text-[11px] leading-relaxed text-slate-600">
+                <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap text-[11px] leading-relaxed text-slate-400">
                   {prettyJson(event.payload)}
                 </pre>
               </article>
             ))}
             {runEvents.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-slate-300 px-3 py-6 text-center text-xs text-slate-500">
+              <p className="rounded-xl border border-dashed border-white/10 px-3 py-6 text-center text-xs text-slate-500">
                 No run events yet.
               </p>
             ) : null}
