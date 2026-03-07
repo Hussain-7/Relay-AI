@@ -53,6 +53,23 @@ type RenderTimelineEntry =
       description: string;
     };
 
+function IconClose() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4">
+      <path d="M18 6 6 18M6 6l12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconSidebarToggle() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4">
+      <rect x="3" y="3" width="18" height="18" rx="3" fill="none" stroke="currentColor" strokeWidth="1.6" />
+      <line x1="9" y1="3" x2="9" y2="21" stroke="currentColor" strokeWidth="1.6" />
+    </svg>
+  );
+}
+
 function SidebarMenuPortal({
   triggerSelector,
   onDelete,
@@ -792,6 +809,8 @@ export function ChatWorkspace() {
   const transcriptRef = useRef<HTMLDivElement | null>(null);
   const wasLandingRef = useRef(true);
   const [animateComposerDock, setAnimateComposerDock] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [searchModalOpen, setSearchModalOpen] = useState(false);
 
   const closeMenusOnOutsidePress = useEffectEvent((event: MouseEvent) => {
     if (profileRef.current && event.target instanceof Node && !profileRef.current.contains(event.target)) {
@@ -1199,15 +1218,34 @@ export function ChatWorkspace() {
   }
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar-panel">
+    <div className={`app-shell ${sidebarCollapsed ? "app-shell-collapsed" : ""}`}>
+      <aside className={`sidebar-panel ${sidebarCollapsed ? "sidebar-panel-collapsed" : ""}`}>
+        {sidebarCollapsed ? (
+          <>
+            <div className="sidebar-collapsed-strip">
+              <button type="button" className="ghost-icon-button" aria-label="Expand sidebar" onClick={() => setSidebarCollapsed(false)}>
+                <IconSidebarToggle />
+              </button>
+              <button type="button" className="ghost-icon-button" aria-label="New chat" onClick={handleCreateConversation}>
+                <IconPlus />
+              </button>
+              <button type="button" className="ghost-icon-button" aria-label="Search chats" onClick={() => setSearchModalOpen(true)}>
+                <IconSearch />
+              </button>
+            </div>
+            <div className="sidebar-collapsed-avatar" role="button" tabIndex={0} onClick={() => setSidebarCollapsed(false)}>
+              N
+            </div>
+          </>
+        ) : (
+          <>
         <div className="sidebar-brand">
           <div>
             <div className="sidebar-brand-title">Endless Dev</div>
             <div className="sidebar-brand-subtitle">Chat, search, and build</div>
           </div>
-          <button type="button" className="ghost-icon-button" aria-label="Current account">
-            <IconSpark />
+          <button type="button" className="ghost-icon-button" aria-label="Collapse sidebar" onClick={() => setSidebarCollapsed(true)}>
+            <IconSidebarToggle />
           </button>
         </div>
 
@@ -1305,6 +1343,8 @@ export function ChatWorkspace() {
             </div>
           ) : null}
         </div>
+          </>
+        )}
       </aside>
 
       <main className={`chat-panel ${isLandingState ? "chat-panel-landing" : "chat-panel-active"}`}>
@@ -1505,6 +1545,46 @@ export function ChatWorkspace() {
         </footer>
         </div>
       </main>
+
+      {searchModalOpen ? (
+        <div className="search-modal-overlay" onClick={() => setSearchModalOpen(false)}>
+          <div className="search-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="search-modal-header">
+              <IconSearch />
+              <input
+                type="text"
+                className="search-modal-input"
+                placeholder="Search chats"
+                autoFocus
+                value={sidebarQuery}
+                onChange={(e) => setSidebarQuery(e.target.value)}
+              />
+              <button type="button" className="ghost-icon-button search-modal-close" onClick={() => { setSearchModalOpen(false); setSidebarQuery(""); }}>
+                <IconClose />
+              </button>
+            </div>
+            <div className="search-modal-results">
+              {filteredConversations.map((conversation) => (
+                <button
+                  key={conversation.id}
+                  type="button"
+                  className={`search-modal-item ${conversation.id === activeConversation?.id ? "search-modal-item-active" : ""}`}
+                  onClick={() => {
+                    void refreshConversation(conversation.id);
+                    setSearchModalOpen(false);
+                    setSidebarQuery("");
+                  }}
+                >
+                  <span className="search-modal-item-title">{conversation.title}</span>
+                </button>
+              ))}
+              {filteredConversations.length === 0 ? (
+                <div className="search-modal-empty">No chats found</div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
