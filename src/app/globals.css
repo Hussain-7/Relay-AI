@@ -108,6 +108,10 @@ textarea {
   gap: 4px;
 }
 
+.sidebar-collapsed-strip .ghost-icon-button:first-child {
+  margin-bottom: 16px;
+}
+
 .sidebar-collapsed-strip .ghost-icon-button {
   height: 40px;
   width: 40px;
