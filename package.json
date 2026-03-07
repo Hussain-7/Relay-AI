@@ -13,7 +13,7 @@
     "inngest:dev": "npx inngest-cli@latest dev -u http://localhost:3000/api/inngest",
     "prisma": "prisma",
     "prisma:generate": "prisma generate",
-    "prisma:push": "prisma db push"
+    "prisma:push": "prisma db push --accept-data-loss"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.54",
@@ -32,7 +32,7 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "streamdown": "^2.4.0",
-    "zod": "^3.24.4"
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

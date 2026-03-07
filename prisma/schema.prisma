@@ -3,7 +3,277 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
+}
+
+enum ConversationMode {
+  CHAT
+  AGENT
+  CODING
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+enum RunStatus {
+  PENDING
+  RUNNING
+  AWAITING_APPROVAL
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum CodingSessionStatus {
+  PROVISIONING
+  READY
+  RUNNING
+  PAUSED
+  ERROR
+  CLOSED
+}
+
+enum RepoProvider {
+  GITHUB
+}
+
+enum AttachmentKind {
+  IMAGE
+  PDF
+  DOCUMENT
+  OTHER
+}
+
+model UserProfile {
+  userId              String             @id
+  email               String             @unique
+  fullName            String?
+  avatarUrl           String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  conversations       Conversation[]
+  mainAgentSessions   MainAgentSession[]
+  codingSessions      CodingSession[]
+  memoryEntries       MemoryEntry[]
+  repoBindings        RepoBinding[]
+  workspaceSnapshots  WorkspaceSnapshot[]
+  githubInstallations GithubInstallation[]
+}
+
+model Conversation {
+  id                String            @id @default(cuid())
+  userId            String
+  title             String
+  defaultMode       ConversationMode  @default(AGENT)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  user              UserProfile       @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  mainAgentSession  MainAgentSession?
+  messages          Message[]
+  runs              AgentRun[]
+  codingSessions    CodingSession[]
+  attachments       Attachment[]
+  memoryEntries     MemoryEntry[]
+
+  @@index([userId, updatedAt])
+}
+
+model MainAgentSession {
+  id              String        @id @default(cuid())
+  conversationId  String        @unique
+  userId          String
+  anthropicModel  String?
+  metadataJson    Json?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  conversation    Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user            UserProfile   @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  runs            AgentRun[]
+
+  @@index([userId, updatedAt])
+}
+
+model Message {
+  id             String        @id @default(cuid())
+  conversationId String
+  role           MessageRole
+  contentJson    Json
+  createdAt      DateTime      @default(now())
+  conversation   Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+}
+
+model Attachment {
+  id               String        @id @default(cuid())
+  conversationId   String?
+  runId            String?
+  kind             AttachmentKind @default(OTHER)
+  filename         String
+  mediaType        String
+  sizeBytes        Int?
+  anthropicFileId  String?
+  metadataJson     Json?
+  createdAt        DateTime      @default(now())
+  conversation     Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  run              AgentRun?     @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@index([runId, createdAt])
+}
+
+model RepoBinding {
+  id                  String             @id @default(cuid())
+  userId              String
+  provider            RepoProvider       @default(GITHUB)
+  installationId      String?
+  repoOwner           String
+  repoName            String
+  repoFullName        String
+  defaultBranch       String?
+  metadataJson        Json?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  user                UserProfile        @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  codingSessions      CodingSession[]
+  workspaceSnapshots  WorkspaceSnapshot[]
+
+  @@unique([userId, provider, repoFullName])
+  @@index([userId, updatedAt])
+}
+
+model CodingSession {
+  id                  String               @id @default(cuid())
+  conversationId      String
+  userId              String
+  repoBindingId       String?
+  sandboxId           String?
+  claudeSdkSessionId  String?
+  workspacePath       String?
+  branch              String?
+  status              CodingSessionStatus  @default(PROVISIONING)
+  lastActiveAt        DateTime?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  conversation        Conversation         @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user                UserProfile          @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  repoBinding         RepoBinding?         @relation(fields: [repoBindingId], references: [id], onDelete: SetNull)
+  runs                AgentRun[]
+
+  @@index([conversationId, updatedAt])
+  @@index([userId, updatedAt])
+  @@index([repoBindingId])
+}
+
+model AgentRun {
+  id                  String             @id @default(cuid())
+  conversationId      String
+  userId              String
+  mainAgentSessionId  String?
+  codingSessionId     String?
+  status              RunStatus          @default(PENDING)
+  userPrompt          String
+  finalText           String?
+  finalMessageJson    Json?
+  metadataJson        Json?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  completedAt         DateTime?
+  cancelledAt         DateTime?
+  conversation        Conversation       @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  mainAgentSession    MainAgentSession?  @relation(fields: [mainAgentSessionId], references: [id], onDelete: SetNull)
+  codingSession       CodingSession?     @relation(fields: [codingSessionId], references: [id], onDelete: SetNull)
+  events              RunEvent[]
+  approvals           RunApproval[]
+  attachments         Attachment[]
+
+  @@index([conversationId, createdAt])
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}
+
+model RunEvent {
+  id          String    @id @default(cuid())
+  runId       String
+  type        String
+  payloadJson Json?
+  ts          DateTime  @default(now())
+  run         AgentRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId, ts])
+}
+
+model RunApproval {
+  id            String          @id @default(cuid())
+  runId         String
+  kind          String
+  title         String
+  reason        String?
+  status        ApprovalStatus  @default(PENDING)
+  proposalJson  Json?
+  responseJson  Json?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  resolvedAt    DateTime?
+  run           AgentRun        @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId, status, createdAt])
+}
+
+model MemoryEntry {
+  id             String        @id @default(cuid())
+  userId         String
+  conversationId String?
+  key            String
+  value          String
+  metadataJson   Json?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  user           UserProfile   @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  @@index([userId, key])
+  @@index([conversationId, createdAt])
+}
+
+model WorkspaceSnapshot {
+  id             String        @id @default(cuid())
+  userId         String
+  repoBindingId  String?
+  sandboxId      String?
+  snapshotId     String?
+  label          String?
+  metadataJson   Json?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  user           UserProfile   @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  repoBinding    RepoBinding?  @relation(fields: [repoBindingId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([repoBindingId, createdAt])
+}
+
+model GithubInstallation {
+  id              String      @id @default(cuid())
+  userId          String
+  installationId  String
+  accountLogin    String?
+  metadataJson    Json?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  user            UserProfile @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@unique([userId, installationId])
+  @@index([installationId])
 }

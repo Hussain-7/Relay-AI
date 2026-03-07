@@ -10,16 +10,16 @@ importers:
     dependencies:
       '@ai-sdk/anthropic':
         specifier: ^3.0.54
-        version: 3.0.54(zod@3.25.76)
+        version: 3.0.54(zod@4.3.6)
       '@ai-sdk/openai':
         specifier: ^3.0.39
-        version: 3.0.39(zod@3.25.76)
+        version: 3.0.39(zod@4.3.6)
       '@anthropic-ai/claude-agent-sdk':
         specifier: ^0.2.71
-        version: 0.2.71(zod@3.25.76)
+        version: 0.2.71(zod@4.3.6)
       '@anthropic-ai/sdk':
         specifier: ^0.78.0
-        version: 0.78.0(zod@3.25.76)
+        version: 0.78.0(zod@4.3.6)
       '@e2b/code-interpreter':
         specifier: ^2.3.3
         version: 2.3.3
@@ -37,10 +37,10 @@ importers:
         version: 2.98.0
       ai:
         specifier: ^6.0.111
-        version: 6.0.111(zod@3.25.76)
+        version: 6.0.111(zod@4.3.6)
       inngest:
         specifier: ^3.52.6
-        version: 3.52.6(@opentelemetry/core@2.6.0(@opentelemetry/api@1.9.0))(next@16.1.6(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.3)(zod@3.25.76)
+        version: 3.52.6(@opentelemetry/core@2.6.0(@opentelemetry/api@1.9.0))(next@16.1.6(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.3)(zod@4.3.6)
       next:
         specifier: 16.1.6
         version: 16.1.6(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
@@ -57,8 +57,8 @@ importers:
         specifier: ^2.4.0
         version: 2.4.0(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       zod:
-        specifier: ^3.24.4
-        version: 3.25.76
+        specifier: ^4.3.6
+        version: 4.3.6
     devDependencies:
       '@tailwindcss/postcss':
         specifier: ^4
@@ -3627,36 +3627,39 @@ packages:
   zod@3.25.76:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
+  zod@4.3.6:
+    resolution: {integrity: sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg==}
+
   zwitch@2.0.4:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
 
 snapshots:
 
-  '@ai-sdk/anthropic@3.0.54(zod@3.25.76)':
+  '@ai-sdk/anthropic@3.0.54(zod@4.3.6)':
     dependencies:
       '@ai-sdk/provider': 3.0.8
-      '@ai-sdk/provider-utils': 4.0.17(zod@3.25.76)
-      zod: 3.25.76
+      '@ai-sdk/provider-utils': 4.0.17(zod@4.3.6)
+      zod: 4.3.6
 
-  '@ai-sdk/gateway@3.0.63(zod@3.25.76)':
+  '@ai-sdk/gateway@3.0.63(zod@4.3.6)':
     dependencies:
       '@ai-sdk/provider': 3.0.8
-      '@ai-sdk/provider-utils': 4.0.17(zod@3.25.76)
+      '@ai-sdk/provider-utils': 4.0.17(zod@4.3.6)
       '@vercel/oidc': 3.1.0
-      zod: 3.25.76
+      zod: 4.3.6
 
-  '@ai-sdk/openai@3.0.39(zod@3.25.76)':
+  '@ai-sdk/openai@3.0.39(zod@4.3.6)':
     dependencies:
       '@ai-sdk/provider': 3.0.8
-      '@ai-sdk/provider-utils': 4.0.17(zod@3.25.76)
-      zod: 3.25.76
+      '@ai-sdk/provider-utils': 4.0.17(zod@4.3.6)
+      zod: 4.3.6
 
-  '@ai-sdk/provider-utils@4.0.17(zod@3.25.76)':
+  '@ai-sdk/provider-utils@4.0.17(zod@4.3.6)':
     dependencies:
       '@ai-sdk/provider': 3.0.8
       '@standard-schema/spec': 1.1.0
       eventsource-parser: 3.0.6
-      zod: 3.25.76
+      zod: 4.3.6
 
   '@ai-sdk/provider@3.0.8':
     dependencies:
@@ -3664,9 +3667,9 @@ snapshots:
 
   '@alloc/quick-lru@5.2.0': {}
 
-  '@anthropic-ai/claude-agent-sdk@0.2.71(zod@3.25.76)':
+  '@anthropic-ai/claude-agent-sdk@0.2.71(zod@4.3.6)':
     dependencies:
-      zod: 3.25.76
+      zod: 4.3.6
     optionalDependencies:
       '@img/sharp-darwin-arm64': 0.34.5
       '@img/sharp-darwin-x64': 0.34.5
@@ -3678,11 +3681,11 @@ snapshots:
       '@img/sharp-win32-arm64': 0.34.5
       '@img/sharp-win32-x64': 0.34.5
 
-  '@anthropic-ai/sdk@0.78.0(zod@3.25.76)':
+  '@anthropic-ai/sdk@0.78.0(zod@4.3.6)':
     dependencies:
       json-schema-to-ts: 3.1.1
     optionalDependencies:
-      zod: 3.25.76
+      zod: 4.3.6
 
   '@babel/code-frame@7.29.0':
     dependencies:
@@ -5427,13 +5430,13 @@ snapshots:
 
   agent-base@7.1.4: {}
 
-  ai@6.0.111(zod@3.25.76):
+  ai@6.0.111(zod@4.3.6):
     dependencies:
-      '@ai-sdk/gateway': 3.0.63(zod@3.25.76)
+      '@ai-sdk/gateway': 3.0.63(zod@4.3.6)
       '@ai-sdk/provider': 3.0.8
-      '@ai-sdk/provider-utils': 4.0.17(zod@3.25.76)
+      '@ai-sdk/provider-utils': 4.0.17(zod@4.3.6)
       '@opentelemetry/api': 1.9.0
-      zod: 3.25.76
+      zod: 4.3.6
 
   ajv@6.14.0:
     dependencies:
@@ -6396,7 +6399,7 @@ snapshots:
 
   inline-style-parser@0.2.7: {}
 
-  inngest@3.52.6(@opentelemetry/core@2.6.0(@opentelemetry/api@1.9.0))(next@16.1.6(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.3)(zod@3.25.76):
+  inngest@3.52.6(@opentelemetry/core@2.6.0(@opentelemetry/api@1.9.0))(next@16.1.6(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.3)(zod@4.3.6):
     dependencies:
       '@bufbuild/protobuf': 2.11.0
       '@inngest/ai': 0.1.7
@@ -6423,7 +6426,7 @@ snapshots:
       strip-ansi: 5.2.0
       temporal-polyfill: 0.2.5
       ulid: 2.4.0
-      zod: 3.25.76
+      zod: 4.3.6
     optionalDependencies:
       next: 16.1.6(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       typescript: 5.9.3
@@ -8022,5 +8025,7 @@ snapshots:
       zod: 3.25.76
 
   zod@3.25.76: {}
+
+  zod@4.3.6: {}
 
   zwitch@2.0.4: {}
