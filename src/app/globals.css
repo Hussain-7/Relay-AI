@@ -160,7 +160,7 @@ textarea {
   flex: 1;
   min-height: 0;
   flex-direction: column;
-  gap: 8px;
+  gap: 2px;
   overflow: auto;
   padding-right: 4px;
 }
@@ -177,63 +177,46 @@ textarea {
 .conversation-row {
   display: flex;
   width: 100%;
-  flex-direction: column;
-  gap: 6px;
+  align-items: center;
   border: 1px solid transparent;
-  border-radius: 18px;
+  border-radius: 10px;
   background: transparent;
   color: inherit;
   cursor: pointer;
-  padding: 14px 48px 14px 14px;
+  padding: 8px 38px 8px 12px;
   text-align: left;
-  transition: background 180ms ease, border-color 180ms ease, transform 180ms ease;
+  transition: background 180ms ease, border-color 180ms ease;
 }
 
 .conversation-row:hover,
 .conversation-row-active {
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(232, 210, 162, 0.14);
-  transform: translateX(2px);
 }
 
 .conversation-row-title {
-  font-size: 0.96rem;
+  font-size: 0.88rem;
   font-weight: 500;
-}
-
-.conversation-row-snippet {
-  font-size: 0.8rem;
-  color: var(--muted);
-  line-height: 1.45;
-}
-
-.conversation-row-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  font-size: 0.74rem;
-  color: var(--muted);
-}
-
-.conversation-row-status {
-  text-transform: lowercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .conversation-row-actions {
   position: absolute;
-  top: 10px;
-  right: 10px;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
 }
 
-.conversation-row-menu-button,
-.chat-header-menu-button {
+.conversation-row-menu-button {
   display: inline-grid;
-  height: 34px;
-  width: 34px;
+  height: 28px;
+  width: 28px;
   place-items: center;
-  border-radius: 12px;
+  border-radius: 8px;
   color: rgba(245, 240, 232, 0.52);
+  cursor: pointer;
 }
 
 .conversation-row-menu-button {
@@ -247,8 +230,7 @@ textarea {
   opacity: 1;
 }
 
-.conversation-row-menu-button:hover,
-.chat-header-menu-button:hover {
+.conversation-row-menu-button:hover {
   color: rgba(245, 240, 232, 0.88);
 }
 
@@ -361,6 +343,30 @@ textarea {
   position: relative;
 }
 
+.chat-header-title-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 4px 8px 4px 4px;
+  transition: background 180ms ease;
+}
+
+.chat-header-title-button:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.chat-header-title-button svg {
+  flex-shrink: 0;
+  color: rgba(245, 240, 232, 0.5);
+}
+
 .chat-header-title {
   min-width: 0;
   font-size: clamp(1.2rem, 1.7vw, 1.6rem);
@@ -384,10 +390,23 @@ textarea {
   top: calc(100% + 8px);
   right: 0;
   min-width: 168px;
+  z-index: 10;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
+  border-radius: 12px;
   background: rgba(24, 22, 19, 0.98);
-  padding: 8px;
+  padding: 4px;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
+}
+
+.sidebar-action-menu {
+  position: fixed;
+  z-index: 100;
+  min-width: 148px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(24, 22, 19, 0.98);
+  padding: 4px;
   box-shadow: var(--shadow);
   backdrop-filter: blur(18px);
 }
@@ -627,7 +646,7 @@ textarea {
 
 .activity-accordion {
   width: min(100%, 780px);
-  margin: 14px 0 18px;
+  margin: 18px 0 18px;
 }
 
 .activity-accordion-toggle {
@@ -879,7 +898,7 @@ textarea {
 .composer-panel-landing {
   bottom: 50%;
   padding: 0 30px;
-  transform: translateY(132px);
+  transform: translateY(152px);
 }
 
 .composer-panel-animate-dock {

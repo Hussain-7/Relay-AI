@@ -1,6 +1,7 @@
 "use client";
 
 import { startTransition, useDeferredValue, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Streamdown } from "streamdown";
 
 import type {
@@ -51,6 +52,41 @@ type RenderTimelineEntry =
       title: string;
       description: string;
     };
+
+function SidebarMenuPortal({
+  triggerSelector,
+  onDelete,
+  isDeleting,
+}: {
+  triggerSelector: string;
+  onDelete: (event: React.MouseEvent) => void;
+  isDeleting: boolean;
+}) {
+  return createPortal(
+    <div
+      className="sidebar-action-menu"
+      data-chat-action-menu
+      ref={(el) => {
+        if (!el) return;
+        const btn = document.querySelector(triggerSelector);
+        if (!btn) return;
+        const rect = btn.getBoundingClientRect();
+        el.style.top = `${rect.bottom + 6}px`;
+        el.style.left = `${Math.max(8, rect.right - el.offsetWidth)}px`;
+      }}
+    >
+      <button
+        type="button"
+        className="chat-action-menu-item chat-action-menu-item-danger"
+        onClick={onDelete}
+        disabled={isDeleting}
+      >
+        {isDeleting ? "Deleting…" : "Delete chat"}
+      </button>
+    </div>,
+    document.body,
+  );
+}
 
 function IconPlus() {
   return (
@@ -1209,11 +1245,6 @@ export function ChatWorkspace() {
                   }}
                 >
                   <div className="conversation-row-title">{conversation.title}</div>
-                  <div className="conversation-row-snippet">{previewText(conversation.latestSnippet)}</div>
-                  <div className="conversation-row-meta">
-                    <span>{formatTimeLabel(conversation.updatedAt)}</span>
-                    <span className="conversation-row-status">{conversation.codingStatus ?? conversation.latestRunStatus ?? "idle"}</span>
-                  </div>
                 </button>
 
                 <div className="conversation-row-actions" data-chat-action-menu>
@@ -1232,19 +1263,14 @@ export function ChatWorkspace() {
                   </button>
 
                   {isMenuOpen ? (
-                    <div className="chat-action-menu">
-                      <button
-                        type="button"
-                        className="chat-action-menu-item chat-action-menu-item-danger"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          void handleDeleteConversation(conversation.id);
-                        }}
-                        disabled={isDeleting}
-                      >
-                        {isDeleting ? "Deleting…" : "Delete chat"}
-                      </button>
-                    </div>
+                    <SidebarMenuPortal
+                      triggerSelector={`[aria-label="Open menu for ${CSS.escape(conversation.title)}"]`}
+                      onDelete={(event) => {
+                        event.stopPropagation();
+                        void handleDeleteConversation(conversation.id);
+                      }}
+                      isDeleting={isDeleting}
+                    />
                   ) : null}
                 </div>
               </div>
@@ -1284,12 +1310,11 @@ export function ChatWorkspace() {
       <main className={`chat-panel ${isLandingState ? "chat-panel-landing" : "chat-panel-active"}`}>
         <header className="chat-header">
           <div className="chat-header-main">
-            <div className="chat-header-title">{activeConversation?.title ?? "Loading conversation"}</div>
             {activeConversation ? (
               <div className="chat-header-menu" data-chat-action-menu>
                 <button
                   type="button"
-                  className="ghost-icon-button chat-header-menu-button"
+                  className="chat-header-title-button"
                   aria-label={`Open menu for ${activeConversation.title}`}
                   aria-expanded={headerMenuOpen}
                   onClick={() => {
@@ -1297,7 +1322,8 @@ export function ChatWorkspace() {
                     setHeaderMenuOpen((current) => !current);
                   }}
                 >
-                  <IconMore />
+                  <span className="chat-header-title">{activeConversation.title}</span>
+                  <IconChevron />
                 </button>
 
                 {headerMenuOpen ? (
@@ -1315,7 +1341,9 @@ export function ChatWorkspace() {
                   </div>
                 ) : null}
               </div>
-            ) : null}
+            ) : (
+              <div className="chat-header-title">Loading conversation</div>
+            )}
           </div>
 
           <div className="chat-header-pills">
