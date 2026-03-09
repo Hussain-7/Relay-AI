@@ -1,4 +1,4 @@
-import { getModelCatalog } from "@/lib/main-agent/tool-catalog";
+import { getModelCatalog } from "@/lib/main-agent/model";
 import { getCached } from "@/lib/server-cache";
 
 export async function GET() {

@@ -15,8 +15,8 @@ import { type AttachmentDto, type TimelineEventEnvelope } from "@/lib/contracts"
 import { env, hasAnthropicApiKey } from "@/lib/env";
 import { getConfiguredMcpServers } from "@/lib/main-agent/mcp";
 import { MAIN_AGENT_SYSTEM_PROMPT } from "@/lib/main-agent/system-prompt";
-import { MAIN_AGENT_SERVER_TOOLS } from "@/lib/main-agent/tool-catalog";
-import { createMainAgentTools } from "@/lib/main-agent/tools";
+import { MAIN_AGENT_SERVER_TOOLS } from "@/lib/main-agent/tools";
+import { getMainAgentTools } from "@/lib/main-agent/tools";
 import { prisma } from "@/lib/prisma";
 import { appendRunEvent, serializeSseEvent } from "@/lib/run-events";
 import { invalidateCache } from "@/lib/server-cache";
@@ -540,7 +540,7 @@ export async function streamMainAgentRun(input: {
           orderBy: { createdAt: "asc" },
         });
 
-        const tools = createMainAgentTools({
+        const tools = getMainAgentTools({
           userId: input.userId,
           conversationId: input.conversationId,
           runId: createdRun.id,
