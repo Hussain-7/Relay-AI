@@ -471,21 +471,22 @@ textarea {
 .chat-header-title-button {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   width: auto;
   max-width: min(100%, 42rem);
   min-width: 0;
   border: 0;
-  border-radius: 0;
+  border-radius: 10px;
   background: transparent;
   color: rgba(235, 230, 220, 0.82);
   cursor: pointer;
-  padding: 0;
+  padding: 6px 10px;
   overflow: hidden;
-  transition: color 180ms ease;
+  transition: color 140ms ease, background 140ms ease;
 }
 
 .chat-header-title-button:hover {
+  background: rgba(255, 255, 255, 0.065);
   color: rgba(245, 240, 232, 0.96);
 }
 
