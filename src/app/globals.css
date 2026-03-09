@@ -203,7 +203,6 @@ textarea {
 .chat-markdown a {
   display: inline-flex !important;
   align-items: center;
-  gap: 2px;
   font-family: var(--font-primary-sans), system-ui, sans-serif !important;
   font-size: 0.76rem !important;
   font-weight: 500;
@@ -212,32 +211,40 @@ textarea {
   background: rgba(255, 255, 255, 0.06) !important;
   border: 1px solid rgba(255, 255, 255, 0.08) !important;
   border-radius: 6px !important;
-  padding: 3px 7px 3px 6px !important;
+  padding: 3px 7px !important;
   margin-left: 2px;
   text-decoration: none !important;
   white-space: nowrap;
   vertical-align: baseline;
   position: relative;
   top: -1px;
+  overflow: hidden;
   transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
 }
 
 .chat-markdown a:hover {
-  color: rgba(245, 240, 232, 0.92) !important;
-  background: rgba(100, 149, 237, 0.18) !important;
-  border-color: rgba(100, 149, 237, 0.4) !important;
+  color: rgba(245, 240, 232, 0.96) !important;
+  background: rgba(100, 149, 237, 0.22) !important;
+  border-color: rgba(100, 149, 237, 0.45) !important;
 }
 
 .chat-markdown a::after {
-  content: "↗";
-  font-size: 0.65rem;
-  margin-left: 2px;
-  opacity: 0;
-  transition: opacity 160ms ease;
+  content: none;
 }
 
 .chat-markdown a:hover::after {
-  opacity: 1;
+  content: "↗";
+  position: absolute !important;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 5px 0 12px;
+  font-size: 0.65rem;
+  color: rgba(245, 240, 232, 0.96);
+  background: linear-gradient(90deg, transparent 0%, rgba(55, 70, 110, 0.95) 35%);
+  pointer-events: none;
 }
 
 
