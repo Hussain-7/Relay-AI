@@ -72,7 +72,7 @@ model UserProfile {
 }
 
 model Conversation {
-  id                String            @id @default(cuid())
+  id                String            @id @default(uuid())
   userId            String
   title             String
   defaultMode       ConversationMode  @default(AGENT)
@@ -90,7 +90,7 @@ model Conversation {
 }
 
 model MainAgentSession {
-  id              String        @id @default(cuid())
+  id              String        @id @default(uuid())
   conversationId  String        @unique
   userId          String
   anthropicModel  String?
@@ -105,7 +105,7 @@ model MainAgentSession {
 }
 
 model Message {
-  id             String        @id @default(cuid())
+  id             String        @id @default(uuid())
   conversationId String
   role           MessageRole
   contentJson    Json
@@ -116,7 +116,7 @@ model Message {
 }
 
 model Attachment {
-  id               String        @id @default(cuid())
+  id               String        @id @default(uuid())
   conversationId   String?
   runId            String?
   kind             AttachmentKind @default(OTHER)
@@ -134,7 +134,7 @@ model Attachment {
 }
 
 model RepoBinding {
-  id                  String             @id @default(cuid())
+  id                  String             @id @default(uuid())
   userId              String
   provider            RepoProvider       @default(GITHUB)
   installationId      String?
@@ -154,7 +154,7 @@ model RepoBinding {
 }
 
 model CodingSession {
-  id                  String               @id @default(cuid())
+  id                  String               @id @default(uuid())
   conversationId      String
   userId              String
   repoBindingId       String?
@@ -177,7 +177,7 @@ model CodingSession {
 }
 
 model AgentRun {
-  id                  String             @id @default(cuid())
+  id                  String             @id @default(uuid())
   conversationId      String
   userId              String
   mainAgentSessionId  String?
@@ -204,7 +204,7 @@ model AgentRun {
 }
 
 model RunEvent {
-  id          String    @id @default(cuid())
+  id          String    @id @default(uuid())
   runId       String
   type        String
   payloadJson Json?
@@ -215,7 +215,7 @@ model RunEvent {
 }
 
 model RunApproval {
-  id            String          @id @default(cuid())
+  id            String          @id @default(uuid())
   runId         String
   kind          String
   title         String
@@ -232,7 +232,7 @@ model RunApproval {
 }
 
 model MemoryEntry {
-  id             String        @id @default(cuid())
+  id             String        @id @default(uuid())
   userId         String
   conversationId String?
   key            String
@@ -248,7 +248,7 @@ model MemoryEntry {
 }
 
 model WorkspaceSnapshot {
-  id             String        @id @default(cuid())
+  id             String        @id @default(uuid())
   userId         String
   repoBindingId  String?
   sandboxId      String?
@@ -265,7 +265,7 @@ model WorkspaceSnapshot {
 }
 
 model GithubInstallation {
-  id              String      @id @default(cuid())
+  id              String      @id @default(uuid())
   userId          String
   installationId  String
   accountLogin    String?

@@ -1,10 +1,10 @@
 "use client";
 
-import { useDeferredValue, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useEffectEvent, useMemo, useRef, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 
 import type { AttachmentDto, ConversationDetailDto, ConversationSummaryDto, TimelineEventEnvelope } from "@/lib/contracts";
-import { useChatStore } from "@/lib/chat-store";
 import {
   useModelCatalog,
   useConversations,
@@ -36,15 +36,27 @@ import { SidebarMenuPortal } from "@/components/chat/sidebar-menu-portal";
 import { ComposerModelMenuPortal } from "@/components/chat/composer-model-menu";
 import { AttachmentChip } from "@/components/chat/attachment-chip";
 import { RunThread } from "@/components/chat/run-thread";
+import { setPendingMessage, consumePendingMessage } from "@/lib/pending-message";
 
-export function ChatWorkspace() {
+export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
+  const router = useRouter();
   const queryClient = useQueryClient();
+
+  const activeConversationId = conversationId ?? null;
+  const navigateTo = useCallback(
+    (id: string | null) => {
+      if (id) {
+        router.push(`/chat/${id}`);
+      } else {
+        router.push("/chat/new");
+      }
+    },
+    [router],
+  );
 
   // TanStack Query hooks
   const { data: catalog } = useModelCatalog();
   const { data: conversations = [], isLoading: isLoadingConversations } = useConversations();
-  const activeConversationId = useChatStore((s) => s.activeConversationId);
-  const setActiveConversationId = useChatStore((s) => s.setActiveConversationId);
   const { data: activeConversation, isFetching: isFetchingDetail } = useConversationDetail(activeConversationId);
   const isLoadingDetail = isFetchingDetail && !activeConversation;
 
@@ -125,7 +137,8 @@ export function ChatWorkspace() {
   }, []);
 
   const runs = activeConversation?.runs ?? [];
-  const isLandingState = !isLoadingDetail && runs.length === 0 && !liveRun;
+  const isNewChat = !activeConversationId;
+  const isLandingState = isNewChat || (!isLoadingDetail && runs.length === 0 && !liveRun);
 
   useEffect(() => {
     if (wasLandingRef.current && !isLandingState) {
@@ -142,24 +155,14 @@ export function ChatWorkspace() {
     wasLandingRef.current = isLandingState;
   }, [isLandingState]);
 
-  // Auto-select first conversation once the list has loaded
+  // Auto-send pending message when navigating to a new chat page
   useEffect(() => {
-    if (isLoadingConversations || activeConversationId) return;
-
-    if (conversations.length > 0) {
-      setActiveConversationId(conversations[0]!.id);
-    } else {
-      // Truly empty — create a first conversation
-      createMutation.mutate(undefined, {
-        onSuccess: (conversation) => {
-          setActiveConversationId(conversation.id);
-        },
-        onError: (error) => {
-          setErrorMessage(error instanceof Error ? error.message : "Failed to create initial conversation.");
-        },
-      });
+    if (!conversationId) return;
+    const pending = consumePendingMessage();
+    if (pending && pending.conversationId === conversationId) {
+      void startStream(conversationId, pending.prompt, pending.attachments, true);
     }
-  }, [isLoadingConversations, conversations, activeConversationId]);
+  }, [conversationId]);
 
   function syncScrollShadows() {
     const el = transcriptRef.current;
@@ -179,6 +182,17 @@ export function ChatWorkspace() {
     });
     syncScrollShadows();
   }, [activeConversation, liveRun]);
+
+  // Instant scroll to bottom when switching conversations
+  useEffect(() => {
+    requestAnimationFrame(() => {
+      transcriptRef.current?.scrollTo({
+        top: transcriptRef.current.scrollHeight,
+        behavior: "instant",
+      });
+      syncScrollShadows();
+    });
+  }, [activeConversationId]);
 
   useEffect(() => {
     setOpenConversationMenuId(null);
@@ -202,22 +216,14 @@ export function ChatWorkspace() {
     });
   }, [conversations, deferredSidebarQuery]);
 
-  async function handleCreateConversation() {
+  function handleCreateConversation() {
     setLiveRun(null);
     setComposerAttachments([]);
     setComposerValue("");
     setOpenConversationMenuId(null);
     setHeaderMenuOpen(false);
     setMobileSidebarOpen(false);
-
-    createMutation.mutate(undefined, {
-      onSuccess: (conversation) => {
-        setActiveConversationId(conversation.id);
-      },
-      onError: (error) => {
-        setErrorMessage(error instanceof Error ? error.message : "Failed to create a conversation.");
-      },
-    });
+    navigateTo(null);
   }
 
   async function handleDeleteConversation(conversationId: string) {
@@ -236,9 +242,9 @@ export function ChatWorkspace() {
         if (wasActive) {
           const remaining = conversations.filter((c) => c.id !== conversationId);
           if (remaining.length > 0) {
-            setActiveConversationId(remaining[0]!.id);
+            navigateTo(remaining[0]!.id);
           } else {
-            setActiveConversationId(null);
+            navigateTo(null);
             setLiveRun(null);
             setComposerAttachments([]);
             setComposerValue("");
@@ -310,18 +316,9 @@ export function ChatWorkspace() {
     );
   }
 
-  async function handleSend() {
-    if (!activeConversation || !composerValue.trim() || isSending) {
-      return;
-    }
-
+  async function startStream(conversationId: string, prompt: string, attachments: AttachmentDto[], isNew: boolean) {
     setIsSending(true);
     setErrorMessage(null);
-
-    const prompt = composerValue.trim();
-    const attachments = composerAttachments;
-    const conversationId = activeConversation.id;
-
     setComposerValue("");
     setComposerAttachments([]);
     setLiveRun({
@@ -335,6 +332,11 @@ export function ChatWorkspace() {
     });
 
     try {
+      // Create the conversation in DB if this is a new chat
+      if (isNew) {
+        await createMutation.mutateAsync({ id: conversationId });
+      }
+
       const response = await fetch(`/api/conversations/${conversationId}/messages`, {
         method: "POST",
         headers: {
@@ -508,6 +510,23 @@ export function ChatWorkspace() {
     }
   }
 
+  function handleSend() {
+    if (!composerValue.trim() || isSending) return;
+
+    const prompt = composerValue.trim();
+    const attachments = composerAttachments;
+
+    if (activeConversation) {
+      // Existing chat — stream directly
+      void startStream(activeConversation.id, prompt, attachments, false);
+    } else {
+      // New chat — generate UUID, store pending message, navigate instantly
+      const newId = crypto.randomUUID();
+      setPendingMessage({ conversationId: newId, prompt, attachments });
+      router.push(`/chat/${newId}`);
+    }
+  }
+
   function handleSelectMainModel(modelId: string) {
     if (!activeConversation || activeConversation.mainAgentModel === modelId) {
       setModelMenuOpen(false);
@@ -529,7 +548,7 @@ export function ChatWorkspace() {
 
   function handleSelectConversation(id: string) {
     if (id === activeConversationId) return;
-    setActiveConversationId(id);
+    navigateTo(id);
     setLiveRun(null);
     setErrorMessage(null);
     setMobileSidebarOpen(false);
@@ -742,18 +761,22 @@ export function ChatWorkspace() {
 
         <div className="chat-stage relative min-h-0 overflow-hidden min-w-0" ref={stageRef}>
           {isLoadingDetail ? (
-            <div className="h-full pt-2 px-[30px] max-[980px]:px-[18px]">
-              <div className="max-w-[860px] mx-auto flex flex-col gap-6 pt-4">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i} className="flex flex-col gap-3">
-                    <div className="self-end w-[40%] h-[38px] rounded-[18px] bg-[rgba(255,255,255,0.04)] animate-pulse" />
-                    <div className="flex flex-col gap-2 w-[75%]">
-                      <div className="h-[14px] rounded-[6px] bg-[rgba(255,255,255,0.05)] animate-pulse" />
-                      <div className="h-[14px] rounded-[6px] bg-[rgba(255,255,255,0.04)] animate-pulse" style={{ width: "85%" }} />
-                      <div className="h-[14px] rounded-[6px] bg-[rgba(255,255,255,0.03)] animate-pulse" style={{ width: "60%" }} />
-                    </div>
-                  </div>
-                ))}
+            <div className="h-full pt-6 px-[30px] max-[980px]:px-[18px]">
+              <div className="max-w-[860px] mx-auto flex flex-col gap-5">
+                <div className="flex justify-end">
+                  <div className="h-[42px] w-[160px] rounded-[20px] bg-[rgba(255,255,255,0.06)] animate-pulse" />
+                </div>
+                <div className="flex flex-col gap-[10px] mt-2">
+                  <div className="h-[13px] rounded-[4px] bg-[rgba(255,255,255,0.07)] animate-pulse" style={{ width: "82%" }} />
+                  <div className="h-[13px] rounded-[4px] bg-[rgba(255,255,255,0.06)] animate-pulse" style={{ width: "95%" }} />
+                  <div className="h-[13px] rounded-[4px] bg-[rgba(255,255,255,0.07)] animate-pulse" style={{ width: "88%" }} />
+                  <div className="h-[13px] rounded-[4px] bg-[rgba(255,255,255,0.06)] animate-pulse" style={{ width: "74%" }} />
+                  <div className="h-[13px] rounded-[4px] bg-[rgba(255,255,255,0.07)] animate-pulse" style={{ width: "91%" }} />
+                  <div className="h-[13px] rounded-[4px] bg-[rgba(255,255,255,0.06)] animate-pulse" style={{ width: "80%" }} />
+                  <div className="h-[13px] rounded-[4px] bg-[rgba(255,255,255,0.05)] animate-pulse" style={{ width: "65%" }} />
+                  <div className="h-[13px] rounded-[4px] bg-[rgba(255,255,255,0.06)] animate-pulse" style={{ width: "72%" }} />
+                </div>
+                <div className="h-[13px] w-[120px] rounded-[4px] bg-[rgba(255,255,255,0.04)] animate-pulse mt-4" />
               </div>
             </div>
           ) : isLandingState ? (

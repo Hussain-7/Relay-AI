@@ -69,23 +69,23 @@ export function useCreateConversation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async () => {
+    mutationFn: async (vars?: { id?: string }) => {
       const data = await fetchJson<{ conversation: ConversationDetailDto }>(
         "/api/conversations",
-        { method: "POST", body: JSON.stringify({}) },
+        { method: "POST", body: JSON.stringify({ id: vars?.id }) },
       );
       return data.conversation;
     },
-    onMutate: async () => {
+    onMutate: async (vars) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.conversations });
       const previous = queryClient.getQueryData<ConversationSummaryDto[]>(
         queryKeys.conversations,
       );
 
-      const tempId = `temp-${Date.now()}`;
+      const optimisticId = vars?.id ?? `temp-${Date.now()}`;
       const now = new Date().toISOString();
       const optimistic: ConversationSummaryDto = {
-        id: tempId,
+        id: optimisticId,
         title: "New chat",
         defaultMode: "AGENT",
         createdAt: now,
@@ -100,18 +100,16 @@ export function useCreateConversation() {
         (old) => [optimistic, ...(old ?? [])],
       );
 
-      return { previous, tempId };
+      return { previous, optimisticId };
     },
     onSuccess: (conversation, _vars, context) => {
-      // Replace optimistic entry with real one in list
       queryClient.setQueryData<ConversationSummaryDto[]>(
         queryKeys.conversations,
         (old) =>
           (old ?? []).map((c) =>
-            c.id === context?.tempId ? toSummary(conversation) : c,
+            c.id === context?.optimisticId ? toSummary(conversation) : c,
           ),
       );
-      // Seed the detail cache
       queryClient.setQueryData(
         queryKeys.conversation(conversation.id),
         conversation,

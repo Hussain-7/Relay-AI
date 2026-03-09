@@ -5,6 +5,7 @@ import { requireRequestUser } from "@/lib/server-auth";
 import { getCached, invalidateCache } from "@/lib/server-cache";
 
 const createConversationSchema = z.object({
+  id: z.string().uuid().optional(),
   title: z.string().trim().optional(),
 });
 
@@ -36,6 +37,7 @@ export async function POST(request: Request) {
     const body = createConversationSchema.parse(await request.json().catch(() => ({})));
     const conversation = await createConversationForUser({
       userId: user.userId,
+      id: body.id,
       title: body.title,
     });
     const detail = await getConversationDetail({
