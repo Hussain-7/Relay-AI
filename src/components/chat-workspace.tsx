@@ -148,6 +148,13 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   const hasLiveContent = Boolean(liveRun);
   const isLandingState = !hasLiveContent && (isNewChat || (!isLoadingDetail && runs.length === 0));
 
+  // Clear liveRun once the fetched runs include it — guarantees no DOM gap
+  useEffect(() => {
+    if (liveRun?.runId && runs.some((r) => r.id === liveRun.runId)) {
+      setLiveRun(null);
+    }
+  }, [runs, liveRun]);
+
   // Only animate the composer dock when going from the /chat/new landing to a conversation
   // (first message sent). Don't animate when switching between existing chats.
   useEffect(() => {
@@ -532,14 +539,8 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
         });
       }
 
-      // Clear liveRun after React has rendered the cache-patched runs.
-      // The two-frame delay ensures the patched `activeConversation.runs`
-      // is in the DOM before liveRun is removed, preventing scroll jumps.
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          setLiveRun(null);
-        });
-      });
+      // Don't clear liveRun here — the effect below will clear it
+      // once `runs` includes this run ID, preventing any DOM gap.
     } catch (error) {
       const message = error instanceof Error ? normalizeApiErrorMessage(error.message) : "Failed to send prompt.";
       setErrorMessage(message);

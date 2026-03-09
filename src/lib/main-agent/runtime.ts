@@ -97,11 +97,117 @@ function normalizeConversationTitle(title: string, fallbackTitle: string) {
   return capped.length > 40 ? `${capped.slice(0, 39).trimEnd()}…` : capped;
 }
 
-function getTextFromContentBlocks(content: BetaContentBlock[]) {
-  return content
-    .filter((block): block is Extract<BetaContentBlock, { type: "text" }> => block.type === "text")
-    .map((block) => block.text)
-    .join("");
+interface Citation {
+  url: string;
+  title: string;
+  cited_text: string;
+}
+
+function getDomain(url: string) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
+function getTextWithCitations(content: BetaContentBlock[]) {
+  const parts: string[] = [];
+
+  for (const block of content) {
+    if (block.type !== "text") continue;
+
+    const textBlock = block as unknown as {
+      type: "text";
+      text: string;
+      citations?: Array<{
+        type: string;
+        url?: string;
+        title?: string;
+        cited_text?: string;
+      }>;
+    };
+
+    if (!textBlock.citations?.length) {
+      parts.push(textBlock.text);
+      continue;
+    }
+
+    const citations: Citation[] = [];
+    for (const c of textBlock.citations) {
+      if (c.url && c.title && c.cited_text) {
+        citations.push({ url: c.url, title: c.title, cited_text: c.cited_text });
+      }
+    }
+
+    if (citations.length === 0) {
+      parts.push(textBlock.text);
+      continue;
+    }
+
+    const insertions: Array<{ index: number; link: string }> = [];
+    const usedUrls = new Set<string>();
+
+    for (const citation of citations) {
+      if (usedUrls.has(citation.url)) continue;
+
+      const searchText = citation.cited_text.replace(/\.{3}$/, "").trim();
+      let matchStart = textBlock.text.indexOf(searchText);
+
+      if (matchStart === -1 && searchText.length > 60) {
+        matchStart = textBlock.text.indexOf(searchText.slice(0, 60));
+      }
+      if (matchStart === -1 && searchText.length > 30) {
+        matchStart = textBlock.text.indexOf(searchText.slice(0, 30));
+      }
+
+      if (matchStart === -1) {
+        const domain = getDomain(citation.url);
+        const safeTitle = citation.title.replace(/"/g, "'");
+        insertions.push({
+          index: textBlock.text.length,
+          link: ` [${domain}](${citation.url} "${safeTitle}")`,
+        });
+        usedUrls.add(citation.url);
+        continue;
+      }
+
+      const matchEnd = matchStart + searchText.length;
+      const sentenceEndPattern = /[.!?](?:\s|$)/g;
+      sentenceEndPattern.lastIndex = matchEnd > 0 ? matchEnd - 1 : 0;
+
+      let sentenceEnd = -1;
+      const sentenceMatch = sentenceEndPattern.exec(textBlock.text);
+      if (sentenceMatch) {
+        sentenceEnd = sentenceMatch.index + 1;
+      }
+
+      if (sentenceEnd === -1) {
+        sentenceEndPattern.lastIndex = matchStart;
+        const fallbackMatch = sentenceEndPattern.exec(textBlock.text);
+        sentenceEnd = fallbackMatch ? fallbackMatch.index + 1 : textBlock.text.length;
+      }
+
+      const domain = getDomain(citation.url);
+      const safeTitle = citation.title.replace(/"/g, "'");
+      insertions.push({
+        index: sentenceEnd,
+        link: ` [${domain}](${citation.url} "${safeTitle}")`,
+      });
+      usedUrls.add(citation.url);
+    }
+
+    insertions.sort((a, b) => b.index - a.index);
+
+    let result = textBlock.text;
+    for (const ins of insertions) {
+      result = result.slice(0, ins.index) + ins.link + result.slice(ins.index);
+    }
+
+    parts.push(result);
+  }
+
+  return parts.join("");
 }
 
 function getAssistantHistoryContent(content: unknown): BetaContentBlockParam[] | string {
@@ -483,6 +589,11 @@ export async function streamMainAgentRun(input: {
           const indexToToolUseId = new Map<number, string>();
           const indexToToolName = new Map<number, string>();
 
+          // Track pending citations per block index for inline streaming citations
+          // Each citation includes cited_text so we know when the cited content has been streamed
+          const pendingCitations = new Map<number, Array<{ url: string; title: string; cited_text: string }>>();
+          const blockTextBuffer = new Map<number, string>();
+
           for await (const rawEvent of assistantIteration as AsyncIterable<BetaRawMessageStreamEvent>) {
             if (rawEvent.type === "content_block_start") {
               const block = rawEvent.content_block;
@@ -554,10 +665,99 @@ export async function streamMainAgentRun(input: {
               }
             }
 
-            if (rawEvent.type === "content_block_delta") {
-              if (rawEvent.delta.type === "text_delta") {
+            // Clean up citation state when a block ends
+            if (rawEvent.type === "content_block_stop") {
+              // If there are leftover pending citations when block ends, flush them
+              const leftover = pendingCitations.get(rawEvent.index);
+              if (leftover?.length) {
+                const citationSuffix = leftover.map((c) => {
+                  const domain = getDomain(c.url);
+                  const safeTitle = c.title.replace(/"/g, "'");
+                  return ` [${domain}](${c.url} "${safeTitle}")`;
+                }).join("");
                 await emit("assistant.text.delta", "main_agent", {
-                  delta: rawEvent.delta.text,
+                  delta: citationSuffix,
+                  index: rawEvent.index,
+                });
+                pendingCitations.delete(rawEvent.index);
+              }
+              blockTextBuffer.delete(rawEvent.index);
+            }
+
+            if (rawEvent.type === "content_block_delta") {
+              // Capture citation deltas with cited_text
+              const delta = rawEvent.delta as unknown as Record<string, unknown>;
+              if (delta.type === "citations_delta" && delta.citation) {
+                const citation = delta.citation as { url?: string; title?: string; cited_text?: string };
+                if (citation.url && citation.title && citation.cited_text) {
+                  const existing = pendingCitations.get(rawEvent.index) ?? [];
+                  if (!existing.some((c) => c.url === citation.url)) {
+                    existing.push({
+                      url: citation.url,
+                      title: citation.title,
+                      cited_text: citation.cited_text.replace(/\.{3}$/, "").trim(),
+                    });
+                    pendingCitations.set(rawEvent.index, existing);
+                  }
+                }
+              }
+
+              if (rawEvent.delta.type === "text_delta") {
+                const citations = pendingCitations.get(rawEvent.index);
+                let textToEmit = rawEvent.delta.text;
+
+                if (citations?.length) {
+                  // Accumulate buffer to match against cited_text
+                  const buffer = (blockTextBuffer.get(rawEvent.index) ?? "") + rawEvent.delta.text;
+                  blockTextBuffer.set(rawEvent.index, buffer);
+
+                  // Check each pending citation: has the buffer accumulated enough
+                  // of the cited_text AND does the current delta end a sentence?
+                  const toPlace: typeof citations = [];
+                  const remaining: typeof citations = [];
+
+                  for (const c of citations) {
+                    // Use a prefix of cited_text (first 30 chars) to check if
+                    // we've streamed past the cited content
+                    const probe = c.cited_text.slice(0, 30);
+                    const bufferHasCitedContent = buffer.includes(probe);
+
+                    if (bufferHasCitedContent) {
+                      toPlace.push(c);
+                    } else {
+                      remaining.push(c);
+                    }
+                  }
+
+                  if (toPlace.length > 0) {
+                    // Look for sentence end in current delta
+                    const sentenceEndMatch = rawEvent.delta.text.match(/[.!?](?:\s|$)/);
+                    if (sentenceEndMatch) {
+                      const insertPos = sentenceEndMatch.index! + 1;
+                      const citationSuffix = toPlace.map((c) => {
+                        const domain = getDomain(c.url);
+                        const safeTitle = c.title.replace(/"/g, "'");
+                        return ` [${domain}](${c.url} "${safeTitle}")`;
+                      }).join("");
+
+                      textToEmit =
+                        rawEvent.delta.text.slice(0, insertPos) +
+                        citationSuffix +
+                        rawEvent.delta.text.slice(insertPos);
+
+                      // Update pending — keep only unplaced citations
+                      if (remaining.length > 0) {
+                        pendingCitations.set(rawEvent.index, remaining);
+                      } else {
+                        pendingCitations.delete(rawEvent.index);
+                      }
+                      blockTextBuffer.delete(rawEvent.index);
+                    }
+                  }
+                }
+
+                await emit("assistant.text.delta", "main_agent", {
+                  delta: textToEmit,
                   index: rawEvent.index,
                 });
               }
@@ -585,7 +785,11 @@ export async function streamMainAgentRun(input: {
         }
 
         const finalMessage: BetaMessage = await runner.done();
-        const finalText = getTextFromContentBlocks(finalMessage.content);
+
+        // Debug: log raw finalMessage content blocks
+        console.log("[raw-response]", JSON.stringify(finalMessage.content, null, 2));
+
+        const finalText = getTextWithCitations(finalMessage.content);
 
         await prisma.message.create({
           data: {

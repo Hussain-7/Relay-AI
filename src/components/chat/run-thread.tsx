@@ -60,9 +60,19 @@ export function RunThread({
       {finalText ? (
         <div className="message-row flex w-full min-w-0 justify-start">
           <div className="group/msg flex flex-col max-w-[min(100%,780px)] min-w-0 items-start max-[980px]:max-w-full">
-            <div className="agent-response w-[min(100%,780px)] min-w-0 max-w-full pt-0.5 max-[980px]:w-full max-[980px]:max-w-full" aria-label="Assistant response">
+            <div
+              className="agent-response w-[min(100%,780px)] min-w-0 max-w-full pt-0.5 max-[980px]:w-full max-[980px]:max-w-full"
+              aria-label="Assistant response"
+              onClick={(e) => {
+                const anchor = (e.target as HTMLElement).closest("a[href]") as HTMLAnchorElement | null;
+                if (anchor?.href) {
+                  e.preventDefault();
+                  window.open(anchor.href, "_blank", "noopener,noreferrer");
+                }
+              }}
+            >
               <div className="chat-markdown mt-0 min-w-0 max-w-full">
-                <Streamdown mode="streaming" isAnimating={Boolean(isLive)} caret="block">
+                <Streamdown mode="streaming" isAnimating={Boolean(isLive)} caret="block" linkSafety={{ enabled: false }}>
                   {finalText}
                 </Streamdown>
               </div>

@@ -23,7 +23,7 @@ export const MAIN_AGENT_SERVER_TOOLS = [
     description: "Current web search for research and fact verification.",
     tool: {
       name: "web_search" as const,
-      type: "web_search_20260209" as const,
+      type: "web_search_20250305" as const,
       max_uses: 6,
     },
   },

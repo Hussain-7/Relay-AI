@@ -25,7 +25,7 @@ export function RunActivityAccordion({
         onClick={() => setIsExpanded((current) => !current)}
         aria-expanded={isExpanded}
       >
-        <span className="min-w-0 text-[rgba(245,240,232,0.68)] text-[0.92rem] leading-[1.35]">{summary}</span>
+        <span className={`min-w-0 text-[rgba(245,240,232,0.68)] text-[0.92rem] leading-[1.35] ${isLive ? "activity-shimmer" : ""}`}>{summary}</span>
         <span className="inline-flex items-center gap-2 text-[rgba(245,240,232,0.42)]">
           <span className={`inline-grid place-items-center transition-transform duration-[180ms] ease-linear ${isExpanded ? "rotate-0" : "-rotate-90"}`} aria-hidden="true">
             <IconChevron />

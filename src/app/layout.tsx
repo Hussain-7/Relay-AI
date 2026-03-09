@@ -30,7 +30,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${primarySans.variable} ${primarySerif.variable} ${primaryMono.variable} antialiased`}>
+      <body suppressHydrationWarning className={`${primarySans.variable} ${primarySerif.variable} ${primaryMono.variable} antialiased`}>
         <QueryProvider>{children}</QueryProvider>
       </body>
     </html>

@@ -198,6 +198,99 @@ textarea {
   margin-bottom: 0;
 }
 
+/* ── Citation links (Claude-style inline source chips) ── */
+
+.chat-markdown a {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 2px;
+  font-family: var(--font-primary-sans), system-ui, sans-serif !important;
+  font-size: 0.76rem !important;
+  font-weight: 500;
+  line-height: 1 !important;
+  color: rgba(245, 240, 232, 0.62) !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 6px !important;
+  padding: 3px 7px 3px 6px !important;
+  margin-left: 2px;
+  text-decoration: none !important;
+  white-space: nowrap;
+  vertical-align: baseline;
+  position: relative;
+  top: -1px;
+  transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+
+.chat-markdown a:hover {
+  color: rgba(245, 240, 232, 0.92) !important;
+  background: rgba(100, 149, 237, 0.18) !important;
+  border-color: rgba(100, 149, 237, 0.4) !important;
+}
+
+.chat-markdown a::after {
+  content: "↗";
+  font-size: 0.65rem;
+  margin-left: 2px;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.chat-markdown a:hover::after {
+  opacity: 1;
+}
+
+.chat-markdown a::before {
+  content: attr(title);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 12px;
+  background: rgba(42, 40, 36, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  color: rgba(245, 240, 232, 0.82);
+  font-size: 0.78rem;
+  font-weight: 400;
+  line-height: 1.4;
+  white-space: normal;
+  max-width: 280px;
+  width: max-content;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 160ms ease;
+  z-index: 50;
+}
+
+.chat-markdown a:hover::before {
+  opacity: 1;
+}
+
+/* ── Activity shimmer (processing indicator) ── */
+
+.activity-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(245, 240, 232, 0.68) 0%,
+    rgba(245, 240, 232, 0.68) 40%,
+    rgba(245, 240, 232, 0.92) 50%,
+    rgba(245, 240, 232, 0.68) 60%,
+    rgba(245, 240, 232, 0.68) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer-sweep 2s ease-in-out infinite;
+}
+
+@keyframes shimmer-sweep {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
 /* ── Animations ── */
 
 @media (prefers-reduced-motion: no-preference) {
