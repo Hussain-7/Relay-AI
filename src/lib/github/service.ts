@@ -22,7 +22,28 @@ export function getGitHubConfigurationStatus() {
   return {
     configured: hasGitHubAppConfig(),
     slug: env.GITHUB_APP_SLUG ?? null,
+    installUrl: hasGitHubAppConfig() ? `/api/github/install` : null,
   };
+}
+
+async function getInstallationClient(userId: string) {
+  if (!hasGitHubAppConfig()) return null;
+
+  const installation = await prisma.githubInstallation.findFirst({
+    where: { userId },
+    orderBy: { updatedAt: "desc" },
+  });
+
+  if (!installation) return null;
+
+  return new Octokit({
+    authStrategy: createAppAuth,
+    auth: {
+      appId: env.GITHUB_APP_ID!,
+      privateKey: env.GITHUB_APP_PRIVATE_KEY!,
+      installationId: Number(installation.installationId),
+    },
+  });
 }
 
 export async function listKnownRepos(userId: string) {
@@ -83,9 +104,10 @@ export async function createRemoteRepo(input: {
   description?: string;
   isPrivate?: boolean;
 }) {
-  const appClient = createGithubAppClient();
+  const client = await getInstallationClient(input.userId);
 
-  if (!appClient || !input.owner) {
+  if (!client) {
+    // No GitHub App installed — create a local-only binding
     return connectRepoBinding({
       userId: input.userId,
       repoFullName: `${input.owner ?? "pending"}/${input.name}`,
@@ -93,8 +115,25 @@ export async function createRemoteRepo(input: {
     });
   }
 
-  const response = await appClient.request("POST /orgs/{org}/repos", {
-    org: input.owner,
+  if (input.owner) {
+    // Create in org
+    const response = await client.request("POST /orgs/{org}/repos", {
+      org: input.owner,
+      name: input.name,
+      description: input.description,
+      private: input.isPrivate ?? true,
+      auto_init: true,
+    });
+
+    return connectRepoBinding({
+      userId: input.userId,
+      repoFullName: response.data.full_name,
+      defaultBranch: response.data.default_branch,
+    });
+  }
+
+  // Create in user's personal account
+  const response = await client.request("POST /user/repos", {
     name: input.name,
     description: input.description,
     private: input.isPrivate ?? true,
@@ -110,17 +149,12 @@ export async function createRemoteRepo(input: {
 
 export async function createPullRequestForBinding(input: {
   repoBindingId: string;
+  userId: string;
   title: string;
   body: string;
   head: string;
   base?: string;
 }) {
-  const appClient = createGithubAppClient();
-
-  if (!appClient) {
-    throw new Error("GitHub App is not fully configured.");
-  }
-
   const binding = await prisma.repoBinding.findUnique({
     where: { id: input.repoBindingId },
   });
@@ -129,7 +163,13 @@ export async function createPullRequestForBinding(input: {
     throw new Error("Repo binding not found.");
   }
 
-  const response = await appClient.request("POST /repos/{owner}/{repo}/pulls", {
+  const client = await getInstallationClient(input.userId);
+
+  if (!client) {
+    throw new Error("GitHub App is not installed. Visit /api/github/install to connect your GitHub account.");
+  }
+
+  const response = await client.request("POST /repos/{owner}/{repo}/pulls", {
     owner: binding.repoOwner,
     repo: binding.repoName,
     title: input.title,

@@ -134,6 +134,7 @@ export function createGithubCreatePrTool(ctx: ToolRuntimeContext) {
     async run(input) {
       try {
         const pullRequest = await createPullRequestForBinding({
+          userId: ctx.userId,
           repoBindingId: input.repoBindingId,
           title: input.title,
           body: input.body,

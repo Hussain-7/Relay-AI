@@ -38,6 +38,14 @@ export type RenderTimelineEntry =
       kind: "approval";
       title: string;
       description: string;
+    }
+  | {
+      id: string;
+      kind: "action";
+      title: string;
+      description: string;
+      actionLabel: string;
+      actionUrl: string;
     };
 
 export function formatShortTime(iso: string) {

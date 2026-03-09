@@ -13,6 +13,7 @@ export const queryKeys = {
   models: ["models"] as const,
   conversations: ["conversations"] as const,
   conversation: (id: string) => ["conversation", id] as const,
+  githubStatus: ["github-status"] as const,
 };
 
 export function useModelCatalog() {
@@ -20,6 +21,18 @@ export function useModelCatalog() {
     queryKey: queryKeys.models,
     queryFn: () => fetchJson<ModelCatalogDto>("/api/models"),
     staleTime: Infinity,
+  });
+}
+
+export function useGithubStatus() {
+  return useQuery({
+    queryKey: queryKeys.githubStatus,
+    queryFn: () =>
+      fetchJson<{ configured: boolean; installed: boolean; installUrl?: string }>(
+        "/api/github/status",
+      ),
+    staleTime: 60 * 1000,
+    refetchOnWindowFocus: true,
   });
 }
 
