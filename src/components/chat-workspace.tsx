@@ -1,906 +1,34 @@
 "use client";
 
-import { startTransition, useDeferredValue, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { Streamdown } from "streamdown";
+import { useDeferredValue, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
-import type { AttachmentDto, ConversationDetailDto, ModelCatalogDto, TimelineEventEnvelope } from "@/lib/contracts";
+import type { AttachmentDto, ConversationDetailDto, TimelineEventEnvelope } from "@/lib/contracts";
 import { useChatStore } from "@/lib/chat-store";
-
-type LiveRunState = {
-  runId: string | null;
-  userPrompt: string;
-  attachments: AttachmentDto[];
-  events: TimelineEventEnvelope[];
-  partialText: string;
-  status: "running" | "failed";
-  error: string | null;
-};
-
-type ToolTimelineEntry = {
-  id: string;
-  kind: "tool";
-  title: string;
-  runtime: string | null;
-  status: "running" | "completed" | "failed";
-  input: string;
-  output: string;
-};
-
-type RenderTimelineEntry =
-  | {
-      id: string;
-      kind: "thinking";
-      text: string;
-    }
-  | ToolTimelineEntry
-  | {
-      id: string;
-      kind: "system";
-      title: string;
-      description: string;
-    }
-  | {
-      id: string;
-      kind: "approval";
-      title: string;
-      description: string;
-    };
-
-function IconClose() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4">
-      <path d="M18 6 6 18M6 6l12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function IconSidebarToggle() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4">
-      <rect x="3" y="3" width="18" height="18" rx="3" fill="none" stroke="currentColor" strokeWidth="1.6" />
-      <line x1="9" y1="3" x2="9" y2="21" stroke="currentColor" strokeWidth="1.6" />
-    </svg>
-  );
-}
-
-function SidebarMenuPortal({
-  triggerSelector,
-  onDelete,
-  isDeleting,
-}: {
-  triggerSelector: string;
-  onDelete: (event: React.MouseEvent) => void;
-  isDeleting: boolean;
-}) {
-  return createPortal(
-    <div
-      className="sidebar-action-menu"
-      data-chat-action-menu
-      ref={(el) => {
-        if (!el) return;
-        const btn = document.querySelector(triggerSelector);
-        if (!btn) return;
-        const rect = btn.getBoundingClientRect();
-        el.style.top = `${rect.bottom + 6}px`;
-        el.style.left = `${Math.max(8, rect.right - el.offsetWidth)}px`;
-      }}
-    >
-      <button
-        type="button"
-        className="chat-action-menu-item chat-action-menu-item-danger"
-        onClick={onDelete}
-        disabled={isDeleting}
-      >
-        {isDeleting ? "Deleting…" : "Delete chat"}
-      </button>
-    </div>,
-    document.body,
-  );
-}
-
-function ComposerModelMenuPortal({
-  anchor,
-  models,
-  selectedModelId,
-  isUpdating,
-  onSelect,
-}: {
-  anchor: HTMLElement | null;
-  models: ModelCatalogDto["availableMainModels"];
-  selectedModelId: string;
-  isUpdating: boolean;
-  onSelect: (modelId: string) => void;
-}) {
-  const panelRef = useRef<HTMLDivElement | null>(null);
-
-  useLayoutEffect(() => {
-    if (!anchor || !panelRef.current) return;
-
-    const updatePosition = () => {
-      if (!anchor || !panelRef.current) return;
-      const rect = anchor.getBoundingClientRect();
-      const panel = panelRef.current;
-      const width = Math.min(336, window.innerWidth - 24);
-      const left = Math.min(Math.max(12, rect.right - width), window.innerWidth - width - 12);
-
-      panel.style.width = `${width}px`;
-      panel.style.left = `${left}px`;
-      panel.style.top = `${Math.max(12, rect.top - panel.offsetHeight - 10)}px`;
-    };
-
-    updatePosition();
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
-
-    return () => {
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
-    };
-  }, [anchor, models.length]);
-
-  return createPortal(
-    <div
-      className="composer-model-dropdown"
-      data-chat-action-menu
-      ref={panelRef}
-    >
-      <div className="composer-model-dropdown-header">Choose model</div>
-      {models.map((model) => {
-        const isSelected = selectedModelId === model.id;
-
-        return (
-          <button
-            key={model.id}
-            type="button"
-            className={`composer-model-option ${isSelected ? "composer-model-option-selected" : ""}`}
-            onClick={() => onSelect(model.id)}
-            disabled={isUpdating}
-          >
-            <span className="composer-model-option-copy">
-              <span className="composer-model-option-label">{model.label}</span>
-              <span className="composer-model-option-description">{model.description}</span>
-            </span>
-            {isSelected ? (
-              <span className="composer-model-option-check" aria-hidden="true">
-                <IconCheck />
-              </span>
-            ) : null}
-          </button>
-        );
-      })}
-    </div>,
-    document.body,
-  );
-}
-
-function IconPlus() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4">
-      <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function IconSearch() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4">
-      <circle cx="11" cy="11" r="6" fill="none" stroke="currentColor" strokeWidth="1.8" />
-      <path d="m16 16 4 4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function IconArrowUp() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4">
-      <path d="M12 18V7" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
-      <path d="m7.5 11.5 4.5-4.5 4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function IconSpark() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4">
-      <path d="M12 3.5 13.9 9l5.6 1.9-5.6 1.9L12 18.5l-1.9-5.7L4.5 10.9 10.1 9 12 3.5Z" fill="currentColor" />
-    </svg>
-  );
-}
-
-function IconChevron() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4">
-      <path d="m8 10 4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function IconMore() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4">
-      <circle cx="5" cy="12" r="1.75" fill="currentColor" />
-      <circle cx="12" cy="12" r="1.75" fill="currentColor" />
-      <circle cx="19" cy="12" r="1.75" fill="currentColor" />
-    </svg>
-  );
-}
-
-function IconCheck() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4">
-      <path d="m6.5 12.5 3.4 3.4 7.6-8" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function IconTool() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4">
-      <path d="M14.5 6.5a4 4 0 0 0-5.2 5.2l-4.6 4.6a1.4 1.4 0 1 0 2 2l4.6-4.6a4 4 0 0 0 5.2-5.2l-2.1 2.1-1.9-1.9 2-2.2Z" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function IconThinking() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4">
-      <path d="M12 6v6l3 2" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="12" cy="12" r="7.25" fill="none" stroke="currentColor" strokeWidth="1.7" />
-    </svg>
-  );
-}
-
-function IconDone() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4">
-      <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="1.7" />
-      <path d="m8.5 12.2 2.3 2.4 4.8-5.1" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function IconInfo() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4">
-      <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="1.7" />
-      <path d="M12 10.5v5" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-      <circle cx="12" cy="7.8" r="1" fill="currentColor" />
-    </svg>
-  );
-}
-
-function IconCopy() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4">
-      <rect x="9" y="9" width="10" height="10" rx="2" fill="none" stroke="currentColor" strokeWidth="1.6" />
-      <path d="M5 15V6a2 2 0 0 1 2-2h9" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function CopyButton({ text, label }: { text: string; label?: string }) {
-  const [copied, setCopied] = useState(false);
-
-  return (
-    <button
-      type="button"
-      className="msg-action-btn"
-      aria-label={label ?? "Copy"}
-      onClick={() => {
-        void navigator.clipboard.writeText(text).then(() => {
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1800);
-        });
-      }}
-    >
-      {copied ? <IconCheck /> : <IconCopy />}
-    </button>
-  );
-}
-
-function formatShortTime(iso: string) {
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(iso));
-}
-
-function formatTimeLabel(iso: string) {
-  return new Intl.DateTimeFormat(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-    month: "short",
-    day: "numeric",
-  }).format(new Date(iso));
-}
-
-function previewText(value: string | null) {
-  if (!value) {
-    return "No reply yet";
-  }
-
-  return value.length > 82 ? `${value.slice(0, 82)}…` : value;
-}
-
-function stringifyUnknown(value: unknown) {
-  if (value == null) {
-    return "";
-  }
-
-  if (typeof value === "string") {
-    return value;
-  }
-
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
-}
-
-function formatModelDisplayName(model: string | null | undefined) {
-  if (!model) {
-    return "Model";
-  }
-
-  if (model.includes("sonnet")) {
-    const match = model.match(/sonnet-(\d+)-(\d+)/i);
-    const version = match ? `${match[1]}.${match[2]}` : "";
-    return version ? `Sonnet ${version}` : "Sonnet";
-  }
-
-  if (model.includes("opus")) {
-    const match = model.match(/opus-(\d+)-(\d+)/i);
-    const version = match ? `${match[1]}.${match[2]}` : "";
-    return version ? `Opus ${version}` : "Opus";
-  }
-
-  return model.replace(/^claude-/i, "").replaceAll("-", " ");
-}
-
-function formatToolDisplayName(name: string) {
-  return name
-    .split(/[_-]+/g)
-    .filter(Boolean)
-    .map((segment) => segment.slice(0, 1).toUpperCase() + segment.slice(1))
-    .join(" ");
-}
-
-function formatToolRuntimeLabel(runtime: string | null) {
-  switch (runtime) {
-    case "anthropic_server":
-      return "Built-in";
-    case "anthropic_client":
-      return "Connected";
-    default:
-      return runtime ? runtime.replaceAll("_", " ") : null;
-  }
-}
-
-function formatToolStatusLabel(status: ToolTimelineEntry["status"]) {
-  return status.slice(0, 1).toUpperCase() + status.slice(1);
-}
-
-function summarizeToolAction(name: string) {
-  switch (name) {
-    case "web_search":
-      return "Searched the web";
-    case "web_fetch":
-      return "Fetched source pages";
-    case "memory":
-      return "Checked saved memory";
-    case "code_execution":
-      return "Ran code";
-    case "tool_search":
-    case "tool_search_tool_regex":
-      return "Looked for tools";
-    default:
-      return `Used ${formatToolDisplayName(name)}`;
-  }
-}
-
-function buildActivitySummary(entries: RenderTimelineEntry[], isLive: boolean) {
-  const toolSummaries = Array.from(
-    new Set(entries.filter((entry): entry is ToolTimelineEntry => entry.kind === "tool").map((entry) => summarizeToolAction(entry.title))),
-  );
-
-  if (toolSummaries.length === 1) {
-    return toolSummaries[0]!;
-  }
-
-  if (toolSummaries.length === 2) {
-    return `${toolSummaries[0]}, then ${toolSummaries[1].toLowerCase()}`;
-  }
-
-  if (toolSummaries.length > 2) {
-    return `${toolSummaries[0]}, ${toolSummaries[1].toLowerCase()}, and ${toolSummaries.length - 2} more steps`;
-  }
-
-  if (entries.some((entry) => entry.kind === "thinking")) {
-    return isLive ? "Thinking through the answer" : "Reasoned through the answer";
-  }
-
-  if (entries.some((entry) => entry.kind === "approval")) {
-    return "Handled a decision";
-  }
-
-  if (entries.some((entry) => entry.kind === "system")) {
-    return "View run details";
-  }
-
-  return isLive ? "Working on it" : "View activity";
-}
-
-function getToolDetailLabel(entry: ToolTimelineEntry) {
-  const hasInput = Boolean(entry.input.trim());
-  const hasOutput = Boolean(entry.output.trim());
-
-  if (hasInput && hasOutput) {
-    return "View request and response";
-  }
-
-  if (hasInput) {
-    return "View request";
-  }
-
-  if (hasOutput) {
-    return "View result";
-  }
-
-  return "View details";
-}
-
-const landingSuggestions = [
-  "Plan a product MVP",
-  "Research a technical topic",
-  "Review an architecture idea",
-  "Map out a coding task",
-];
-
-function normalizeApiErrorMessage(message: string) {
-  const jsonStart = message.indexOf("{");
-
-  if (jsonStart === -1) {
-    return message;
-  }
-
-  try {
-    const parsed = JSON.parse(message.slice(jsonStart)) as {
-      error?: { message?: string | null } | null;
-      message?: string | null;
-    };
-
-    return parsed.error?.message ?? parsed.message ?? message;
-  } catch {
-    return message;
-  }
-}
-
-function resizeComposer(textarea: HTMLTextAreaElement | null) {
-  if (!textarea) {
-    return;
-  }
-
-  textarea.style.height = "0px";
-  textarea.style.height = `${Math.min(textarea.scrollHeight, 220)}px`;
-}
-
-function buildTimelineEntries(events: TimelineEventEnvelope[]) {
-  const entries: RenderTimelineEntry[] = [];
-  const toolEntries = new Map<string, ToolTimelineEntry>();
-  let thinkingEntry: Extract<RenderTimelineEntry, { kind: "thinking" }> | null = null;
-
-  const flushThinking = () => {
-    if (thinkingEntry?.text.trim()) {
-      entries.push(thinkingEntry);
-    }
-
-    thinkingEntry = null;
-  };
-
-  for (const event of events) {
-    if (event.type !== "assistant.thinking.delta") {
-      flushThinking();
-    }
-
-    switch (event.type) {
-      case "assistant.thinking.delta": {
-        if (!thinkingEntry) {
-          thinkingEntry = {
-            id: `thinking-${event.id}`,
-            kind: "thinking",
-            text: "",
-          };
-        }
-
-        thinkingEntry.text += typeof event.payload?.delta === "string" ? event.payload.delta : "";
-        break;
-      }
-      case "tool.call.started": {
-        const key =
-          (typeof event.payload?.toolUseId === "string" && event.payload.toolUseId) ||
-          `${String(event.payload?.toolName ?? "tool")}-${event.id}`;
-        const toolEntry: ToolTimelineEntry = {
-          id: key,
-          kind: "tool",
-          title: String(event.payload?.toolName ?? "Tool call"),
-          runtime: typeof event.payload?.toolRuntime === "string" ? event.payload.toolRuntime : null,
-          status: "running",
-          input: stringifyUnknown(event.payload?.input),
-          output: "",
-        };
-        toolEntries.set(key, toolEntry);
-        entries.push(toolEntry);
-        break;
-      }
-      case "tool.call.input.delta": {
-        // Try toolUseId first, then fall back to matching by tool name or last entry
-        const toolUseId = typeof event.payload?.toolUseId === "string" ? event.payload.toolUseId : null;
-        const key =
-          (toolUseId && toolEntries.has(toolUseId) && toolUseId) ||
-          Array.from(toolEntries.values())
-            .reverse()
-            .find((entry) => entry.status === "running")?.id ||
-          `${String(event.payload?.toolName ?? "tool")}-${String(event.payload?.index ?? event.id)}`;
-        const existing = toolEntries.get(key);
-        if (existing) {
-          existing.input = typeof event.payload?.snapshot === "string" ? event.payload.snapshot : existing.input;
-        }
-        break;
-      }
-      case "tool.call.completed":
-      case "tool.call.failed": {
-        const candidateName = String(event.payload?.toolName ?? "Tool call");
-        const key =
-          (typeof event.payload?.toolUseId === "string" && event.payload.toolUseId) ||
-          Array.from(toolEntries.values())
-            .reverse()
-            .find((entry) => entry.title === candidateName)?.id ||
-          `${candidateName}-${event.id}`;
-        const existing = toolEntries.get(key);
-        if (existing) {
-          existing.status = event.type === "tool.call.completed" ? "completed" : "failed";
-          existing.output =
-            stringifyUnknown(event.payload?.result) ||
-            stringifyUnknown(event.payload?.resultPreview) ||
-            stringifyUnknown(event.payload?.error);
-        } else {
-          const toolEntry: ToolTimelineEntry = {
-            id: key,
-            kind: "tool",
-            title: candidateName,
-            runtime: typeof event.payload?.toolRuntime === "string" ? event.payload.toolRuntime : null,
-            status: event.type === "tool.call.completed" ? "completed" : "failed",
-            input: "",
-            output:
-              stringifyUnknown(event.payload?.result) ||
-              stringifyUnknown(event.payload?.resultPreview) ||
-              stringifyUnknown(event.payload?.error),
-          };
-          toolEntries.set(key, toolEntry);
-          entries.push(toolEntry);
-        }
-        break;
-      }
-      case "coding.session.created":
-      case "coding.session.ready":
-      case "coding.session.paused":
-      case "coding.session.resumed": {
-        entries.push({
-          id: event.id,
-          kind: "system",
-          title: event.type.replaceAll(".", " "),
-          description: stringifyUnknown(event.payload),
-        });
-        break;
-      }
-      case "approval.requested":
-      case "approval.resolved": {
-        entries.push({
-          id: event.id,
-          kind: "approval",
-          title: event.type === "approval.requested" ? "Approval requested" : "Approval resolved",
-          description: stringifyUnknown(event.payload),
-        });
-        break;
-      }
-      case "run.failed": {
-        entries.push({
-          id: event.id,
-          kind: "system",
-          title: "Run failed",
-          description: stringifyUnknown(event.payload?.error ?? event.payload),
-        });
-        break;
-      }
-      default:
-        break;
-    }
-  }
-
-  flushThinking();
-
-  return entries;
-}
-
-function getFileTypeBadge(attachment: AttachmentDto) {
-  if (attachment.kind === "PDF") return "PDF";
-  if (attachment.kind === "IMAGE") return "IMG";
-  const ext = attachment.filename.split(".").pop()?.toUpperCase() ?? "";
-  if (["DOC", "DOCX"].includes(ext)) return "DOC";
-  if (["XLS", "XLSX"].includes(ext)) return "XLS";
-  if (["TXT", "MD", "JSON", "CSV"].includes(ext)) return ext;
-  return "FILE";
-}
-
-function AttachmentChip({ attachment, onRemove }: { attachment: AttachmentDto; onRemove?: () => void }) {
-  const badge = getFileTypeBadge(attachment);
-
-  return (
-    <div className="attachment-card">
-      <div className="attachment-card-body">
-        <span className="attachment-card-name">{attachment.filename}</span>
-        <span className="attachment-card-badge">{badge}</span>
-      </div>
-      {onRemove ? (
-        <button type="button" className="attachment-card-remove" onClick={onRemove} aria-label={`Remove ${attachment.filename}`}>
-          <IconClose />
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-function ToolStepDetails({ entry }: { entry: ToolTimelineEntry }) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const hasInput = Boolean(entry.input.trim());
-  const hasOutput = Boolean(entry.output.trim());
-
-  if (!hasInput && !hasOutput) {
-    return null;
-  }
-
-  return (
-    <div className={`activity-step-details ${isExpanded ? "activity-step-details-open" : ""}`}>
-      <button
-        type="button"
-        className="activity-step-detail-toggle"
-        onClick={() => setIsExpanded((current) => !current)}
-        aria-expanded={isExpanded}
-      >
-        <span>{getToolDetailLabel(entry)}</span>
-        <span className={`activity-step-detail-chevron ${isExpanded ? "activity-step-detail-chevron-open" : ""}`} aria-hidden="true">
-          <IconChevron />
-        </span>
-      </button>
-
-      {isExpanded ? (
-        <div className="activity-step-detail-body">
-          {hasInput ? (
-            <section className="activity-step-detail-panel">
-              <div className="activity-step-detail-label">Request</div>
-              <pre className="timeline-code" aria-label={`${entry.title} input`}>
-                {entry.input}
-              </pre>
-            </section>
-          ) : null}
-          {hasOutput ? (
-            <section className="activity-step-detail-panel">
-              <div className="activity-step-detail-label">Response</div>
-              <pre className="timeline-code timeline-code-output" aria-label={`${entry.title} output`}>
-                {entry.output}
-              </pre>
-            </section>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function ActivityStep({
-  entry,
-  isLast,
-}: {
-  entry: RenderTimelineEntry;
-  isLast: boolean;
-}) {
-  if (entry.kind === "thinking") {
-    return (
-      <li className="activity-step">
-        <div className="activity-step-rail" aria-hidden="true">
-          <span className="activity-step-icon">
-            <IconThinking />
-          </span>
-          {!isLast ? <span className="activity-step-line" /> : null}
-        </div>
-        <div className="activity-step-main">
-          <div className="activity-step-text">{entry.text}</div>
-        </div>
-      </li>
-    );
-  }
-
-  if (entry.kind === "tool") {
-    return (
-      <li className="activity-step">
-        <div className="activity-step-rail" aria-hidden="true">
-          <span className="activity-step-icon">
-            <IconTool />
-          </span>
-          {!isLast ? <span className="activity-step-line" /> : null}
-        </div>
-        <div className="activity-step-main">
-          <div className="activity-step-title-row">
-            <div className="activity-step-title">{formatToolDisplayName(entry.title)}</div>
-            <span className={`activity-step-status activity-step-status-${entry.status}`}>{formatToolStatusLabel(entry.status)}</span>
-          </div>
-          {entry.runtime ? <div className="activity-step-caption">{formatToolRuntimeLabel(entry.runtime)}</div> : null}
-          <ToolStepDetails entry={entry} />
-        </div>
-      </li>
-    );
-  }
-
-  return (
-    <li className="activity-step">
-      <div className="activity-step-rail" aria-hidden="true">
-        <span className="activity-step-icon">
-          {entry.kind === "system" ? <IconDone /> : <IconInfo />}
-        </span>
-        {!isLast ? <span className="activity-step-line" /> : null}
-      </div>
-      <div className="activity-step-main">
-        <div className="activity-step-title">{entry.title}</div>
-        <div className="activity-step-text">{entry.description}</div>
-      </div>
-    </li>
-  );
-}
-
-function RunActivityAccordion({
-  entries,
-  isLive,
-}: {
-  entries: RenderTimelineEntry[];
-  isLive?: boolean;
-}) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const summary = useMemo(() => buildActivitySummary(entries, Boolean(isLive)), [entries, isLive]);
-
-  return (
-    <div className={`activity-accordion ${isExpanded ? "activity-accordion-open" : ""}`}>
-      <button
-        type="button"
-        className="activity-accordion-toggle"
-        onClick={() => setIsExpanded((current) => !current)}
-        aria-expanded={isExpanded}
-      >
-        <span className="activity-accordion-summary">{summary}</span>
-        <span className="activity-accordion-meta">
-          <span className={`activity-accordion-chevron ${isExpanded ? "activity-accordion-chevron-open" : ""}`} aria-hidden="true">
-            <IconChevron />
-          </span>
-        </span>
-      </button>
-
-      {isExpanded ? (
-        <div className="activity-accordion-body">
-          {entries.length ? (
-            <ol className="activity-step-list">
-              {entries.map((entry, index) => (
-                <ActivityStep key={entry.id} entry={entry} isLast={index === entries.length - 1} />
-              ))}
-            </ol>
-          ) : (
-            <div className="activity-accordion-empty">Preparing a response…</div>
-          )}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function RunThread({
-  userPrompt,
-  attachments,
-  events,
-  finalText,
-  createdAt,
-  isLive,
-  isLast,
-}: {
-  userPrompt: string;
-  attachments: AttachmentDto[];
-  events: TimelineEventEnvelope[];
-  finalText: string | null;
-  createdAt: string;
-  isLive?: boolean;
-  isLast?: boolean;
-}) {
-  const entries = useMemo(() => buildTimelineEntries(events), [events]);
-  const showPendingCard = isLive && entries.length === 0 && !finalText;
-  const hasAgentResponse = Boolean(finalText);
-  // For the last run: if there's an agent response, show actions on agent row always; user row on hover.
-  // If no agent response yet, user row is the last visible — show always.
-  const userActionsAlwaysVisible = isLast && !hasAgentResponse;
-  const agentActionsAlwaysVisible = isLast && hasAgentResponse;
-
-  return (
-    <article className="run-thread">
-      <div className="message-row message-row-user">
-        <div className="msg-group msg-group-user">
-          <div className="chat-bubble chat-bubble-user" aria-label="User message">
-            <div className="chat-bubble-copy chat-bubble-copy-user whitespace-pre-wrap">{userPrompt}</div>
-            {attachments.length ? (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {attachments.map((attachment) => (
-                  <AttachmentChip key={attachment.id} attachment={attachment} />
-                ))}
-              </div>
-            ) : null}
-          </div>
-          <div className={`msg-actions msg-actions-user ${userActionsAlwaysVisible ? "msg-actions-visible" : ""}`}>
-            <span className="msg-actions-time">{formatShortTime(createdAt)}</span>
-            <CopyButton text={userPrompt} label="Copy message" />
-          </div>
-        </div>
-      </div>
-
-      {entries.length || showPendingCard ? <RunActivityAccordion entries={entries} isLive={isLive} /> : null}
-
-      {finalText ? (
-        <div className="message-row message-row-agent">
-          <div className="msg-group msg-group-agent">
-            <div className="agent-response" aria-label="Assistant response">
-              <div className="chat-markdown">
-                <Streamdown mode="streaming" isAnimating={Boolean(isLive)} caret="block">
-                  {finalText}
-                </Streamdown>
-              </div>
-              {isLive ? <div className="agent-response-footer">Streaming</div> : null}
-            </div>
-            {!isLive ? (
-              <div className={`msg-actions msg-actions-agent ${agentActionsAlwaysVisible ? "msg-actions-visible" : ""}`}>
-                <CopyButton text={finalText} label="Copy response" />
-              </div>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
-    </article>
-  );
-}
-
-async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
-  });
-
-  if (!response.ok) {
-    let message = "Request failed.";
-
-    try {
-      const body = (await response.json()) as { error?: string };
-      if (body.error) {
-        message = body.error;
-      }
-    } catch {
-      // ignore
-    }
-
-    throw new Error(message);
-  }
-
-  return response.json() as Promise<T>;
-}
+import type { LiveRunState } from "@/lib/chat-utils";
+import {
+  formatShortTime,
+  formatModelDisplayName,
+  previewText,
+  normalizeApiErrorMessage,
+  resizeComposer,
+  fetchJson,
+  landingSuggestions,
+} from "@/lib/chat-utils";
+import {
+  IconClose,
+  IconSidebarToggle,
+  IconPlus,
+  IconSearch,
+  IconArrowUp,
+  IconSpark,
+  IconChevron,
+  IconMore,
+  IconCheck,
+} from "@/components/icons";
+import { SidebarMenuPortal } from "@/components/chat/sidebar-menu-portal";
+import { ComposerModelMenuPortal } from "@/components/chat/composer-model-menu";
+import { AttachmentChip } from "@/components/chat/attachment-chip";
+import { RunThread } from "@/components/chat/run-thread";
 
 export function ChatWorkspace() {
   const catalog = useChatStore((s) => s.catalog);
@@ -926,7 +54,6 @@ export function ChatWorkspace() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [deletingConversationId, setDeletingConversationId] = useState<string | null>(null);
-  const [isUpdatingModel, setIsUpdatingModel] = useState(false);
   const deferredSidebarQuery = useDeferredValue(sidebarQuery);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -1008,7 +135,7 @@ export function ChatWorkspace() {
     });
   }, []);
 
-  const updateScrollShadows = useEffectEvent(() => {
+  function syncScrollShadows() {
     const el = transcriptRef.current;
     const stage = stageRef.current;
     if (!el || !stage) return;
@@ -1017,14 +144,14 @@ export function ChatWorkspace() {
     const scrollBottom = el.scrollHeight - el.clientHeight - scrollTop;
     stage.dataset.scrollTop = scrollTop > 8 ? "true" : "false";
     stage.dataset.scrollBottom = scrollBottom > 8 ? "true" : "false";
-  });
+  }
 
   useEffect(() => {
     transcriptRef.current?.scrollTo({
       top: transcriptRef.current.scrollHeight,
       behavior: "smooth",
     });
-    updateScrollShadows();
+    syncScrollShadows();
   }, [activeConversation, liveRun]);
 
   useEffect(() => {
@@ -1267,30 +394,26 @@ export function ChatWorkspace() {
   }
 
   async function handleSelectMainModel(modelId: string) {
-    if (!activeConversation || isUpdatingModel || activeConversation.mainAgentModel === modelId) {
+    if (!activeConversation || activeConversation.mainAgentModel === modelId) {
       setModelMenuOpen(false);
       return;
     }
 
-    setIsUpdatingModel(true);
+    // Optimistic: update UI instantly
+    const prevModel = activeConversation.mainAgentModel;
+    setActiveConversation({ ...activeConversation, mainAgentModel: modelId });
+    setModelMenuOpen(false);
     setErrorMessage(null);
 
     try {
-      const data = await fetchJson<{ conversation: ConversationDetailDto }>(`/api/conversations/${activeConversation.id}`, {
+      await fetchJson(`/api/conversations/${activeConversation.id}`, {
         method: "PATCH",
-        body: JSON.stringify({
-          mainAgentModel: modelId,
-        }),
-      });
-
-      startTransition(() => {
-        setActiveConversation(data.conversation);
-        setModelMenuOpen(false);
+        body: JSON.stringify({ mainAgentModel: modelId }),
       });
     } catch (error) {
+      // Revert on failure
+      setActiveConversation({ ...activeConversation, mainAgentModel: prevModel });
       setErrorMessage(error instanceof Error ? error.message : "Failed to update the model.");
-    } finally {
-      setIsUpdatingModel(false);
     }
   }
 
@@ -1301,7 +424,7 @@ export function ChatWorkspace() {
       {isMobileViewport && mobileSidebarOpen ? (
         <button
           type="button"
-          className="mobile-sidebar-backdrop"
+          className="fixed inset-0 z-[34] border-0 bg-[rgba(0,0,0,0.48)] backdrop-blur-[3px] max-[980px]:block hidden"
           aria-label="Close navigation"
           onClick={() => setMobileSidebarOpen(false)}
         />
@@ -1309,56 +432,55 @@ export function ChatWorkspace() {
 
       <aside
         className={[
-          "sidebar-panel",
-          showCollapsedSidebar ? "sidebar-panel-collapsed" : "",
-          isMobileViewport ? "sidebar-panel-mobile" : "",
+          "sidebar-panel relative flex min-h-0 flex-col border-r border-[rgba(255,255,255,0.08)] bg-[linear-gradient(180deg,rgba(37,35,31,0.96),rgba(28,27,24,0.96)),radial-gradient(circle_at_24%_8%,rgba(255,255,255,0.035),transparent_42%)] backdrop-blur-[24px] overflow-hidden transition-[padding] duration-[260ms] [transition-timing-function:cubic-bezier(0.2,0.9,0.2,1)] z-20",
+          showCollapsedSidebar ? "py-3.5 px-0 items-center gap-1" : "pt-4 px-3 pb-3",
           isMobileViewport && mobileSidebarOpen ? "sidebar-panel-mobile-open" : "",
         ].join(" ")}
       >
         {showCollapsedSidebar ? (
           <>
-            <div className="sidebar-collapsed-strip">
-              <button type="button" className="ghost-icon-button" aria-label="Expand sidebar" onClick={() => setSidebarCollapsed(false)}>
+            <div className="flex flex-1 flex-col items-center gap-1">
+              <button type="button" className="inline-grid h-10 w-10 place-items-center border-0 bg-transparent text-[rgba(236,230,219,0.56)] cursor-pointer rounded-[10px] transition-[background,color] duration-[140ms] ease-linear hover:bg-[rgba(255,255,255,0.065)] hover:text-[rgba(247,242,233,0.92)] mb-3" aria-label="Expand sidebar" onClick={() => setSidebarCollapsed(false)}>
                 <IconSidebarToggle />
               </button>
-              <button type="button" className="ghost-icon-button" aria-label="New chat" onClick={handleCreateConversation}>
+              <button type="button" className="inline-grid h-10 w-10 place-items-center border-0 bg-transparent text-[rgba(236,230,219,0.56)] cursor-pointer rounded-[10px] transition-[background,color] duration-[140ms] ease-linear hover:bg-[rgba(255,255,255,0.065)] hover:text-[rgba(247,242,233,0.92)]" aria-label="New chat" onClick={handleCreateConversation}>
                 <IconPlus />
               </button>
-              <button type="button" className="ghost-icon-button" aria-label="Search chats" onClick={() => setSearchModalOpen(true)}>
+              <button type="button" className="inline-grid h-10 w-10 place-items-center border-0 bg-transparent text-[rgba(236,230,219,0.56)] cursor-pointer rounded-[10px] transition-[background,color] duration-[140ms] ease-linear hover:bg-[rgba(255,255,255,0.065)] hover:text-[rgba(247,242,233,0.92)]" aria-label="Search chats" onClick={() => setSearchModalOpen(true)}>
                 <IconSearch />
               </button>
             </div>
-            <div className="sidebar-collapsed-avatar" role="button" tabIndex={0} onClick={() => setSidebarCollapsed(false)}>
+            <div className="w-9 h-9 rounded-full bg-[rgba(245,240,232,0.12)] text-[rgba(245,240,232,0.88)] grid place-items-center text-[0.72rem] font-semibold cursor-pointer transition-[background] duration-[180ms] ease-linear hover:bg-[rgba(245,240,232,0.2)]" role="button" tabIndex={0} onClick={() => setSidebarCollapsed(false)}>
               N
             </div>
           </>
         ) : (
           <>
-        <div className="sidebar-brand">
-          <div className="sidebar-brand-title">Relay AI</div>
+        <div className="flex items-center justify-between px-1 pt-0.5 mb-4">
+          <div className="font-serif text-[1.35rem] font-bold leading-none tracking-[-0.03em] text-[rgba(247,242,233,0.96)]">Relay AI</div>
           {isMobileViewport ? (
-            <button type="button" className="ghost-icon-button" aria-label="Close sidebar" onClick={() => setMobileSidebarOpen(false)}>
+            <button type="button" className="inline-grid h-[34px] w-[34px] place-items-center border-0 bg-transparent text-[rgba(236,230,219,0.56)] cursor-pointer rounded-[8px] transition-[background,color] duration-[140ms] ease-linear hover:bg-[rgba(255,255,255,0.065)] hover:text-[rgba(247,242,233,0.92)]" aria-label="Close sidebar" onClick={() => setMobileSidebarOpen(false)}>
               <IconClose />
             </button>
           ) : (
-            <button type="button" className="ghost-icon-button" aria-label="Collapse sidebar" onClick={() => setSidebarCollapsed(true)}>
+            <button type="button" className="inline-grid h-[34px] w-[34px] place-items-center border-0 bg-transparent text-[rgba(236,230,219,0.56)] cursor-pointer rounded-[8px] transition-[background,color] duration-[140ms] ease-linear hover:bg-[rgba(255,255,255,0.065)] hover:text-[rgba(247,242,233,0.92)]" aria-label="Collapse sidebar" onClick={() => setSidebarCollapsed(true)}>
               <IconSidebarToggle />
             </button>
           )}
         </div>
 
-        <button type="button" className="sidebar-row" onClick={handleCreateConversation}>
-          <span className="sidebar-row-icon"><IconPlus /></span>
+        <button type="button" className="group flex items-center gap-3 w-full border-0 rounded-[10px] bg-transparent text-[rgba(236,230,219,0.82)] cursor-pointer py-[9px] px-2.5 text-left text-[0.9rem] leading-[1.25] transition-[background,color] duration-[140ms] ease-linear hover:bg-[rgba(255,255,255,0.065)] hover:text-[rgba(247,242,233,0.96)]" onClick={handleCreateConversation}>
+          <span className="inline-grid shrink-0 w-5 h-5 place-items-center text-[rgba(236,230,219,0.72)] group-hover:text-[rgba(247,242,233,0.92)]"><IconPlus /></span>
           <span>New chat</span>
         </button>
 
-        <button type="button" className="sidebar-row" onClick={() => setSearchModalOpen(true)}>
-          <span className="sidebar-row-icon"><IconSearch /></span>
+        <button type="button" className="group flex items-center gap-3 w-full border-0 rounded-[10px] bg-transparent text-[rgba(236,230,219,0.82)] cursor-pointer py-[9px] px-2.5 text-left text-[0.9rem] leading-[1.25] transition-[background,color] duration-[140ms] ease-linear hover:bg-[rgba(255,255,255,0.065)] hover:text-[rgba(247,242,233,0.96)]" onClick={() => setSearchModalOpen(true)}>
+          <span className="inline-grid shrink-0 w-5 h-5 place-items-center text-[rgba(236,230,219,0.72)] group-hover:text-[rgba(247,242,233,0.92)]"><IconSearch /></span>
           <span>Search</span>
         </button>
 
-        <div className="sidebar-section-label">Chats</div>
-        <div className="sidebar-conversation-list">
+        <div className="text-[0.68rem] uppercase tracking-[0.1em] text-[rgba(236,230,219,0.38)] pt-3.5 px-2.5 pb-1.5">Chats</div>
+        <div className="sidebar-conversation-list flex flex-1 min-h-0 flex-col gap-px overflow-y-auto overflow-x-hidden -mx-1 px-1">
           {filteredConversations.map((conversation) => {
             const isActive = conversation.id === activeConversationId;
             const isMenuOpen = openConversationMenuId === conversation.id;
@@ -1366,11 +488,11 @@ export function ChatWorkspace() {
             return (
               <div
                 key={conversation.id}
-                className={`conversation-row-shell ${isActive ? "conversation-row-shell-active" : ""} ${isMenuOpen ? "conversation-row-shell-menu-open" : ""}`}
+                className={`group/row relative ${isActive || isMenuOpen ? "z-[2]" : ""}`}
               >
                 <button
                   type="button"
-                  className={`conversation-row ${isActive ? "conversation-row-active" : ""}`}
+                  className={`flex w-full items-center border-0 rounded-[10px] bg-transparent text-inherit cursor-pointer py-[9px] pr-[34px] pl-2.5 text-left transition-[background] duration-[140ms] ease-linear hover:bg-[rgba(255,255,255,0.05)] ${isActive ? "bg-[rgba(255,255,255,0.06)]" : ""}`}
                   onClick={() => {
                     setMobileSidebarOpen(false);
                     void selectConversation(conversation.id).catch((error) => {
@@ -1378,13 +500,13 @@ export function ChatWorkspace() {
                     });
                   }}
                 >
-                  <div className="conversation-row-title">{conversation.title}</div>
+                  <div className={`text-[0.88rem] font-[420] text-[rgba(242,237,229,0.82)] whitespace-nowrap overflow-hidden text-ellipsis ${isActive ? "text-[rgba(247,242,233,0.96)]" : "group-hover/row:text-[rgba(247,242,233,0.96)]"}`}>{conversation.title}</div>
                 </button>
 
-                <div className="conversation-row-actions" data-chat-action-menu>
+                <div className="absolute top-1/2 right-1 -translate-y-1/2" data-chat-action-menu>
                   <button
                     type="button"
-                    className="conversation-row-menu-button"
+                    className={`inline-grid h-[26px] w-[26px] place-items-center border-0 bg-transparent rounded-[6px] text-[rgba(245,240,232,0.46)] cursor-pointer transition-[opacity,color,background] duration-[140ms] ease-linear hover:text-[rgba(245,240,232,0.88)] hover:bg-[rgba(255,255,255,0.08)] ${isMenuOpen || isActive ? "opacity-100" : "opacity-0 group-hover/row:opacity-100"}`}
                     aria-label={`Open menu for ${conversation.title}`}
                     aria-expanded={isMenuOpen}
                     onClick={(event) => {
@@ -1412,29 +534,29 @@ export function ChatWorkspace() {
           })}
         </div>
 
-        <div className="sidebar-profile" ref={profileRef}>
+        <div className="relative mt-auto pt-2 border-t border-[rgba(255,255,255,0.06)]" ref={profileRef}>
           <button
             type="button"
-            className="sidebar-profile-button"
+            className="grid w-full grid-cols-[36px_1fr_16px] items-center gap-2.5 border-0 rounded-[10px] bg-transparent text-inherit cursor-pointer py-2.5 px-2 text-left transition-[background] duration-[140ms] ease-linear hover:bg-[rgba(255,255,255,0.065)]"
             onClick={() => setProfileMenuOpen((current) => !current)}
           >
-            <div className="sidebar-profile-avatar">N</div>
+            <div className="grid h-9 w-9 place-items-center rounded-full bg-[rgba(237,233,225,0.12)] text-[0.72rem] font-semibold">N</div>
             <div className="min-w-0">
-              <div className="sidebar-profile-name">Demo account</div>
-              <div className="sidebar-profile-plan">Local development mode</div>
+              <div className="text-[0.88rem] text-[rgba(245,240,232,0.88)]">Demo account</div>
+              <div className="text-[0.72rem] text-[rgba(236,230,219,0.44)]">Local development mode</div>
             </div>
-            <span className="sidebar-profile-chevron"><IconChevron /></span>
+            <span className="inline-grid place-items-center text-[rgba(236,230,219,0.36)]"><IconChevron /></span>
           </button>
 
           {profileMenuOpen ? (
-            <div className="profile-menu">
-              <div className="profile-menu-row">
+            <div className="absolute bottom-[calc(100%+8px)] left-0 right-0 border border-[rgba(255,255,255,0.12)] rounded-[16px] bg-[linear-gradient(180deg,rgba(63,61,56,0.96),rgba(53,51,47,0.96))] p-3 shadow-[0_24px_60px_rgba(0,0,0,0.34)] backdrop-blur-[18px]">
+              <div className="flex justify-between gap-3 py-[7px] px-1 text-muted text-[0.8rem]">
                 <span>Model</span>
-                <strong>{formatModelDisplayName(catalog?.mainAgentModel) ?? "Loading"}</strong>
+                <strong className="text-foreground font-medium">{formatModelDisplayName(catalog?.mainAgentModel) ?? "Loading"}</strong>
               </div>
-              <div className="profile-menu-row">
+              <div className="flex justify-between gap-3 py-[7px] px-1 text-muted text-[0.8rem]">
                 <span>Tools</span>
-                <strong>{catalog?.builtInTools.filter((tool) => tool.enabled).length ?? 0}</strong>
+                <strong className="text-foreground font-medium">{catalog?.builtInTools.filter((tool) => tool.enabled).length ?? 0}</strong>
               </div>
             </div>
           ) : null}
@@ -1443,13 +565,13 @@ export function ChatWorkspace() {
         )}
       </aside>
 
-      <main className={`chat-panel ${isLandingState ? "chat-panel-landing" : "chat-panel-active"}`}>
-        <header className="chat-header">
-          <div className="chat-header-main">
+      <main className="grid min-h-0 h-dvh grid-rows-[auto_minmax(0,1fr)] overflow-hidden min-w-0 max-[980px]:h-dvh max-[980px]:min-h-dvh max-[980px]:w-full max-[980px]:max-w-full">
+        <header className="flex items-center justify-start gap-[18px] pt-3.5 px-[30px] pb-2 max-[980px]:gap-2 max-[980px]:pt-3 max-[980px]:pb-1 max-[980px]:px-[18px]">
+          <div className="flex min-w-0 w-full items-center gap-0 max-[980px]:w-full max-[980px]:gap-2">
             {isMobileViewport ? (
               <button
                 type="button"
-                className="ghost-icon-button mobile-sidebar-toggle"
+                className="hidden max-[980px]:inline-grid h-10 w-10 place-items-center border-0 bg-transparent text-[rgba(236,230,219,0.56)] cursor-pointer rounded-[10px] transition-[background,color] duration-140 ease-linear hover:bg-[rgba(255,255,255,0.065)] hover:text-[rgba(247,242,233,0.92)] shrink-0"
                 aria-label={mobileSidebarOpen ? "Close navigation" : "Open navigation"}
                 aria-expanded={mobileSidebarOpen}
                 onClick={() => setMobileSidebarOpen((current) => !current)}
@@ -1459,10 +581,10 @@ export function ChatWorkspace() {
             ) : null}
 
             {activeConversation ? (
-              <div className="chat-header-menu" data-chat-action-menu>
+              <div className="relative min-w-0 max-w-full max-[980px]:flex-auto max-[980px]:min-w-0 max-[980px]:max-w-[calc(100%-48px)]" data-chat-action-menu>
                 <button
                   type="button"
-                  className={`chat-header-title-button ${headerMenuOpen ? "chat-header-title-button-open" : ""}`}
+                  className={`inline-flex items-center gap-1.5 w-auto max-w-[min(100%,42rem)] min-w-0 border-0 rounded-[10px] bg-transparent text-[rgba(235,230,220,0.82)] cursor-pointer py-1.5 px-2.5 overflow-hidden transition-[color,background] duration-[140ms] ease-linear hover:bg-[rgba(255,255,255,0.065)] hover:text-[rgba(245,240,232,0.96)] max-[980px]:max-w-full max-[980px]:border-0 max-[980px]:rounded-none max-[980px]:bg-transparent max-[980px]:p-0`}
                   aria-label={`Open menu for ${activeConversation.title}`}
                   aria-expanded={headerMenuOpen}
                   onClick={() => {
@@ -1470,54 +592,54 @@ export function ChatWorkspace() {
                     setHeaderMenuOpen((current) => !current);
                   }}
                 >
-                  <span className="chat-header-title">{activeConversation.title}</span>
-                  <span className="chat-header-title-divider" aria-hidden="true" />
-                  <span className={`chat-header-title-chevron ${headerMenuOpen ? "chat-header-title-chevron-open" : ""}`} aria-hidden="true">
+                  <span className="min-w-0 flex-[0_1_auto] p-0 text-[0.96rem] font-[430] leading-[1.2] whitespace-nowrap overflow-hidden text-ellipsis max-[980px]:text-[0.92rem] max-[980px]:p-0 max-[980px]:whitespace-nowrap">{activeConversation.title}</span>
+                  <span className="hidden" aria-hidden="true" />
+                  <span className={`inline-grid w-auto place-items-center text-[rgba(245,240,232,0.54)] transition-[transform,color] duration-[180ms] ease-linear max-[980px]:w-auto ${headerMenuOpen ? "rotate-180 text-[rgba(245,240,232,0.9)]" : ""}`} aria-hidden="true">
                     <IconChevron />
                   </span>
                 </button>
 
                 {headerMenuOpen ? (
-                  <div className="chat-action-menu">
+                  <div className="absolute top-[calc(100%+6px)] left-0 min-w-[180px] z-10 border border-[rgba(255,255,255,0.1)] rounded-[12px] bg-[rgba(42,40,36,0.98)] p-1 shadow-[0_8px_30px_rgba(0,0,0,0.4)] backdrop-blur-[18px]">
                     <button
                       type="button"
-                      className="chat-action-menu-item chat-action-menu-item-danger"
+                      className="chat-action-menu-item chat-action-menu-item-danger flex w-full items-center justify-start border-0 rounded-[8px] bg-transparent text-[#f2c4b2] cursor-pointer px-3 py-2 text-left text-[0.88rem] leading-[1.2] transition-[background,color] duration-[140ms] ease-linear"
                       onClick={() => {
                         void handleDeleteConversation(activeConversation.id);
                       }}
                       disabled={deletingConversationId === activeConversation.id}
                     >
-                      {deletingConversationId === activeConversation.id ? "Deleting…" : "Delete chat"}
+                      {deletingConversationId === activeConversation.id ? "Deleting\u2026" : "Delete chat"}
                     </button>
                   </div>
                 ) : null}
               </div>
             ) : (
-              <div className="chat-header-title" style={{ opacity: 0.4 }}>New chat</div>
+              <div className="min-w-0 flex-[0_1_auto] p-0 text-[0.96rem] font-[430] leading-[1.2] whitespace-nowrap overflow-hidden text-ellipsis" style={{ opacity: 0.4 }}>New chat</div>
             )}
           </div>
         </header>
 
-        <div className="chat-stage" ref={stageRef}>
+        <div className="chat-stage relative min-h-0 overflow-hidden min-w-0" ref={stageRef}>
           {isLandingState ? (
-            <section className="chat-landing">
-              {errorMessage ? <div className="error-banner error-banner-landing">{errorMessage}</div> : null}
-              <div className="chat-landing-badge">AI chat</div>
-              <div className="chat-landing-title">
-                <span className="chat-landing-title-icon">
+            <section className="chat-landing flex h-full flex-col items-center justify-center gap-4 pt-9 px-[30px] pb-[280px] text-center overflow-hidden max-[980px]:justify-end max-[980px]:px-[18px] max-[980px]:pt-6 max-[980px]:pb-[200px] max-[980px]:gap-3.5">
+              {errorMessage ? <div className="max-w-[720px] mx-auto mb-[18px] border border-[rgba(181,103,69,0.3)] rounded-[18px] bg-[rgba(181,103,69,0.12)] text-[#f3c7b4] px-4 py-3.5">{errorMessage}</div> : null}
+              <div className="inline-flex items-center justify-center rounded-full bg-[rgba(10,10,10,0.42)] text-[rgba(245,240,232,0.64)] py-2.5 px-4 text-[0.82rem] tracking-[0.12em] uppercase max-[980px]:text-[0.72rem] max-[980px]:py-[7px] max-[980px]:px-3">AI chat</div>
+              <div className="flex items-center gap-3.5 max-[980px]:flex-col max-[980px]:gap-2">
+                <span className="inline-grid h-[42px] w-[42px] place-items-center text-[#cf6d43] max-[980px]:h-7 max-[980px]:w-7">
                   <IconSpark />
                 </span>
-                <h1>What shall we think through?</h1>
+                <h1 className="m-0 font-serif text-[clamp(2rem,4vw,4.2rem)] leading-[0.94] tracking-[-0.04em]">What shall we think through?</h1>
               </div>
-              <p className="chat-landing-copy">
+              <p className="max-w-[58rem] m-0 text-[rgba(245,240,232,0.6)] text-base leading-[1.7] max-[980px]:text-[0.88rem] max-[980px]:leading-[1.55]">
                 Ask questions, upload files, research ideas, and move from planning to execution in one conversation.
               </p>
-              <div className="chat-landing-suggestions" aria-label="Suggested prompts">
+              <div className="flex flex-wrap justify-center gap-2.5 max-[980px]:gap-1.5" aria-label="Suggested prompts">
                 {landingSuggestions.map((suggestion) => (
                   <button
                     key={suggestion}
                     type="button"
-                    className="chat-landing-chip"
+                    className="border border-[rgba(255,255,255,0.08)] rounded-full bg-[rgba(255,255,255,0.03)] text-[rgba(245,240,232,0.7)] py-2.5 px-3.5 text-[0.86rem] cursor-pointer transition-[background,border-color,color,transform] duration-[180ms] ease-linear hover:bg-[rgba(255,255,255,0.06)] hover:border-[rgba(255,255,255,0.14)] hover:text-[rgba(245,240,232,0.94)] hover:-translate-y-px max-[980px]:text-[0.78rem] max-[980px]:py-2 max-[980px]:px-3"
                     onClick={() => {
                       setComposerValue(suggestion);
                       window.requestAnimationFrame(() => {
@@ -1532,9 +654,9 @@ export function ChatWorkspace() {
               </div>
             </section>
           ) : (
-            <div className="chat-transcript" ref={transcriptRef} onScroll={updateScrollShadows}>
-              <div className="chat-transcript-inner">
-                {errorMessage ? <div className="error-banner">{errorMessage}</div> : null}
+            <div className="h-full overflow-y-auto overflow-x-hidden overscroll-contain pt-2 px-[30px] pb-[236px] min-w-0 max-[980px]:px-[18px] max-[980px]:w-full max-[980px]:max-w-full max-[980px]:pb-[180px]" ref={transcriptRef} onScroll={syncScrollShadows}>
+              <div className="chat-transcript-inner min-h-0 pb-[26px] min-w-0">
+                {errorMessage ? <div className="max-w-[860px] mx-auto mb-[18px] border border-[rgba(181,103,69,0.3)] rounded-[18px] bg-[rgba(181,103,69,0.12)] text-[#f3c7b4] px-4 py-3.5">{errorMessage}</div> : null}
 
                 {runs.map((run, index) => (
                   <RunThread
@@ -1564,14 +686,16 @@ export function ChatWorkspace() {
 
         <footer
           className={[
-            "composer-panel",
-            isLandingState ? "composer-panel-landing" : "composer-panel-docked",
+            "absolute left-0 right-0 z-3 bg-[linear-gradient(180deg,rgba(26,25,23,0)_0%,rgba(26,25,23,0.74)_22%,rgba(26,25,23,0.97)_100%)] backdrop-blur-[16px] transition-[transform,opacity] duration-[420ms] [transition-timing-function:cubic-bezier(0.2,0.9,0.2,1)]",
+            isLandingState
+              ? "bottom-1/2 px-[30px] translate-y-[152px] bg-none backdrop-blur-none max-[980px]:bottom-0 max-[980px]:pb-3 max-[980px]:translate-y-0 max-[980px]:px-[18px]"
+              : "bottom-0 px-[30px] pb-[26px] max-[980px]:px-[18px] max-[980px]:pb-3",
             animateComposerDock ? "composer-panel-animate-dock" : "",
           ].join(" ")}
         >
-          <div className="composer-shell">
+          <div className="composer-shell flex max-w-[980px] w-full min-w-0 min-h-[120px] flex-col gap-3.5 mx-auto border border-[rgba(255,255,255,0.08)] rounded-[26px] bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.02)),rgba(54,52,47,0.84)] pt-[18px] px-[22px] pb-4 shadow-[0_4px_16px_rgba(0,0,0,0.12)] max-[980px]:w-full max-[980px]:max-w-full max-[980px]:m-0 max-[980px]:min-h-0 max-[980px]:gap-2.5 max-[980px]:pt-3.5 max-[980px]:px-4 max-[980px]:pb-3 max-[980px]:rounded-[20px]">
             {composerAttachments.length ? (
-              <div className="composer-attachments">
+              <div className="flex flex-wrap gap-2 mb-2">
                 {composerAttachments.map((attachment) => (
                   <AttachmentChip
                     key={attachment.id}
@@ -1584,7 +708,7 @@ export function ChatWorkspace() {
 
             <textarea
               ref={composerInputRef}
-              className="composer-input"
+              className="composer-input max-h-[220px] resize-none border-0 bg-transparent text-foreground outline-0 p-0 text-base leading-[1.55] overflow-y-auto max-[980px]:max-h-[160px] max-[980px]:text-[0.95rem]"
               placeholder={isLandingState ? "How can I help today?" : "Reply..."}
               value={composerValue}
               onChange={(event) => {
@@ -1600,7 +724,7 @@ export function ChatWorkspace() {
               rows={1}
             />
 
-            <div className="composer-footer">
+            <div className="flex items-center justify-between gap-[18px] max-[980px]:gap-2">
               <input
                 ref={fileInputRef}
                 type="file"
@@ -1614,18 +738,18 @@ export function ChatWorkspace() {
 
               <button
                 type="button"
-                className="composer-add-button"
+                className="inline-grid h-9 w-9 place-items-center rounded-full border-0 bg-transparent text-[rgba(255,255,255,0.7)] cursor-pointer hover:bg-[rgba(255,255,255,0.05)] hover:text-[rgba(255,255,255,0.92)]"
                 onClick={() => fileInputRef.current?.click()}
                 aria-label="Upload a file"
               >
                 <IconPlus />
               </button>
 
-              <div className="composer-footer-actions">
-                <div className="composer-model-menu" data-chat-action-menu>
+              <div className="flex items-center gap-2.5 ml-auto">
+                <div className="relative" data-chat-action-menu>
                   <button
                     type="button"
-                    className="composer-model-button"
+                    className="inline-flex items-center gap-2 rounded-full border-0 bg-transparent text-[rgba(245,240,232,0.68)] text-[0.82rem] leading-none cursor-pointer py-2 px-2.5 transition-[background,color] duration-[180ms] ease-linear hover:bg-[rgba(255,255,255,0.045)] hover:text-[rgba(245,240,232,0.9)]"
                     aria-label="Select model"
                     aria-expanded={modelMenuOpen}
                     ref={modelButtonRef}
@@ -1640,7 +764,7 @@ export function ChatWorkspace() {
                       anchor={modelButtonRef.current}
                       models={catalog.availableMainModels}
                       selectedModelId={selectedMainModelId}
-                      isUpdating={isUpdatingModel}
+                      isUpdating={false}
                       onSelect={(modelId) => {
                         void handleSelectMainModel(modelId);
                       }}
@@ -1650,7 +774,7 @@ export function ChatWorkspace() {
 
                 <button
                   type="button"
-                  className="composer-send-button"
+                  className="inline-grid h-[54px] w-[54px] place-items-center rounded-[16px] border-0 bg-[#d47049] text-[#fff8f0] cursor-pointer shadow-[0_10px_24px_rgba(207,109,67,0.3)] transition-[transform,background,opacity] duration-[180ms] ease-linear hover:not-disabled:-translate-y-px hover:not-disabled:bg-[#dd7851] disabled:opacity-50 disabled:cursor-not-allowed max-[980px]:h-[42px] max-[980px]:w-[42px] max-[980px]:rounded-[12px]"
                   onClick={() => {
                     void handleSend();
                   }}
@@ -1663,45 +787,45 @@ export function ChatWorkspace() {
             </div>
           </div>
 
-          <div className="composer-disclaimer">AI can make mistakes. Please double-check responses.</div>
+          <div className="mt-2.5 text-center text-[rgba(255,255,255,0.46)] text-[0.78rem]">AI can make mistakes. Please double-check responses.</div>
         </footer>
         </div>
       </main>
 
       {searchModalOpen ? (
-        <div className="search-modal-overlay" onClick={() => setSearchModalOpen(false)}>
-          <div className="search-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="search-modal-header">
+        <div className="fixed inset-0 z-200 flex items-start justify-center pt-[12vh] bg-[rgba(0,0,0,0.5)] backdrop-blur-[4px]" onClick={() => setSearchModalOpen(false)}>
+          <div className="w-[min(560px,90vw)] max-h-[60vh] flex flex-col border border-[rgba(255,255,255,0.1)] rounded-[16px] bg-[rgba(28,26,22,0.98)] shadow-[0_24px_64px_rgba(0,0,0,0.5)] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2.5 px-4 py-3.5 border-b border-[rgba(255,255,255,0.08)] text-[rgba(245,240,232,0.5)]">
               <IconSearch />
               <input
                 type="text"
-                className="search-modal-input"
+                className="search-modal-input flex-1 border-0 bg-transparent text-[rgba(245,240,232,0.92)] text-base outline-none"
                 placeholder="Search chats"
                 autoFocus
                 value={sidebarQuery}
                 onChange={(e) => setSidebarQuery(e.target.value)}
               />
-              <button type="button" className="ghost-icon-button search-modal-close" onClick={() => { setSearchModalOpen(false); setSidebarQuery(""); }}>
+              <button type="button" className="inline-grid h-8 w-8 shrink-0 place-items-center border-0 bg-transparent text-[rgba(236,230,219,0.56)] cursor-pointer rounded-[10px] transition-[background,color] duration-[140ms] ease-linear hover:bg-[rgba(255,255,255,0.065)] hover:text-[rgba(247,242,233,0.92)]" onClick={() => { setSearchModalOpen(false); setSidebarQuery(""); }}>
                 <IconClose />
               </button>
             </div>
-            <div className="search-modal-results">
+            <div className="overflow-y-auto p-1.5">
               {filteredConversations.map((conversation) => (
                 <button
                   key={conversation.id}
                   type="button"
-                  className={`search-modal-item ${conversation.id === activeConversationId ? "search-modal-item-active" : ""}`}
+                  className={`flex w-full items-center gap-2.5 border-0 rounded-[10px] bg-transparent text-[rgba(245,240,232,0.86)] cursor-pointer py-2.5 px-3 text-left text-[0.9rem] transition-[background] duration-[140ms] ease-linear hover:bg-[rgba(255,255,255,0.06)] ${conversation.id === activeConversationId ? "bg-[rgba(255,255,255,0.08)]" : ""}`}
                   onClick={() => {
                     setSearchModalOpen(false);
                     setSidebarQuery("");
                     void selectConversation(conversation.id).catch(() => {});
                   }}
                 >
-                  <span className="search-modal-item-title">{conversation.title}</span>
+                  <span className="overflow-hidden whitespace-nowrap text-ellipsis">{conversation.title}</span>
                 </button>
               ))}
               {filteredConversations.length === 0 ? (
-                <div className="search-modal-empty">No chats found</div>
+                <div className="py-6 px-4 text-center text-[rgba(245,240,232,0.4)] text-[0.88rem]">No chats found</div>
               ) : null}
             </div>
           </div>
