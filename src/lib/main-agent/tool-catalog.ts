@@ -86,7 +86,7 @@ export const TOOL_CATALOG = [
     label: "Memory",
     runtime: "main_agent" as const,
     kind: "anthropic_client" as const,
-    enabled: true,
+    enabled: false,
     description: "Workspace memory persisted in Postgres and exposed as a Claude-style memory tool.",
   },
   {

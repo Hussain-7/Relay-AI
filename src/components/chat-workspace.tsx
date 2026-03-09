@@ -270,6 +270,44 @@ function IconInfo() {
   );
 }
 
+function IconCopy() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4">
+      <rect x="9" y="9" width="10" height="10" rx="2" fill="none" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M5 15V6a2 2 0 0 1 2-2h9" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function CopyButton({ text, label }: { text: string; label?: string }) {
+  const [copied, setCopied] = useState(false);
+
+  return (
+    <button
+      type="button"
+      className="msg-action-btn"
+      aria-label={label ?? "Copy"}
+      onClick={() => {
+        void navigator.clipboard.writeText(text).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1800);
+        });
+      }}
+    >
+      {copied ? <IconCheck /> : <IconCopy />}
+    </button>
+  );
+}
+
+function formatShortTime(iso: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(iso));
+}
+
 function formatTimeLabel(iso: string) {
   return new Intl.DateTimeFormat(undefined, {
     hour: "numeric",
@@ -499,8 +537,13 @@ function buildTimelineEntries(events: TimelineEventEnvelope[]) {
         break;
       }
       case "tool.call.input.delta": {
+        // Try toolUseId first, then fall back to matching by tool name or last entry
+        const toolUseId = typeof event.payload?.toolUseId === "string" ? event.payload.toolUseId : null;
         const key =
-          (typeof event.payload?.toolUseId === "string" && event.payload.toolUseId) ||
+          (toolUseId && toolEntries.has(toolUseId) && toolUseId) ||
+          Array.from(toolEntries.values())
+            .reverse()
+            .find((entry) => entry.status === "running")?.id ||
           `${String(event.payload?.toolName ?? "tool")}-${String(event.payload?.index ?? event.id)}`;
         const existing = toolEntries.get(key);
         if (existing) {
@@ -768,6 +811,7 @@ function RunThread({
   finalText,
   createdAt,
   isLive,
+  isLast,
 }: {
   userPrompt: string;
   attachments: AttachmentDto[];
@@ -775,24 +819,34 @@ function RunThread({
   finalText: string | null;
   createdAt: string;
   isLive?: boolean;
+  isLast?: boolean;
 }) {
   const entries = useMemo(() => buildTimelineEntries(events), [events]);
   const showPendingCard = isLive && entries.length === 0 && !finalText;
+  const hasAgentResponse = Boolean(finalText);
+  // For the last run: if there's an agent response, show actions on agent row always; user row on hover.
+  // If no agent response yet, user row is the last visible — show always.
+  const userActionsAlwaysVisible = isLast && !hasAgentResponse;
+  const agentActionsAlwaysVisible = isLast && hasAgentResponse;
 
   return (
     <article className="run-thread">
-      <div className="run-thread-meta">{formatTimeLabel(createdAt)}</div>
-
       <div className="message-row message-row-user">
-        <div className="chat-bubble chat-bubble-user" aria-label="User message">
-          <div className="chat-bubble-copy chat-bubble-copy-user whitespace-pre-wrap">{userPrompt}</div>
-          {attachments.length ? (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {attachments.map((attachment) => (
-                <AttachmentChip key={attachment.id} attachment={attachment} />
-              ))}
-            </div>
-          ) : null}
+        <div className="msg-group msg-group-user">
+          <div className="chat-bubble chat-bubble-user" aria-label="User message">
+            <div className="chat-bubble-copy chat-bubble-copy-user whitespace-pre-wrap">{userPrompt}</div>
+            {attachments.length ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {attachments.map((attachment) => (
+                  <AttachmentChip key={attachment.id} attachment={attachment} />
+                ))}
+              </div>
+            ) : null}
+          </div>
+          <div className={`msg-actions msg-actions-user ${userActionsAlwaysVisible ? "msg-actions-visible" : ""}`}>
+            <span className="msg-actions-time">{formatShortTime(createdAt)}</span>
+            <CopyButton text={userPrompt} label="Copy message" />
+          </div>
         </div>
       </div>
 
@@ -800,13 +854,20 @@ function RunThread({
 
       {finalText ? (
         <div className="message-row message-row-agent">
-          <div className="agent-response" aria-label="Assistant response">
-            <div className="chat-markdown">
-              <Streamdown mode="streaming" isAnimating={Boolean(isLive)} caret="block">
-                {finalText}
-              </Streamdown>
+          <div className="msg-group msg-group-agent">
+            <div className="agent-response" aria-label="Assistant response">
+              <div className="chat-markdown">
+                <Streamdown mode="streaming" isAnimating={Boolean(isLive)} caret="block">
+                  {finalText}
+                </Streamdown>
+              </div>
+              {isLive ? <div className="agent-response-footer">Streaming</div> : null}
             </div>
-            {isLive ? <div className="agent-response-footer">Streaming</div> : null}
+            {!isLive ? (
+              <div className={`msg-actions msg-actions-agent ${agentActionsAlwaysVisible ? "msg-actions-visible" : ""}`}>
+                <CopyButton text={finalText} label="Copy response" />
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -871,6 +932,7 @@ export function ChatWorkspace() {
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const profileRef = useRef<HTMLDivElement | null>(null);
   const transcriptRef = useRef<HTMLDivElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
   const modelButtonRef = useRef<HTMLButtonElement | null>(null);
   const wasLandingRef = useRef(true);
   const [animateComposerDock, setAnimateComposerDock] = useState(false);
@@ -946,11 +1008,23 @@ export function ChatWorkspace() {
     });
   }, []);
 
+  const updateScrollShadows = useEffectEvent(() => {
+    const el = transcriptRef.current;
+    const stage = stageRef.current;
+    if (!el || !stage) return;
+
+    const scrollTop = el.scrollTop;
+    const scrollBottom = el.scrollHeight - el.clientHeight - scrollTop;
+    stage.dataset.scrollTop = scrollTop > 8 ? "true" : "false";
+    stage.dataset.scrollBottom = scrollBottom > 8 ? "true" : "false";
+  });
+
   useEffect(() => {
     transcriptRef.current?.scrollTo({
       top: transcriptRef.current.scrollHeight,
       behavior: "smooth",
     });
+    updateScrollShadows();
   }, [activeConversation, liveRun]);
 
   useEffect(() => {
@@ -1419,12 +1493,12 @@ export function ChatWorkspace() {
                 ) : null}
               </div>
             ) : (
-              <div className="chat-header-title">Loading conversation</div>
+              <div className="chat-header-title" style={{ opacity: 0.4 }}>New chat</div>
             )}
           </div>
         </header>
 
-        <div className="chat-stage">
+        <div className="chat-stage" ref={stageRef}>
           {isLandingState ? (
             <section className="chat-landing">
               {errorMessage ? <div className="error-banner error-banner-landing">{errorMessage}</div> : null}
@@ -1458,11 +1532,11 @@ export function ChatWorkspace() {
               </div>
             </section>
           ) : (
-            <div className="chat-transcript" ref={transcriptRef}>
+            <div className="chat-transcript" ref={transcriptRef} onScroll={updateScrollShadows}>
               <div className="chat-transcript-inner">
                 {errorMessage ? <div className="error-banner">{errorMessage}</div> : null}
 
-                {runs.map((run) => (
+                {runs.map((run, index) => (
                   <RunThread
                     key={run.id}
                     userPrompt={run.userPrompt}
@@ -1470,10 +1544,11 @@ export function ChatWorkspace() {
                     events={run.events}
                     finalText={run.finalText}
                     createdAt={run.createdAt}
+                    isLast={index === runs.length - 1 && !liveRun}
                   />
                 ))}
 
-                {liveRun ? (
+                {liveRun && !runs.some((r) => r.id === liveRun.runId) ? (
                   <RunThread
                     userPrompt={liveRun.userPrompt}
                     attachments={liveRun.attachments}

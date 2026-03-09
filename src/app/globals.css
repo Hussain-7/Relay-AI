@@ -440,6 +440,39 @@ textarea {
   min-width: 0;
 }
 
+.chat-stage::before,
+.chat-stage::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 20px;
+  pointer-events: none;
+  z-index: 2;
+  opacity: 0;
+  transition: opacity 200ms ease;
+  mask-image: linear-gradient(to right, transparent 0%, black 20%, black 80%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, black 20%, black 80%, transparent 100%);
+}
+
+.chat-stage::before {
+  top: 0;
+  background: linear-gradient(180deg, rgba(26, 25, 23, 0.3) 0%, transparent 100%);
+}
+
+.chat-stage::after {
+  bottom: 0;
+  background: linear-gradient(0deg, rgba(26, 25, 23, 0.3) 0%, transparent 100%);
+}
+
+.chat-stage[data-scroll-top="true"]::before {
+  opacity: 1;
+}
+
+.chat-stage[data-scroll-bottom="true"]::after {
+  opacity: 1;
+}
+
 .chat-header {
   display: flex;
   align-items: center;
@@ -640,9 +673,10 @@ textarea {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 18px;
-  padding: 36px 30px 312px;
+  gap: 16px;
+  padding: 36px 30px 280px;
   text-align: center;
+  overflow: hidden;
 }
 
 .chat-landing-title {
@@ -715,6 +749,63 @@ textarea {
   text-align: center;
 }
 
+/* ── Message actions (copy, time) ── */
+
+.msg-group {
+  display: flex;
+  flex-direction: column;
+  max-width: min(66%, 40rem);
+  min-width: 0;
+}
+
+.msg-group-user {
+  align-items: flex-end;
+}
+
+.msg-group-agent {
+  align-items: flex-start;
+  max-width: min(100%, 780px);
+}
+
+.msg-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+
+.msg-group:hover .msg-actions,
+.msg-actions-visible {
+  opacity: 1;
+}
+
+.msg-actions-time {
+  color: rgba(236, 230, 219, 0.38);
+  font-size: 0.72rem;
+  padding: 0 4px;
+  white-space: nowrap;
+}
+
+.msg-action-btn {
+  display: inline-grid;
+  height: 28px;
+  width: 28px;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: rgba(236, 230, 219, 0.38);
+  cursor: pointer;
+  transition: color 140ms ease, background 140ms ease;
+}
+
+.msg-action-btn:hover {
+  color: rgba(245, 240, 232, 0.82);
+  background: rgba(255, 255, 255, 0.06);
+}
+
 .message-row {
   display: flex;
   width: 100%;
@@ -731,7 +822,6 @@ textarea {
 
 .chat-bubble {
   display: inline-flex;
-  max-width: min(66%, 40rem);
   min-width: 0;
   flex-direction: column;
   align-items: flex-start;
@@ -811,7 +901,7 @@ textarea {
 .activity-accordion {
   width: min(100%, 780px);
   max-width: 100%;
-  margin: 8px 0 4px;
+  margin: 8px 0 16px;
 }
 
 .activity-accordion-toggle {
@@ -1064,6 +1154,8 @@ textarea {
   bottom: 50%;
   padding: 0 30px;
   transform: translateY(152px);
+  background: none;
+  backdrop-filter: none;
 }
 
 .composer-panel-animate-dock {
@@ -1467,10 +1559,6 @@ textarea {
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .conversation-row,
-  .chat-bubble,
-  .agent-response,
-  .timeline-card,
   .composer-shell,
   .chat-landing {
     animation: intro-fade 420ms ease-out;
@@ -1538,6 +1626,7 @@ textarea {
     padding-left: 18px;
     padding-right: 18px;
   }
+
 
   .composer-panel-docked,
   .composer-panel-landing {
@@ -1642,8 +1731,12 @@ textarea {
     width: auto;
   }
 
-  .chat-bubble {
+  .msg-group {
     max-width: min(84%, 32rem);
+  }
+
+  .msg-group-agent {
+    max-width: 100%;
   }
 
   .agent-response,
@@ -1653,23 +1746,47 @@ textarea {
   }
 
   .chat-landing {
-    padding: 24px 18px 292px;
+    justify-content: flex-end;
+    padding: 24px 18px 200px;
+    gap: 14px;
+  }
+
+  .chat-landing-badge {
+    font-size: 0.72rem;
+    padding: 7px 12px;
   }
 
   .chat-landing-title {
     flex-direction: column;
-    gap: 10px;
-  }
-
-  .chat-landing-title h1 {
-    font-size: clamp(2rem, 8vw, 3.2rem);
-  }
-
-  .chat-landing-suggestions {
     gap: 8px;
   }
 
+  .chat-landing-title h1 {
+    font-size: clamp(1.6rem, 7vw, 2.6rem);
+  }
+
+  .chat-landing-title-icon {
+    height: 28px;
+    width: 28px;
+  }
+
+  .chat-landing-copy {
+    font-size: 0.88rem;
+    line-height: 1.55;
+  }
+
+  .chat-landing-suggestions {
+    gap: 6px;
+  }
+
   .chat-landing-chip {
-    font-size: 0.8rem;
+    font-size: 0.78rem;
+    padding: 8px 12px;
+  }
+
+  .composer-panel-landing {
+    bottom: 0;
+    padding-bottom: 12px;
+    transform: none;
   }
 }

@@ -383,9 +383,11 @@ export async function streamMainAgentRun(input: {
           emit: async (type, payload) => emit(type, "main_agent", payload),
         });
         const configuredMcpServers = getConfiguredMcpServers();
-        const betas = [
-          ...(attachments.length ? (["files-api-2025-04-14"] as const) : []),
-          ...(configuredMcpServers.length ? (["mcp-client-2025-11-20"] as const) : []),
+        const betas: string[] = [
+          "compact-2026-01-12",
+          "context-management-2025-06-27",
+          ...(attachments.length ? ["files-api-2025-04-14"] : []),
+          ...(configuredMcpServers.length ? ["mcp-client-2025-11-20"] : []),
         ];
 
         const runner = anthropic.beta.messages.toolRunner({
@@ -393,7 +395,7 @@ export async function streamMainAgentRun(input: {
           max_tokens: 4096,
           max_iterations: 8,
           stream: true,
-          betas: betas.length ? [...betas] : undefined,
+          betas,
           metadata: {
             user_id: input.userId,
           },
@@ -401,7 +403,23 @@ export async function streamMainAgentRun(input: {
             type: "enabled",
             budget_tokens: 2048,
           },
-          system: MAIN_AGENT_SYSTEM_PROMPT,
+          system: [
+            {
+              type: "text" as const,
+              text: MAIN_AGENT_SYSTEM_PROMPT,
+              cache_control: { type: "ephemeral" as const },
+            },
+          ],
+          context_management: {
+            edits: [
+              {
+                type: "compact_20260112" as const,
+                trigger: { type: "input_tokens" as const, value: 140000 },
+              },
+              { type: "clear_tool_uses_20250919" as const },
+              { type: "clear_thinking_20251015" as const },
+            ],
+          },
           messages: mapMessagesForModel(
             messageHistory.map((message) => ({
               role: message.role,
@@ -410,10 +428,12 @@ export async function streamMainAgentRun(input: {
           ),
           tools: [...MAIN_AGENT_SERVER_TOOLS.map((tool) => tool.tool), ...tools],
           ...(configuredMcpServers.length ? { mcp_servers: configuredMcpServers } : {}),
-        });
+        } as Parameters<typeof anthropic.beta.messages.toolRunner>[0]);
 
         for await (const assistantIteration of runner) {
           const toolInputSnapshots = new Map<number, string>();
+          const indexToToolUseId = new Map<number, string>();
+          const indexToToolName = new Map<number, string>();
 
           for await (const rawEvent of assistantIteration as AsyncIterable<BetaRawMessageStreamEvent>) {
             if (rawEvent.type === "content_block_start") {
@@ -434,11 +454,23 @@ export async function streamMainAgentRun(input: {
               }
 
               if (block.type === "server_tool_use") {
+                indexToToolUseId.set(rawEvent.index, block.id);
+                indexToToolName.set(rawEvent.index, block.name);
                 await emit("tool.call.started", "main_agent", {
                   toolName: block.name,
                   toolRuntime: "anthropic_server",
                   toolUseId: block.id,
                   input: block.input,
+                  index: rawEvent.index,
+                });
+              }
+
+              // Handle compaction blocks (context was summarized)
+              if ("type" in block && (block as unknown as { type: string }).type === "compaction") {
+                await emit("tool.call.completed", "system", {
+                  toolName: "compaction",
+                  toolRuntime: "anthropic_server",
+                  result: "Context was automatically compacted to manage conversation length.",
                 });
               }
 
@@ -454,6 +486,23 @@ export async function streamMainAgentRun(input: {
                   toolUseId: block.tool_use_id,
                   result: block.content,
                 });
+              }
+
+              // Handle newer code execution tool result types
+              if ("type" in block) {
+                const blockType = (block as unknown as { type: string }).type;
+                if (
+                  blockType === "bash_code_execution_tool_result" ||
+                  blockType === "text_editor_code_execution_tool_result"
+                ) {
+                  const anyBlock = block as unknown as { type: string; tool_use_id: string; content: unknown };
+                  await emit("tool.call.completed", "main_agent", {
+                    toolName: blockType === "bash_code_execution_tool_result" ? "code_execution" : "text_editor",
+                    toolRuntime: "anthropic_server",
+                    toolUseId: anyBlock.tool_use_id,
+                    result: anyBlock.content,
+                  });
+                }
               }
             }
 
@@ -479,6 +528,8 @@ export async function streamMainAgentRun(input: {
                   delta: rawEvent.delta.partial_json,
                   snapshot: nextSnapshot,
                   index: rawEvent.index,
+                  toolUseId: indexToToolUseId.get(rawEvent.index),
+                  toolName: indexToToolName.get(rawEvent.index),
                 });
               }
             }
@@ -505,6 +556,13 @@ export async function streamMainAgentRun(input: {
             metadataJson: {
               model: finalMessage.model,
               stopReason: finalMessage.stop_reason,
+              usage: {
+                inputTokens: finalMessage.usage.input_tokens,
+                outputTokens: finalMessage.usage.output_tokens,
+                cacheCreationInputTokens: (finalMessage.usage as unknown as Record<string, unknown>).cache_creation_input_tokens ?? null,
+                cacheReadInputTokens: (finalMessage.usage as unknown as Record<string, unknown>).cache_read_input_tokens ?? null,
+                serverToolUse: (finalMessage.usage as unknown as Record<string, unknown>).server_tool_use ?? null,
+              },
             } as Prisma.InputJsonValue,
             completedAt: new Date(),
           },
@@ -523,6 +581,12 @@ export async function streamMainAgentRun(input: {
           text: finalText,
           model: finalMessage.model,
           stopReason: finalMessage.stop_reason,
+          usage: {
+            inputTokens: finalMessage.usage.input_tokens,
+            outputTokens: finalMessage.usage.output_tokens,
+            cacheCreationInputTokens: (finalMessage.usage as unknown as Record<string, unknown>).cache_creation_input_tokens ?? null,
+            cacheReadInputTokens: (finalMessage.usage as unknown as Record<string, unknown>).cache_read_input_tokens ?? null,
+          },
         });
 
         await emit("run.completed", "system", {
