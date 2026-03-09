@@ -36,7 +36,7 @@ import { SidebarMenuPortal } from "@/components/chat/sidebar-menu-portal";
 import { ComposerModelMenuPortal } from "@/components/chat/composer-model-menu";
 import { AttachmentChip } from "@/components/chat/attachment-chip";
 import { RunThread } from "@/components/chat/run-thread";
-import { setPendingMessage, consumePendingMessage } from "@/lib/pending-message";
+import { setPendingMessage, peekPendingMessage, consumePendingMessage } from "@/lib/pending-message";
 
 export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   const router = useRouter();
@@ -54,10 +54,17 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
     [router],
   );
 
+  // Suppress detail fetch if we're about to create this conversation (pending message exists)
+  const hasPendingForThis = Boolean(
+    activeConversationId && peekPendingMessage()?.conversationId === activeConversationId,
+  );
+
   // TanStack Query hooks
   const { data: catalog } = useModelCatalog();
   const { data: conversations = [], isLoading: isLoadingConversations } = useConversations();
-  const { data: activeConversation, isFetching: isFetchingDetail } = useConversationDetail(activeConversationId);
+  const { data: activeConversation, isFetching: isFetchingDetail } = useConversationDetail(
+    hasPendingForThis ? null : activeConversationId,
+  );
   const isLoadingDetail = isFetchingDetail && !activeConversation;
 
   // Mutations
@@ -138,22 +145,25 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
 
   const runs = activeConversation?.runs ?? [];
   const isNewChat = !activeConversationId;
-  const isLandingState = isNewChat || (!isLoadingDetail && runs.length === 0 && !liveRun);
+  const hasLiveContent = Boolean(liveRun);
+  const isLandingState = !hasLiveContent && (isNewChat || (!isLoadingDetail && runs.length === 0));
 
+  // Only animate the composer dock when going from the /chat/new landing to a conversation
+  // (first message sent). Don't animate when switching between existing chats.
   useEffect(() => {
-    if (wasLandingRef.current && !isLandingState) {
+    if (wasLandingRef.current && !isLandingState && isNewChat === false) {
       setAnimateComposerDock(true);
 
       const timeout = window.setTimeout(() => {
         setAnimateComposerDock(false);
       }, 460);
 
-      wasLandingRef.current = isLandingState;
+      wasLandingRef.current = false;
       return () => window.clearTimeout(timeout);
     }
 
-    wasLandingRef.current = isLandingState;
-  }, [isLandingState]);
+    wasLandingRef.current = isNewChat;
+  }, [isLandingState, isNewChat]);
 
   // Auto-send pending message when navigating to a new chat page
   useEffect(() => {
@@ -754,13 +764,13 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                 ) : null}
               </div>
             ) : (
-              <div className="min-w-0 flex-[0_1_auto] p-0 text-[0.96rem] font-[430] leading-[1.2] whitespace-nowrap overflow-hidden text-ellipsis" style={{ opacity: 0.4 }}>New chat</div>
+              <div className="min-w-0 flex-[0_1_auto] py-1.5 px-2.5 text-[0.96rem] font-[430] leading-[1.2] whitespace-nowrap overflow-hidden text-ellipsis" style={{ opacity: 0.4 }}>New chat</div>
             )}
           </div>
         </header>
 
         <div className="chat-stage relative min-h-0 overflow-hidden min-w-0" ref={stageRef}>
-          {isLoadingDetail ? (
+          {isLoadingDetail && !hasLiveContent ? (
             <div className="h-full pt-6 px-[30px] max-[980px]:px-[18px]">
               <div className="max-w-[860px] mx-auto flex flex-col gap-5">
                 <div className="flex justify-end">
@@ -845,7 +855,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
         <footer
           className={[
             "absolute left-0 right-0 z-3 bg-[linear-gradient(180deg,rgba(26,25,23,0)_0%,rgba(26,25,23,0.74)_22%,rgba(26,25,23,0.97)_100%)] backdrop-blur-[16px] transition-[transform,opacity] duration-[420ms] [transition-timing-function:cubic-bezier(0.2,0.9,0.2,1)]",
-            isLandingState
+            isLandingState && isNewChat
               ? "bottom-1/2 px-[30px] translate-y-[182px] bg-none backdrop-blur-none max-[980px]:bottom-0 max-[980px]:pb-3 max-[980px]:translate-y-0 max-[980px]:px-[18px]"
               : "bottom-0 px-[30px] pb-[26px] max-[980px]:px-[18px] max-[980px]:pb-3",
             animateComposerDock ? "composer-panel-animate-dock" : "",

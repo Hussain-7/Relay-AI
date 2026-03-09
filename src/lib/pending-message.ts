@@ -12,6 +12,10 @@ export function setPendingMessage(msg: PendingMessage) {
   pending = msg;
 }
 
+export function peekPendingMessage(): PendingMessage | null {
+  return pending;
+}
+
 export function consumePendingMessage(): PendingMessage | null {
   const msg = pending;
   pending = null;
