@@ -1,5 +1,5 @@
 {
-  "name": "endless-dev",
+  "name": "relay-ai",
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@10.5.2",
@@ -32,7 +32,8 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "streamdown": "^2.4.0",
-    "zod": "^4.3.6"
+    "zod": "^4.3.6",
+    "zustand": "^5.0.11"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

@@ -129,6 +129,11 @@ export interface ConversationDetailDto {
 export interface ModelCatalogDto {
   mainAgentModel: string;
   codingAgentModel: string;
+  availableMainModels: Array<{
+    id: string;
+    label: string;
+    description: string;
+  }>;
   builtInTools: Array<{
     id: string;
     label: string;

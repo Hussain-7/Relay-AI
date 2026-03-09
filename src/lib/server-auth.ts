@@ -21,7 +21,7 @@ export async function requireRequestUser(headers: Headers): Promise<RequestUser>
   const requestedUserId = allowHeader ? getHeaderString(headers, "x-user-id") : null;
   const userId = requestedUserId ?? "demo-user";
   const email =
-    (allowHeader ? getHeaderString(headers, "x-user-email") : null) ?? `${userId}@endless-dev.local`;
+    (allowHeader ? getHeaderString(headers, "x-user-email") : null) ?? `${userId}@relay-ai.local`;
   const fullName = allowHeader ? getHeaderString(headers, "x-user-name") : null;
   const avatarUrl = allowHeader ? getHeaderString(headers, "x-user-avatar") : null;
 

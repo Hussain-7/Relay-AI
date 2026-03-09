@@ -389,7 +389,7 @@ export async function streamMainAgentRun(input: {
         ];
 
         const runner = anthropic.beta.messages.toolRunner({
-          model: env.ANTHROPIC_MAIN_MODEL,
+          model: mainAgentSession.anthropicModel ?? env.ANTHROPIC_MAIN_MODEL,
           max_tokens: 4096,
           max_iterations: 8,
           stream: true,

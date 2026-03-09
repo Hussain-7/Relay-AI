@@ -303,3 +303,21 @@ export async function deleteConversationForUser(input: {
     throw new Error("Conversation not found.");
   }
 }
+
+export async function updateConversationMainModel(input: {
+  conversationId: string;
+  userId: string;
+  model: string;
+}) {
+  const session = await ensureMainAgentSession({
+    conversationId: input.conversationId,
+    userId: input.userId,
+  });
+
+  await prisma.mainAgentSession.update({
+    where: { id: session.id },
+    data: {
+      anthropicModel: input.model,
+    },
+  });
+}

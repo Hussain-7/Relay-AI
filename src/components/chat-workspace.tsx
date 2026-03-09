@@ -1,17 +1,11 @@
 "use client";
 
-import { startTransition, useDeferredValue, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { startTransition, useDeferredValue, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Streamdown } from "streamdown";
 
-import type {
-  AttachmentDto,
-  CodingSessionDto,
-  ConversationDetailDto,
-  ConversationSummaryDto,
-  ModelCatalogDto,
-  TimelineEventEnvelope,
-} from "@/lib/contracts";
+import type { AttachmentDto, ConversationDetailDto, ModelCatalogDto, TimelineEventEnvelope } from "@/lib/contracts";
+import { useChatStore } from "@/lib/chat-store";
 
 type LiveRunState = {
   runId: string | null;
@@ -105,6 +99,81 @@ function SidebarMenuPortal({
   );
 }
 
+function ComposerModelMenuPortal({
+  anchor,
+  models,
+  selectedModelId,
+  isUpdating,
+  onSelect,
+}: {
+  anchor: HTMLElement | null;
+  models: ModelCatalogDto["availableMainModels"];
+  selectedModelId: string;
+  isUpdating: boolean;
+  onSelect: (modelId: string) => void;
+}) {
+  const panelRef = useRef<HTMLDivElement | null>(null);
+
+  useLayoutEffect(() => {
+    if (!anchor || !panelRef.current) return;
+
+    const updatePosition = () => {
+      if (!anchor || !panelRef.current) return;
+      const rect = anchor.getBoundingClientRect();
+      const panel = panelRef.current;
+      const width = Math.min(336, window.innerWidth - 24);
+      const left = Math.min(Math.max(12, rect.right - width), window.innerWidth - width - 12);
+
+      panel.style.width = `${width}px`;
+      panel.style.left = `${left}px`;
+      panel.style.top = `${Math.max(12, rect.top - panel.offsetHeight - 10)}px`;
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [anchor, models.length]);
+
+  return createPortal(
+    <div
+      className="composer-model-dropdown"
+      data-chat-action-menu
+      ref={panelRef}
+    >
+      <div className="composer-model-dropdown-header">Choose model</div>
+      {models.map((model) => {
+        const isSelected = selectedModelId === model.id;
+
+        return (
+          <button
+            key={model.id}
+            type="button"
+            className={`composer-model-option ${isSelected ? "composer-model-option-selected" : ""}`}
+            onClick={() => onSelect(model.id)}
+            disabled={isUpdating}
+          >
+            <span className="composer-model-option-copy">
+              <span className="composer-model-option-label">{model.label}</span>
+              <span className="composer-model-option-description">{model.description}</span>
+            </span>
+            {isSelected ? (
+              <span className="composer-model-option-check" aria-hidden="true">
+                <IconCheck />
+              </span>
+            ) : null}
+          </button>
+        );
+      })}
+    </div>,
+    document.body,
+  );
+}
+
 function IconPlus() {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4">
@@ -157,11 +226,10 @@ function IconMore() {
   );
 }
 
-function IconBranch() {
+function IconCheck() {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4">
-      <path d="M7 6a2 2 0 1 1 0 4 2 2 0 0 1 0-4Zm0 8a2 2 0 1 1 0 4 2 2 0 0 1 0-4Zm10-8a2 2 0 1 1 0 4 2 2 0 0 1 0-4ZM9 8h6a2 2 0 0 1 2 2v0" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M7 10v4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="m6.5 12.5 3.4 3.4 7.6-8" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -253,25 +321,6 @@ function formatModelDisplayName(model: string | null | undefined) {
   }
 
   return model.replace(/^claude-/i, "").replaceAll("-", " ");
-}
-
-function formatProjectStatus(status: CodingSessionDto["status"] | null | undefined) {
-  switch (status) {
-    case "PROVISIONING":
-      return "connecting";
-    case "READY":
-      return "connected";
-    case "RUNNING":
-      return "active";
-    case "PAUSED":
-      return "paused";
-    case "ERROR":
-      return "needs attention";
-    case "CLOSED":
-      return "closed";
-    default:
-      return "connected";
-  }
 }
 
 function formatToolDisplayName(name: string) {
@@ -372,21 +421,6 @@ const landingSuggestions = [
   "Review an architecture idea",
   "Map out a coding task",
 ];
-
-function toConversationSummary(conversation: ConversationDetailDto): ConversationSummaryDto {
-  const latestRun = conversation.runs.at(-1) ?? null;
-
-  return {
-    id: conversation.id,
-    title: conversation.title,
-    defaultMode: conversation.defaultMode,
-    createdAt: conversation.createdAt,
-    updatedAt: conversation.updatedAt,
-    latestRunStatus: latestRun?.status ?? null,
-    latestSnippet: latestRun?.finalText ?? latestRun?.userPrompt ?? null,
-    codingStatus: conversation.codingSession?.status ?? null,
-  };
-}
 
 function normalizeApiErrorMessage(message: string) {
   const jsonStart = message.indexOf("{");
@@ -549,10 +583,30 @@ function buildTimelineEntries(events: TimelineEventEnvelope[]) {
   return entries;
 }
 
-function AttachmentChip({ attachment }: { attachment: AttachmentDto }) {
+function getFileTypeBadge(attachment: AttachmentDto) {
+  if (attachment.kind === "PDF") return "PDF";
+  if (attachment.kind === "IMAGE") return "IMG";
+  const ext = attachment.filename.split(".").pop()?.toUpperCase() ?? "";
+  if (["DOC", "DOCX"].includes(ext)) return "DOC";
+  if (["XLS", "XLSX"].includes(ext)) return "XLS";
+  if (["TXT", "MD", "JSON", "CSV"].includes(ext)) return ext;
+  return "FILE";
+}
+
+function AttachmentChip({ attachment, onRemove }: { attachment: AttachmentDto; onRemove?: () => void }) {
+  const badge = getFileTypeBadge(attachment);
+
   return (
-    <div className="rounded-full border border-white/12 bg-white/6 px-3 py-1 text-xs text-white/72">
-      {attachment.filename}
+    <div className="attachment-card">
+      <div className="attachment-card-body">
+        <span className="attachment-card-name">{attachment.filename}</span>
+        <span className="attachment-card-badge">{badge}</span>
+      </div>
+      {onRemove ? (
+        <button type="button" className="attachment-card-remove" onClick={onRemove} aria-label={`Remove ${attachment.filename}`}>
+          <IconClose />
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -788,29 +842,43 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export function ChatWorkspace() {
-  const [catalog, setCatalog] = useState<ModelCatalogDto | null>(null);
-  const [conversations, setConversations] = useState<ConversationSummaryDto[]>([]);
-  const [activeConversation, setActiveConversation] = useState<ConversationDetailDto | null>(null);
-  const [loadingConversationId, setLoadingConversationId] = useState<string | null>(null);
+  const catalog = useChatStore((s) => s.catalog);
+  const conversations = useChatStore((s) => s.conversations);
+  const activeConversation = useChatStore((s) => s.activeConversation);
+  const activeConversationId = useChatStore((s) => s.activeConversationId);
+  const hydrate = useChatStore((s) => s.hydrate);
+  const selectConversation = useChatStore((s) => s.selectConversation);
+  const storeCreateConversation = useChatStore((s) => s.createConversation);
+  const storeDeleteConversation = useChatStore((s) => s.deleteConversation);
+  const updateConversationTitle = useChatStore((s) => s.updateConversationTitle);
+  const storeRefreshConversation = useChatStore((s) => s.refreshConversation);
+  const setActiveConversation = useChatStore((s) => s.setActiveConversation);
+
   const [composerValue, setComposerValue] = useState("");
   const [composerAttachments, setComposerAttachments] = useState<AttachmentDto[]>([]);
   const [sidebarQuery, setSidebarQuery] = useState("");
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [openConversationMenuId, setOpenConversationMenuId] = useState<string | null>(null);
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [liveRun, setLiveRun] = useState<LiveRunState | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [deletingConversationId, setDeletingConversationId] = useState<string | null>(null);
+  const [isUpdatingModel, setIsUpdatingModel] = useState(false);
   const deferredSidebarQuery = useDeferredValue(sidebarQuery);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const profileRef = useRef<HTMLDivElement | null>(null);
   const transcriptRef = useRef<HTMLDivElement | null>(null);
+  const modelButtonRef = useRef<HTMLButtonElement | null>(null);
   const wasLandingRef = useRef(true);
   const [animateComposerDock, setAnimateComposerDock] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
+  const selectedMainModelId = activeConversation?.mainAgentModel ?? catalog?.mainAgentModel ?? "";
 
   const closeMenusOnOutsidePress = useEffectEvent((event: MouseEvent) => {
     if (profileRef.current && event.target instanceof Node && !profileRef.current.contains(event.target)) {
@@ -820,6 +888,7 @@ export function ChatWorkspace() {
     if (!(event.target instanceof Element) || !event.target.closest("[data-chat-action-menu]")) {
       setOpenConversationMenuId(null);
       setHeaderMenuOpen(false);
+      setModelMenuOpen(false);
     }
   });
 
@@ -835,8 +904,25 @@ export function ChatWorkspace() {
     resizeComposer(composerInputRef.current);
   }, [composerValue]);
 
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 980px)");
+    const syncViewport = (event?: MediaQueryListEvent) => {
+      const matches = event?.matches ?? mediaQuery.matches;
+      setIsMobileViewport(matches);
+      if (!matches) {
+        setMobileSidebarOpen(false);
+      }
+    };
+
+    syncViewport();
+    mediaQuery.addEventListener("change", syncViewport);
+
+    return () => {
+      mediaQuery.removeEventListener("change", syncViewport);
+    };
+  }, []);
+
   const runs = activeConversation?.runs ?? [];
-  const activeCodingSession = activeConversation?.codingSession ?? null;
   const isLandingState = runs.length === 0 && !liveRun;
 
   useEffect(() => {
@@ -855,46 +941,9 @@ export function ChatWorkspace() {
   }, [isLandingState]);
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        const [catalogData, conversationsData] = await Promise.all([
-          fetchJson<ModelCatalogDto>("/api/models"),
-          fetchJson<{ conversations: ConversationSummaryDto[] }>("/api/conversations"),
-        ]);
-
-        setCatalog(catalogData);
-        setConversations(conversationsData.conversations);
-
-        if (conversationsData.conversations.length === 0) {
-          const created = await fetchJson<{ conversation: ConversationDetailDto }>("/api/conversations", {
-            method: "POST",
-            body: JSON.stringify({}),
-          });
-          setActiveConversation(created.conversation);
-          setConversations([
-            {
-              id: created.conversation.id,
-              title: created.conversation.title,
-              defaultMode: created.conversation.defaultMode,
-              createdAt: created.conversation.createdAt,
-              updatedAt: created.conversation.updatedAt,
-              latestRunStatus: null,
-              latestSnippet: null,
-              codingStatus: created.conversation.codingSession?.status ?? null,
-            },
-          ]);
-        } else {
-          const firstConversation = await fetchJson<{ conversation: ConversationDetailDto }>(
-            `/api/conversations/${conversationsData.conversations[0]!.id}`,
-          );
-          setActiveConversation(firstConversation.conversation);
-        }
-      } catch (error) {
-        setErrorMessage(error instanceof Error ? error.message : "Failed to load chats.");
-      }
-    };
-
-    void load();
+    hydrate().catch((error) => {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to load chats.");
+    });
   }, []);
 
   useEffect(() => {
@@ -907,6 +956,8 @@ export function ChatWorkspace() {
   useEffect(() => {
     setOpenConversationMenuId(null);
     setHeaderMenuOpen(false);
+    setModelMenuOpen(false);
+    setMobileSidebarOpen(false);
   }, [activeConversation?.id]);
 
   const filteredConversations = useMemo(() => {
@@ -925,104 +976,47 @@ export function ChatWorkspace() {
   }, [conversations, deferredSidebarQuery]);
 
   async function refreshConversation(conversationId: string) {
-    setLoadingConversationId(conversationId);
-
     try {
-      const [conversationData, conversationsData] = await Promise.all([
-        fetchJson<{ conversation: ConversationDetailDto }>(`/api/conversations/${conversationId}`),
-        fetchJson<{ conversations: ConversationSummaryDto[] }>("/api/conversations"),
-      ]);
-
-      startTransition(() => {
-        setActiveConversation(conversationData.conversation);
-        setConversations(conversationsData.conversations);
-      });
+      await storeRefreshConversation(conversationId);
+      setMobileSidebarOpen(false);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to refresh the conversation.");
-    } finally {
-      setLoadingConversationId(null);
     }
   }
 
   async function handleCreateConversation() {
-    try {
-      const data = await fetchJson<{ conversation: ConversationDetailDto }>("/api/conversations", {
-        method: "POST",
-        body: JSON.stringify({}),
-      });
+    // Optimistic: store adds a placeholder instantly
+    setLiveRun(null);
+    setComposerAttachments([]);
+    setComposerValue("");
+    setOpenConversationMenuId(null);
+    setHeaderMenuOpen(false);
+    setMobileSidebarOpen(false);
 
-      startTransition(() => {
-        setActiveConversation(data.conversation);
-        setLiveRun(null);
-        setComposerAttachments([]);
-        setComposerValue("");
-        setOpenConversationMenuId(null);
-        setHeaderMenuOpen(false);
-        setConversations((existing) => [toConversationSummary(data.conversation), ...existing]);
-      });
+    try {
+      await storeCreateConversation();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to create a conversation.");
     }
   }
 
   async function handleDeleteConversation(conversationId: string) {
-    if (deletingConversationId) {
-      return;
-    }
+    if (deletingConversationId) return;
 
+    // Optimistic: store removes from list instantly
     setDeletingConversationId(conversationId);
     setErrorMessage(null);
+    setOpenConversationMenuId(null);
+    setHeaderMenuOpen(false);
+    setMobileSidebarOpen(false);
 
     try {
-      await fetchJson<{ success: true }>(`/api/conversations/${conversationId}`, {
-        method: "DELETE",
-      });
-
-      const conversationsData = await fetchJson<{ conversations: ConversationSummaryDto[] }>("/api/conversations");
-      const remainingConversations = conversationsData.conversations;
-      const deletedActiveConversation = activeConversation?.id === conversationId;
-
-      if (remainingConversations.length === 0) {
-        const created = await fetchJson<{ conversation: ConversationDetailDto }>("/api/conversations", {
-          method: "POST",
-          body: JSON.stringify({}),
-        });
-
-        startTransition(() => {
-          setActiveConversation(created.conversation);
-          setConversations([toConversationSummary(created.conversation)]);
-          setLiveRun(null);
-          setComposerAttachments([]);
-          setComposerValue("");
-          setOpenConversationMenuId(null);
-          setHeaderMenuOpen(false);
-        });
-
-        return;
+      await storeDeleteConversation(conversationId);
+      if (activeConversationId === conversationId) {
+        setLiveRun(null);
+        setComposerAttachments([]);
+        setComposerValue("");
       }
-
-      if (deletedActiveConversation) {
-        const nextConversationId = remainingConversations[0]!.id;
-        const nextConversation = await fetchJson<{ conversation: ConversationDetailDto }>(`/api/conversations/${nextConversationId}`);
-
-        startTransition(() => {
-          setActiveConversation(nextConversation.conversation);
-          setConversations(remainingConversations);
-          setLiveRun(null);
-          setComposerAttachments([]);
-          setComposerValue("");
-          setOpenConversationMenuId(null);
-          setHeaderMenuOpen(false);
-        });
-
-        return;
-      }
-
-      startTransition(() => {
-        setConversations(remainingConversations);
-        setOpenConversationMenuId(null);
-        setHeaderMenuOpen(false);
-      });
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to delete the chat.");
     } finally {
@@ -1134,26 +1128,7 @@ export function ChatWorkspace() {
           const event = JSON.parse(line.slice(6)) as TimelineEventEnvelope;
 
           if (event.type === "conversation.updated" && typeof event.payload?.title === "string") {
-            const nextTitle = event.payload.title;
-
-            setActiveConversation((current) =>
-              current && current.id === event.conversationId
-                ? {
-                    ...current,
-                    title: nextTitle,
-                  }
-                : current,
-            );
-            setConversations((current) =>
-              current.map((conversation) =>
-                conversation.id === event.conversationId
-                  ? {
-                      ...conversation,
-                      title: nextTitle,
-                    }
-                  : conversation,
-              ),
-            );
+            updateConversationTitle(event.conversationId, event.payload.title);
           }
 
           setLiveRun((current) => {
@@ -1217,10 +1192,56 @@ export function ChatWorkspace() {
     }
   }
 
+  async function handleSelectMainModel(modelId: string) {
+    if (!activeConversation || isUpdatingModel || activeConversation.mainAgentModel === modelId) {
+      setModelMenuOpen(false);
+      return;
+    }
+
+    setIsUpdatingModel(true);
+    setErrorMessage(null);
+
+    try {
+      const data = await fetchJson<{ conversation: ConversationDetailDto }>(`/api/conversations/${activeConversation.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          mainAgentModel: modelId,
+        }),
+      });
+
+      startTransition(() => {
+        setActiveConversation(data.conversation);
+        setModelMenuOpen(false);
+      });
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to update the model.");
+    } finally {
+      setIsUpdatingModel(false);
+    }
+  }
+
+  const showCollapsedSidebar = sidebarCollapsed && !isMobileViewport;
+
   return (
-    <div className={`app-shell ${sidebarCollapsed ? "app-shell-collapsed" : ""}`}>
-      <aside className={`sidebar-panel ${sidebarCollapsed ? "sidebar-panel-collapsed" : ""}`}>
-        {sidebarCollapsed ? (
+    <div className={`app-shell ${showCollapsedSidebar ? "app-shell-collapsed" : ""}`}>
+      {isMobileViewport && mobileSidebarOpen ? (
+        <button
+          type="button"
+          className="mobile-sidebar-backdrop"
+          aria-label="Close navigation"
+          onClick={() => setMobileSidebarOpen(false)}
+        />
+      ) : null}
+
+      <aside
+        className={[
+          "sidebar-panel",
+          showCollapsedSidebar ? "sidebar-panel-collapsed" : "",
+          isMobileViewport ? "sidebar-panel-mobile" : "",
+          isMobileViewport && mobileSidebarOpen ? "sidebar-panel-mobile-open" : "",
+        ].join(" ")}
+      >
+        {showCollapsedSidebar ? (
           <>
             <div className="sidebar-collapsed-strip">
               <button type="button" className="ghost-icon-button" aria-label="Expand sidebar" onClick={() => setSidebarCollapsed(false)}>
@@ -1240,34 +1261,32 @@ export function ChatWorkspace() {
         ) : (
           <>
         <div className="sidebar-brand">
-          <div>
-            <div className="sidebar-brand-title">Endless Dev</div>
-            <div className="sidebar-brand-subtitle">Chat, search, and build</div>
-          </div>
-          <button type="button" className="ghost-icon-button" aria-label="Collapse sidebar" onClick={() => setSidebarCollapsed(true)}>
-            <IconSidebarToggle />
-          </button>
+          <div className="sidebar-brand-title">Relay AI</div>
+          {isMobileViewport ? (
+            <button type="button" className="ghost-icon-button" aria-label="Close sidebar" onClick={() => setMobileSidebarOpen(false)}>
+              <IconClose />
+            </button>
+          ) : (
+            <button type="button" className="ghost-icon-button" aria-label="Collapse sidebar" onClick={() => setSidebarCollapsed(true)}>
+              <IconSidebarToggle />
+            </button>
+          )}
         </div>
 
-        <button type="button" className="sidebar-primary-button" onClick={handleCreateConversation}>
-          <IconPlus />
+        <button type="button" className="sidebar-row" onClick={handleCreateConversation}>
+          <span className="sidebar-row-icon"><IconPlus /></span>
           <span>New chat</span>
         </button>
 
-        <label className="sidebar-search">
-          <IconSearch />
-          <input
-            value={sidebarQuery}
-            onChange={(event) => setSidebarQuery(event.target.value)}
-            placeholder="Search chats"
-            aria-label="Search chats"
-          />
-        </label>
+        <button type="button" className="sidebar-row" onClick={() => setSearchModalOpen(true)}>
+          <span className="sidebar-row-icon"><IconSearch /></span>
+          <span>Search</span>
+        </button>
 
         <div className="sidebar-section-label">Chats</div>
         <div className="sidebar-conversation-list">
           {filteredConversations.map((conversation) => {
-            const isActive = conversation.id === activeConversation?.id;
+            const isActive = conversation.id === activeConversationId;
             const isMenuOpen = openConversationMenuId === conversation.id;
             const isDeleting = deletingConversationId === conversation.id;
             return (
@@ -1279,7 +1298,10 @@ export function ChatWorkspace() {
                   type="button"
                   className={`conversation-row ${isActive ? "conversation-row-active" : ""}`}
                   onClick={() => {
-                    void refreshConversation(conversation.id);
+                    setMobileSidebarOpen(false);
+                    void selectConversation(conversation.id).catch((error) => {
+                      setErrorMessage(error instanceof Error ? error.message : "Failed to load conversation.");
+                    });
                   }}
                 >
                   <div className="conversation-row-title">{conversation.title}</div>
@@ -1322,12 +1344,12 @@ export function ChatWorkspace() {
             className="sidebar-profile-button"
             onClick={() => setProfileMenuOpen((current) => !current)}
           >
-            <div className="sidebar-profile-avatar">ED</div>
+            <div className="sidebar-profile-avatar">N</div>
             <div className="min-w-0">
               <div className="sidebar-profile-name">Demo account</div>
               <div className="sidebar-profile-plan">Local development mode</div>
             </div>
-            <IconChevron />
+            <span className="sidebar-profile-chevron"><IconChevron /></span>
           </button>
 
           {profileMenuOpen ? (
@@ -1350,11 +1372,23 @@ export function ChatWorkspace() {
       <main className={`chat-panel ${isLandingState ? "chat-panel-landing" : "chat-panel-active"}`}>
         <header className="chat-header">
           <div className="chat-header-main">
+            {isMobileViewport ? (
+              <button
+                type="button"
+                className="ghost-icon-button mobile-sidebar-toggle"
+                aria-label={mobileSidebarOpen ? "Close navigation" : "Open navigation"}
+                aria-expanded={mobileSidebarOpen}
+                onClick={() => setMobileSidebarOpen((current) => !current)}
+              >
+                <IconSidebarToggle />
+              </button>
+            ) : null}
+
             {activeConversation ? (
               <div className="chat-header-menu" data-chat-action-menu>
                 <button
                   type="button"
-                  className="chat-header-title-button"
+                  className={`chat-header-title-button ${headerMenuOpen ? "chat-header-title-button-open" : ""}`}
                   aria-label={`Open menu for ${activeConversation.title}`}
                   aria-expanded={headerMenuOpen}
                   onClick={() => {
@@ -1363,7 +1397,10 @@ export function ChatWorkspace() {
                   }}
                 >
                   <span className="chat-header-title">{activeConversation.title}</span>
-                  <IconChevron />
+                  <span className="chat-header-title-divider" aria-hidden="true" />
+                  <span className={`chat-header-title-chevron ${headerMenuOpen ? "chat-header-title-chevron-open" : ""}`} aria-hidden="true">
+                    <IconChevron />
+                  </span>
                 </button>
 
                 {headerMenuOpen ? (
@@ -1384,21 +1421,6 @@ export function ChatWorkspace() {
             ) : (
               <div className="chat-header-title">Loading conversation</div>
             )}
-          </div>
-
-          <div className="chat-header-pills">
-            <div className="header-pill">
-              <IconSpark />
-              <span>{formatModelDisplayName(catalog?.mainAgentModel)}</span>
-            </div>
-            {activeCodingSession ? (
-              <div className="header-pill">
-                <IconBranch />
-                <span>
-                  {activeCodingSession.repoBinding?.repoFullName ?? "Connected project"} · {formatProjectStatus(activeCodingSession.status)}
-                </span>
-              </div>
-            ) : null}
           </div>
         </header>
 
@@ -1472,15 +1494,19 @@ export function ChatWorkspace() {
             animateComposerDock ? "composer-panel-animate-dock" : "",
           ].join(" ")}
         >
-          {composerAttachments.length ? (
-            <div className="composer-attachments">
-              {composerAttachments.map((attachment) => (
-                <AttachmentChip key={attachment.id} attachment={attachment} />
-              ))}
-            </div>
-          ) : null}
-
           <div className="composer-shell">
+            {composerAttachments.length ? (
+              <div className="composer-attachments">
+                {composerAttachments.map((attachment) => (
+                  <AttachmentChip
+                    key={attachment.id}
+                    attachment={attachment}
+                    onRemove={() => setComposerAttachments((prev) => prev.filter((a) => a.id !== attachment.id))}
+                  />
+                ))}
+              </div>
+            ) : null}
+
             <textarea
               ref={composerInputRef}
               className="composer-input"
@@ -1521,10 +1547,31 @@ export function ChatWorkspace() {
               </button>
 
               <div className="composer-footer-actions">
-                <button type="button" className="composer-model-button" aria-label="Current model">
-                  <span>{formatModelDisplayName(catalog?.mainAgentModel)}</span>
-                  <IconChevron />
-                </button>
+                <div className="composer-model-menu" data-chat-action-menu>
+                  <button
+                    type="button"
+                    className="composer-model-button"
+                    aria-label="Select model"
+                    aria-expanded={modelMenuOpen}
+                    ref={modelButtonRef}
+                    onClick={() => setModelMenuOpen((current) => !current)}
+                  >
+                    <span>{formatModelDisplayName(selectedMainModelId)}</span>
+                    <IconChevron />
+                  </button>
+
+                  {modelMenuOpen && catalog ? (
+                    <ComposerModelMenuPortal
+                      anchor={modelButtonRef.current}
+                      models={catalog.availableMainModels}
+                      selectedModelId={selectedMainModelId}
+                      isUpdating={isUpdatingModel}
+                      onSelect={(modelId) => {
+                        void handleSelectMainModel(modelId);
+                      }}
+                    />
+                  ) : null}
+                </div>
 
                 <button
                   type="button"
@@ -1532,7 +1579,7 @@ export function ChatWorkspace() {
                   onClick={() => {
                     void handleSend();
                   }}
-                  disabled={!composerValue.trim() || isSending || Boolean(loadingConversationId)}
+                  disabled={!composerValue.trim() || isSending}
                   aria-label={isSending ? "Streaming response" : "Send message"}
                 >
                   <IconArrowUp />
@@ -1568,11 +1615,11 @@ export function ChatWorkspace() {
                 <button
                   key={conversation.id}
                   type="button"
-                  className={`search-modal-item ${conversation.id === activeConversation?.id ? "search-modal-item-active" : ""}`}
+                  className={`search-modal-item ${conversation.id === activeConversationId ? "search-modal-item-active" : ""}`}
                   onClick={() => {
-                    void refreshConversation(conversation.id);
                     setSearchModalOpen(false);
                     setSidebarQuery("");
+                    void selectConversation(conversation.id).catch(() => {});
                   }}
                 >
                   <span className="search-modal-item-title">{conversation.title}</span>

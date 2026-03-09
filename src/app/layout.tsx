@@ -1,9 +1,14 @@
 import type { Metadata } from "next";
-import { JetBrains_Mono, Space_Grotesk } from "next/font/google";
+import { Inter, JetBrains_Mono, Newsreader } from "next/font/google";
 import "./globals.css";
 
-const primarySans = Space_Grotesk({
+const primarySans = Inter({
   variable: "--font-primary-sans",
+  subsets: ["latin"],
+});
+
+const primarySerif = Newsreader({
+  variable: "--font-primary-serif",
   subsets: ["latin"],
 });
 
@@ -13,8 +18,8 @@ const primaryMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Endless Dev",
-  description: "General-purpose research, coding, and MCP agent platform",
+  title: "Relay AI",
+  description: "General-purpose AI workspace for chat, research, files, and remote coding",
 };
 
 export default function RootLayout({
@@ -24,7 +29,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${primarySans.variable} ${primaryMono.variable} antialiased`}>
+      <body className={`${primarySans.variable} ${primarySerif.variable} ${primaryMono.variable} antialiased`}>
         {children}
       </body>
     </html>

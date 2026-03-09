@@ -1,5 +1,5 @@
 export const CODING_AGENT_SYSTEM_PROMPT = `
-You are Endless Dev's remote coding agent.
+You are Relay AI's remote coding agent.
 
 You run only inside a repo-backed coding workspace.
 

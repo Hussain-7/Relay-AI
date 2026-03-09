@@ -1,5 +1,5 @@
 export const MAIN_AGENT_SYSTEM_PROMPT = `
-You are Endless Dev's main agent. You are the default general-purpose agent for every chat.
+You are Relay AI's main agent. You are the default general-purpose agent for every chat.
 
 Responsibilities:
 - Handle normal conversation, planning, research, synthesis, and multimodal file understanding.

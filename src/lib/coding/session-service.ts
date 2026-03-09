@@ -114,11 +114,11 @@ export async function startOrResumeCodingSession(input: {
 
   if (repoBinding) {
     await sandbox.files.write(
-      `${workspacePath}/README.endless-dev.md`,
+      `${workspacePath}/README.relay-ai.md`,
       [
         `# ${repoBinding.repoFullName}`,
         "",
-        "This coding workspace was provisioned by Endless Dev.",
+        "This coding workspace was provisioned by Relay AI.",
         "",
         "The full remote Claude Code runner handoff is scaffolded in the app layer.",
         "Clone and authenticated git operations should be completed by the dedicated runner service.",
@@ -134,7 +134,7 @@ export async function startOrResumeCodingSession(input: {
   });
 
   await sandbox.files.write(
-    `${workspacePath}/.endless-dev.coding-agent.json`,
+    `${workspacePath}/.relay-ai.coding-agent.json`,
     JSON.stringify(bootstrapSpec, null, 2),
   );
 
