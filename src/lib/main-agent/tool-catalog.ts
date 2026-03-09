@@ -2,19 +2,14 @@ import { env } from "@/lib/env";
 
 export const AVAILABLE_MAIN_MODELS = [
   {
-    id: "claude-opus-4-6",
-    label: "Opus 4.6",
-    description: "Highest intelligence for complex reasoning and coding.",
-  },
-  {
     id: "claude-sonnet-4-6",
     label: "Sonnet 4.6",
     description: "Balanced speed and intelligence for most chat and agent work.",
   },
   {
-    id: "claude-haiku-4-5",
-    label: "Haiku 4.5",
-    description: "Fastest option for lightweight prompts and quick iteration.",
+    id: "claude-opus-4-6",
+    label: "Opus 4.6",
+    description: "Highest intelligence for complex reasoning and coding.",
   },
 ] as const;
 

@@ -613,9 +613,6 @@ export function createMainAgentTools(ctx: ToolRuntimeContext) {
   });
 
   return [
-    createMemoryTool(ctx),
-    memorySearchTool,
-    memoryWriteTool,
     chatSearchTool,
     githubListReposTool,
     githubConnectRepoTool,

@@ -1,5 +1,12 @@
 import { getModelCatalog } from "@/lib/main-agent/tool-catalog";
+import { getCached } from "@/lib/server-cache";
 
 export async function GET() {
-  return Response.json(getModelCatalog());
+  const catalog = await getCached("models:catalog", 3600, async () => getModelCatalog());
+
+  return Response.json(catalog, {
+    headers: {
+      "Cache-Control": "public, max-age=3600, stale-while-revalidate=86400",
+    },
+  });
 }

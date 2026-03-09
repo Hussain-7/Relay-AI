@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { deleteConversationForUser, getConversationDetail, updateConversationMainModel } from "@/lib/conversations";
 import { requireRequestUser } from "@/lib/server-auth";
+import { getCached, invalidateCache } from "@/lib/server-cache";
 
 const patchConversationSchema = z.object({
   mainAgentModel: z.string().trim().min(1).optional(),
@@ -14,12 +15,15 @@ export async function GET(
   try {
     const user = await requireRequestUser(request.headers);
     const { id } = await params;
-    const conversation = await getConversationDetail({
-      conversationId: id,
-      userId: user.userId,
-    });
+    const conversation = await getCached(
+      `conv:${id}`,
+      30,
+      () => getConversationDetail({ conversationId: id, userId: user.userId }),
+    );
 
-    return Response.json({ conversation });
+    return Response.json({ conversation }, {
+      headers: { "Cache-Control": "private, no-cache" },
+    });
   } catch (error) {
     return Response.json(
       {
@@ -42,6 +46,8 @@ export async function DELETE(
       conversationId: id,
       userId: user.userId,
     });
+
+    await invalidateCache(`convos:${user.userId}`, `conv:${id}`);
 
     return Response.json({ success: true });
   } catch (error) {
@@ -75,6 +81,8 @@ export async function PATCH(
       conversationId: id,
       userId: user.userId,
     });
+
+    await invalidateCache(`conv:${id}`);
 
     return Response.json({ conversation });
   } catch (error) {

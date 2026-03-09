@@ -1,17 +1,25 @@
 "use client";
 
 import { useDeferredValue, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
-import type { AttachmentDto, ConversationDetailDto, TimelineEventEnvelope } from "@/lib/contracts";
+import type { AttachmentDto, ConversationDetailDto, ConversationSummaryDto, TimelineEventEnvelope } from "@/lib/contracts";
 import { useChatStore } from "@/lib/chat-store";
+import {
+  useModelCatalog,
+  useConversations,
+  useConversationDetail,
+  useCreateConversation,
+  useDeleteConversation,
+  useUpdateConversationModel,
+  queryKeys,
+} from "@/lib/api-hooks";
 import type { LiveRunState } from "@/lib/chat-utils";
 import {
-  formatShortTime,
   formatModelDisplayName,
   previewText,
   normalizeApiErrorMessage,
   resizeComposer,
-  fetchJson,
   landingSuggestions,
 } from "@/lib/chat-utils";
 import {
@@ -23,7 +31,6 @@ import {
   IconSpark,
   IconChevron,
   IconMore,
-  IconCheck,
 } from "@/components/icons";
 import { SidebarMenuPortal } from "@/components/chat/sidebar-menu-portal";
 import { ComposerModelMenuPortal } from "@/components/chat/composer-model-menu";
@@ -31,17 +38,19 @@ import { AttachmentChip } from "@/components/chat/attachment-chip";
 import { RunThread } from "@/components/chat/run-thread";
 
 export function ChatWorkspace() {
-  const catalog = useChatStore((s) => s.catalog);
-  const conversations = useChatStore((s) => s.conversations);
-  const activeConversation = useChatStore((s) => s.activeConversation);
+  const queryClient = useQueryClient();
+
+  // TanStack Query hooks
+  const { data: catalog } = useModelCatalog();
+  const { data: conversations = [], isLoading: isLoadingConversations } = useConversations();
   const activeConversationId = useChatStore((s) => s.activeConversationId);
-  const hydrate = useChatStore((s) => s.hydrate);
-  const selectConversation = useChatStore((s) => s.selectConversation);
-  const storeCreateConversation = useChatStore((s) => s.createConversation);
-  const storeDeleteConversation = useChatStore((s) => s.deleteConversation);
-  const updateConversationTitle = useChatStore((s) => s.updateConversationTitle);
-  const storeRefreshConversation = useChatStore((s) => s.refreshConversation);
-  const setActiveConversation = useChatStore((s) => s.setActiveConversation);
+  const setActiveConversationId = useChatStore((s) => s.setActiveConversationId);
+  const { data: activeConversation, isLoading: isLoadingDetail } = useConversationDetail(activeConversationId);
+
+  // Mutations
+  const createMutation = useCreateConversation();
+  const deleteMutation = useDeleteConversation();
+  const updateModelMutation = useUpdateConversationModel();
 
   const [composerValue, setComposerValue] = useState("");
   const [composerAttachments, setComposerAttachments] = useState<AttachmentDto[]>([]);
@@ -129,11 +138,24 @@ export function ChatWorkspace() {
     wasLandingRef.current = isLandingState;
   }, [isLandingState]);
 
+  // Auto-select first conversation once the list has loaded
   useEffect(() => {
-    hydrate().catch((error) => {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to load chats.");
-    });
-  }, []);
+    if (isLoadingConversations || activeConversationId) return;
+
+    if (conversations.length > 0) {
+      setActiveConversationId(conversations[0]!.id);
+    } else {
+      // Truly empty — create a first conversation
+      createMutation.mutate(undefined, {
+        onSuccess: (conversation) => {
+          setActiveConversationId(conversation.id);
+        },
+        onError: (error) => {
+          setErrorMessage(error instanceof Error ? error.message : "Failed to create initial conversation.");
+        },
+      });
+    }
+  }, [isLoadingConversations, conversations, activeConversationId]);
 
   function syncScrollShadows() {
     const el = transcriptRef.current;
@@ -159,7 +181,7 @@ export function ChatWorkspace() {
     setHeaderMenuOpen(false);
     setModelMenuOpen(false);
     setMobileSidebarOpen(false);
-  }, [activeConversation?.id]);
+  }, [activeConversationId]);
 
   const filteredConversations = useMemo(() => {
     const query = deferredSidebarQuery.trim().toLowerCase();
@@ -176,17 +198,7 @@ export function ChatWorkspace() {
     });
   }, [conversations, deferredSidebarQuery]);
 
-  async function refreshConversation(conversationId: string) {
-    try {
-      await storeRefreshConversation(conversationId);
-      setMobileSidebarOpen(false);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to refresh the conversation.");
-    }
-  }
-
   async function handleCreateConversation() {
-    // Optimistic: store adds a placeholder instantly
     setLiveRun(null);
     setComposerAttachments([]);
     setComposerValue("");
@@ -194,34 +206,53 @@ export function ChatWorkspace() {
     setHeaderMenuOpen(false);
     setMobileSidebarOpen(false);
 
-    try {
-      await storeCreateConversation();
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to create a conversation.");
-    }
+    createMutation.mutate(undefined, {
+      onSuccess: (conversation) => {
+        setActiveConversationId(conversation.id);
+      },
+      onError: (error) => {
+        setErrorMessage(error instanceof Error ? error.message : "Failed to create a conversation.");
+      },
+    });
   }
 
   async function handleDeleteConversation(conversationId: string) {
     if (deletingConversationId) return;
 
-    // Optimistic: store removes from list instantly
     setDeletingConversationId(conversationId);
     setErrorMessage(null);
     setOpenConversationMenuId(null);
     setHeaderMenuOpen(false);
     setMobileSidebarOpen(false);
 
-    try {
-      await storeDeleteConversation(conversationId);
-      if (activeConversationId === conversationId) {
-        setLiveRun(null);
-        setComposerAttachments([]);
-        setComposerValue("");
-      }
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to delete the chat.");
-    } finally {
-      setDeletingConversationId(null);
+    const wasActive = activeConversationId === conversationId;
+
+    deleteMutation.mutate(conversationId, {
+      onSuccess: () => {
+        if (wasActive) {
+          const remaining = conversations.filter((c) => c.id !== conversationId);
+          if (remaining.length > 0) {
+            setActiveConversationId(remaining[0]!.id);
+          } else {
+            setActiveConversationId(null);
+            setLiveRun(null);
+            setComposerAttachments([]);
+            setComposerValue("");
+          }
+        }
+      },
+      onError: (error) => {
+        setErrorMessage(error instanceof Error ? error.message : "Failed to delete the chat.");
+      },
+      onSettled: () => {
+        setDeletingConversationId(null);
+      },
+    });
+
+    if (wasActive) {
+      setLiveRun(null);
+      setComposerAttachments([]);
+      setComposerValue("");
     }
   }
 
@@ -262,6 +293,19 @@ export function ChatWorkspace() {
     }
   }
 
+  function updateConversationTitle(conversationId: string, title: string) {
+    // Update detail cache
+    queryClient.setQueryData<ConversationDetailDto>(
+      queryKeys.conversation(conversationId),
+      (old) => (old ? { ...old, title } : old),
+    );
+    // Update list cache
+    queryClient.setQueryData<ConversationSummaryDto[]>(
+      queryKeys.conversations,
+      (old) => (old ?? []).map((c) => (c.id === conversationId ? { ...c, title } : c)),
+    );
+  }
+
   async function handleSend() {
     if (!activeConversation || !composerValue.trim() || isSending) {
       return;
@@ -272,6 +316,7 @@ export function ChatWorkspace() {
 
     const prompt = composerValue.trim();
     const attachments = composerAttachments;
+    const conversationId = activeConversation.id;
 
     setComposerValue("");
     setComposerAttachments([]);
@@ -286,7 +331,7 @@ export function ChatWorkspace() {
     });
 
     try {
-      const response = await fetch(`/api/conversations/${activeConversation.id}/messages`, {
+      const response = await fetch(`/api/conversations/${conversationId}/messages`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -305,6 +350,9 @@ export function ChatWorkspace() {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      let lastRunId: string | null = null;
+      let lastPartialText = "";
+      const allEvents: TimelineEventEnvelope[] = [];
 
       while (true) {
         const { done, value } = await reader.read();
@@ -327,6 +375,7 @@ export function ChatWorkspace() {
           }
 
           const event = JSON.parse(line.slice(6)) as TimelineEventEnvelope;
+          allEvents.push(event);
 
           if (event.type === "conversation.updated" && typeof event.payload?.title === "string") {
             updateConversationTitle(event.conversationId, event.payload.title);
@@ -341,6 +390,9 @@ export function ChatWorkspace() {
               event.type === "assistant.text.delta"
                 ? `${current.partialText}${String(event.payload?.delta ?? "")}`
                 : current.partialText;
+
+            lastRunId = event.runId;
+            lastPartialText = nextPartialText;
 
             return {
               ...current,
@@ -357,8 +409,67 @@ export function ChatWorkspace() {
         }
       }
 
-      const conversationId = activeConversation.id;
-      await refreshConversation(conversationId);
+      // Phase 5: Post-stream cache patch instead of refreshConversation()
+      if (lastRunId) {
+        const completedEvent = allEvents.find((e) => e.type === "run.completed");
+        const finalText = lastPartialText;
+        const now = new Date().toISOString();
+
+        // Patch detail cache — append the completed run
+        queryClient.setQueryData<ConversationDetailDto>(
+          queryKeys.conversation(conversationId),
+          (old) => {
+            if (!old) return old;
+
+            const newRun = {
+              id: lastRunId!,
+              status: completedEvent ? ("COMPLETED" as const) : ("FAILED" as const),
+              userPrompt: prompt,
+              finalText,
+              metadataJson: null,
+              createdAt: now,
+              updatedAt: now,
+              completedAt: completedEvent ? now : null,
+              cancelledAt: null,
+              attachments: attachments,
+              approvals: [],
+              events: allEvents.filter((e) => e.runId === lastRunId),
+              codingSession: null,
+            };
+
+            return {
+              ...old,
+              updatedAt: now,
+              runs: [...old.runs, newRun],
+            };
+          },
+        );
+
+        // Patch list cache — update snippet and timestamp
+        queryClient.setQueryData<ConversationSummaryDto[]>(
+          queryKeys.conversations,
+          (old) =>
+            (old ?? []).map((c) =>
+              c.id === conversationId
+                ? {
+                    ...c,
+                    updatedAt: now,
+                    latestSnippet: finalText || prompt,
+                    latestRunStatus: completedEvent ? ("COMPLETED" as const) : ("FAILED" as const),
+                  }
+                : c,
+            ),
+        );
+
+        // Background refetch for server truth after optimistic patch
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.conversation(conversationId),
+        });
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.conversations,
+        });
+      }
+
       setLiveRun(null);
     } catch (error) {
       const message = error instanceof Error ? normalizeApiErrorMessage(error.message) : "Failed to send prompt.";
@@ -376,7 +487,7 @@ export function ChatWorkspace() {
                     {
                       id: `client-run-failed-${Date.now()}`,
                       runId: current.runId ?? "pending",
-                      conversationId: activeConversation.id,
+                      conversationId,
                       type: "run.failed",
                       source: "system",
                       ts: new Date().toISOString(),
@@ -393,28 +504,29 @@ export function ChatWorkspace() {
     }
   }
 
-  async function handleSelectMainModel(modelId: string) {
+  function handleSelectMainModel(modelId: string) {
     if (!activeConversation || activeConversation.mainAgentModel === modelId) {
       setModelMenuOpen(false);
       return;
     }
 
-    // Optimistic: update UI instantly
-    const prevModel = activeConversation.mainAgentModel;
-    setActiveConversation({ ...activeConversation, mainAgentModel: modelId });
     setModelMenuOpen(false);
     setErrorMessage(null);
 
-    try {
-      await fetchJson(`/api/conversations/${activeConversation.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ mainAgentModel: modelId }),
-      });
-    } catch (error) {
-      // Revert on failure
-      setActiveConversation({ ...activeConversation, mainAgentModel: prevModel });
-      setErrorMessage(error instanceof Error ? error.message : "Failed to update the model.");
-    }
+    updateModelMutation.mutate(
+      { id: activeConversation.id, model: modelId },
+      {
+        onError: (error) => {
+          setErrorMessage(error instanceof Error ? error.message : "Failed to update the model.");
+        },
+      },
+    );
+  }
+
+  function handleSelectConversation(id: string) {
+    if (id === activeConversationId) return;
+    setActiveConversationId(id);
+    setMobileSidebarOpen(false);
   }
 
   const showCollapsedSidebar = sidebarCollapsed && !isMobileViewport;
@@ -481,7 +593,13 @@ export function ChatWorkspace() {
 
         <div className="text-[0.68rem] uppercase tracking-[0.1em] text-[rgba(236,230,219,0.38)] pt-3.5 px-2.5 pb-1.5">Chats</div>
         <div className="sidebar-conversation-list flex flex-1 min-h-0 flex-col gap-px overflow-y-auto overflow-x-hidden -mx-1 px-1">
-          {filteredConversations.map((conversation) => {
+          {isLoadingConversations ? (
+            Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="flex w-full items-center py-[9px] px-2.5">
+                <div className="h-[18px] rounded-[6px] bg-[rgba(255,255,255,0.06)] animate-pulse" style={{ width: `${50 + (i % 3) * 20}%` }} />
+              </div>
+            ))
+          ) : filteredConversations.map((conversation) => {
             const isActive = conversation.id === activeConversationId;
             const isMenuOpen = openConversationMenuId === conversation.id;
             const isDeleting = deletingConversationId === conversation.id;
@@ -493,12 +611,7 @@ export function ChatWorkspace() {
                 <button
                   type="button"
                   className={`flex w-full items-center border-0 rounded-[10px] bg-transparent text-inherit cursor-pointer py-[9px] pr-[34px] pl-2.5 text-left transition-[background] duration-[140ms] ease-linear hover:bg-[rgba(255,255,255,0.05)] ${isActive ? "bg-[rgba(255,255,255,0.06)]" : ""}`}
-                  onClick={() => {
-                    setMobileSidebarOpen(false);
-                    void selectConversation(conversation.id).catch((error) => {
-                      setErrorMessage(error instanceof Error ? error.message : "Failed to load conversation.");
-                    });
-                  }}
+                  onClick={() => handleSelectConversation(conversation.id)}
                 >
                   <div className={`text-[0.88rem] font-[420] text-[rgba(242,237,229,0.82)] whitespace-nowrap overflow-hidden text-ellipsis ${isActive ? "text-[rgba(247,242,233,0.96)]" : "group-hover/row:text-[rgba(247,242,233,0.96)]"}`}>{conversation.title}</div>
                 </button>
@@ -655,8 +768,23 @@ export function ChatWorkspace() {
             </section>
           ) : (
             <div className="h-full overflow-y-auto overflow-x-hidden overscroll-contain pt-2 px-[30px] pb-[236px] min-w-0 max-[980px]:px-[18px] max-[980px]:w-full max-[980px]:max-w-full max-[980px]:pb-[180px]" ref={transcriptRef} onScroll={syncScrollShadows}>
-              <div className="chat-transcript-inner min-h-0 pb-[26px] min-w-0">
+              <div className="chat-transcript-inner min-h-0 min-w-0">
                 {errorMessage ? <div className="max-w-[860px] mx-auto mb-[18px] border border-[rgba(181,103,69,0.3)] rounded-[18px] bg-[rgba(181,103,69,0.12)] text-[#f3c7b4] px-4 py-3.5">{errorMessage}</div> : null}
+
+                {isLoadingDetail && runs.length === 0 && !liveRun ? (
+                  <div className="max-w-[860px] mx-auto flex flex-col gap-6 pt-4">
+                    {Array.from({ length: 3 }).map((_, i) => (
+                      <div key={i} className="flex flex-col gap-3">
+                        <div className="self-end w-[40%] h-[38px] rounded-[18px] bg-[rgba(255,255,255,0.04)] animate-pulse" />
+                        <div className="flex flex-col gap-2 w-[75%]">
+                          <div className="h-[14px] rounded-[6px] bg-[rgba(255,255,255,0.05)] animate-pulse" />
+                          <div className="h-[14px] rounded-[6px] bg-[rgba(255,255,255,0.04)] animate-pulse" style={{ width: "85%" }} />
+                          <div className="h-[14px] rounded-[6px] bg-[rgba(255,255,255,0.03)] animate-pulse" style={{ width: "60%" }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
 
                 {runs.map((run, index) => (
                   <RunThread
@@ -688,7 +816,7 @@ export function ChatWorkspace() {
           className={[
             "absolute left-0 right-0 z-3 bg-[linear-gradient(180deg,rgba(26,25,23,0)_0%,rgba(26,25,23,0.74)_22%,rgba(26,25,23,0.97)_100%)] backdrop-blur-[16px] transition-[transform,opacity] duration-[420ms] [transition-timing-function:cubic-bezier(0.2,0.9,0.2,1)]",
             isLandingState
-              ? "bottom-1/2 px-[30px] translate-y-[152px] bg-none backdrop-blur-none max-[980px]:bottom-0 max-[980px]:pb-3 max-[980px]:translate-y-0 max-[980px]:px-[18px]"
+              ? "bottom-1/2 px-[30px] translate-y-[182px] bg-none backdrop-blur-none max-[980px]:bottom-0 max-[980px]:pb-3 max-[980px]:translate-y-0 max-[980px]:px-[18px]"
               : "bottom-0 px-[30px] pb-[26px] max-[980px]:px-[18px] max-[980px]:pb-3",
             animateComposerDock ? "composer-panel-animate-dock" : "",
           ].join(" ")}
@@ -764,9 +892,9 @@ export function ChatWorkspace() {
                       anchor={modelButtonRef.current}
                       models={catalog.availableMainModels}
                       selectedModelId={selectedMainModelId}
-                      isUpdating={false}
+                      isUpdating={updateModelMutation.isPending}
                       onSelect={(modelId) => {
-                        void handleSelectMainModel(modelId);
+                        handleSelectMainModel(modelId);
                       }}
                     />
                   ) : null}
@@ -818,7 +946,7 @@ export function ChatWorkspace() {
                   onClick={() => {
                     setSearchModalOpen(false);
                     setSidebarQuery("");
-                    void selectConversation(conversation.id).catch(() => {});
+                    handleSelectConversation(conversation.id);
                   }}
                 >
                   <span className="overflow-hidden whitespace-nowrap text-ellipsis">{conversation.title}</span>

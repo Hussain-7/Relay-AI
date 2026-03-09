@@ -36,7 +36,11 @@ export async function GET(
       return Response.json({ error: "Run not found." }, { status: 404 });
     }
 
-    return Response.json({ run });
+    return Response.json({ run }, {
+      headers: {
+        "Cache-Control": "private, max-age=5, stale-while-revalidate=30",
+      },
+    });
   } catch (error) {
     return Response.json(
       {

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono, Newsreader } from "next/font/google";
 import "./globals.css";
+import { QueryProvider } from "@/components/query-provider";
 
 const primarySans = Inter({
   variable: "--font-primary-sans",
@@ -30,7 +31,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${primarySans.variable} ${primarySerif.variable} ${primaryMono.variable} antialiased`}>
-        {children}
+        <QueryProvider>{children}</QueryProvider>
       </body>
     </html>
   );

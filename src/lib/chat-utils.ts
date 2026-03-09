@@ -226,8 +226,16 @@ export function buildTimelineEntries(events: TimelineEventEnvelope[]) {
     thinkingEntry = null;
   };
 
+  const nonFlushingTypes = new Set([
+    "assistant.thinking.delta",
+    "conversation.updated",
+    "run.started",
+    "run.completed",
+    "assistant.message.completed",
+  ]);
+
   for (const event of events) {
-    if (event.type !== "assistant.thinking.delta") {
+    if (!nonFlushingTypes.has(event.type)) {
       flushThinking();
     }
 

@@ -19,6 +19,7 @@ import { MAIN_AGENT_SERVER_TOOLS } from "@/lib/main-agent/tool-catalog";
 import { createMainAgentTools } from "@/lib/main-agent/tools";
 import { prisma } from "@/lib/prisma";
 import { appendRunEvent, serializeSseEvent } from "@/lib/run-events";
+import { invalidateCache } from "@/lib/server-cache";
 
 const encoder = new TextEncoder();
 const untitledConversationNames = new Set(["New chat", "Untitled"]);
@@ -260,6 +261,8 @@ async function maybeUpdateConversationTitle(input: {
     title: nextTitle,
   });
 
+  void invalidateCache(`conv:${input.conversationId}`);
+
   return nextTitle;
 }
 
@@ -383,6 +386,7 @@ export async function streamMainAgentRun(input: {
           emit: async (type, payload) => emit(type, "main_agent", payload),
         });
         const configuredMcpServers = getConfiguredMcpServers();
+        const activeModel = mainAgentSession.anthropicModel ?? env.ANTHROPIC_MAIN_MODEL;
         const betas: string[] = [
           "compact-2026-01-12",
           "context-management-2025-06-27",
@@ -391,7 +395,7 @@ export async function streamMainAgentRun(input: {
         ];
 
         const runner = anthropic.beta.messages.toolRunner({
-          model: mainAgentSession.anthropicModel ?? env.ANTHROPIC_MAIN_MODEL,
+          model: activeModel,
           max_tokens: 4096,
           max_iterations: 8,
           stream: true,
@@ -412,12 +416,12 @@ export async function streamMainAgentRun(input: {
           ],
           context_management: {
             edits: [
+              { type: "clear_thinking_20251015" as const },
               {
                 type: "compact_20260112" as const,
                 trigger: { type: "input_tokens" as const, value: 140000 },
               },
               { type: "clear_tool_uses_20250919" as const },
-              { type: "clear_thinking_20251015" as const },
             ],
           },
           messages: mapMessagesForModel(
@@ -592,6 +596,11 @@ export async function streamMainAgentRun(input: {
         await emit("run.completed", "system", {
           status: "completed",
         });
+
+        void invalidateCache(
+          `conv:${input.conversationId}`,
+          `convos:${input.userId}`,
+        );
       } catch (error) {
         const message = getMainAgentErrorMessage(error);
 

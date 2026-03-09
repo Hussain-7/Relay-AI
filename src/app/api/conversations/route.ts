@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { createConversationForUser, getConversationDetail, listConversationSummaries } from "@/lib/conversations";
 import { requireRequestUser } from "@/lib/server-auth";
+import { getCached, invalidateCache } from "@/lib/server-cache";
 
 const createConversationSchema = z.object({
   title: z.string().trim().optional(),
@@ -10,9 +11,15 @@ const createConversationSchema = z.object({
 export async function GET(request: Request) {
   try {
     const user = await requireRequestUser(request.headers);
-    const conversations = await listConversationSummaries(user.userId);
+    const conversations = await getCached(
+      `convos:${user.userId}`,
+      60,
+      () => listConversationSummaries(user.userId),
+    );
 
-    return Response.json({ conversations });
+    return Response.json({ conversations }, {
+      headers: { "Cache-Control": "private, no-cache" },
+    });
   } catch (error) {
     return Response.json(
       {
@@ -35,6 +42,8 @@ export async function POST(request: Request) {
       conversationId: conversation.id,
       userId: user.userId,
     });
+
+    await invalidateCache(`convos:${user.userId}`);
 
     return Response.json({ conversation: detail }, { status: 201 });
   } catch (error) {
