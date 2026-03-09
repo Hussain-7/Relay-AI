@@ -80,16 +80,21 @@ function buildFallbackConversationTitle(prompt: string) {
 
 function normalizeConversationTitle(title: string, fallbackTitle: string) {
   const normalized = title
+    .replace(/[#*_~`>\[\](){}|\\]/g, "")
     .replace(/\s+/g, " ")
     .replace(/^["'`]+|["'`]+$/g, "")
-    .replace(/[.:;!?]+$/g, "")
+    .replace(/[.:;!?,]+$/g, "")
     .trim();
 
   if (!normalized) {
     return fallbackTitle;
   }
 
-  return normalized.length > 56 ? `${normalized.slice(0, 55).trimEnd()}…` : normalized;
+  // Cap at ~4 words
+  const words = normalized.split(" ");
+  const capped = words.length > 4 ? words.slice(0, 4).join(" ") : normalized;
+
+  return capped.length > 40 ? `${capped.slice(0, 39).trimEnd()}…` : capped;
 }
 
 function getTextFromContentBlocks(content: BetaContentBlock[]) {
@@ -203,10 +208,10 @@ async function maybeGenerateConversationTitle(input: {
   try {
     const response = await input.anthropic.messages.create({
       model: env.ANTHROPIC_TITLE_MODEL,
-      max_tokens: 24,
+      max_tokens: 12,
       temperature: 0,
       system:
-        "Generate a short chat title from the user's first message. Return only the title, in 2 to 5 words, with no quotation marks or extra commentary.",
+        "Generate a 2-4 word chat title from the user's first message. Plain text only — no markdown, no quotation marks, no punctuation, no commentary. Just the title words.",
       messages: [
         {
           role: "user",

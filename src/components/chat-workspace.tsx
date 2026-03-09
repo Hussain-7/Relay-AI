@@ -45,7 +45,8 @@ export function ChatWorkspace() {
   const { data: conversations = [], isLoading: isLoadingConversations } = useConversations();
   const activeConversationId = useChatStore((s) => s.activeConversationId);
   const setActiveConversationId = useChatStore((s) => s.setActiveConversationId);
-  const { data: activeConversation, isLoading: isLoadingDetail } = useConversationDetail(activeConversationId);
+  const { data: activeConversation, isFetching: isFetchingDetail } = useConversationDetail(activeConversationId);
+  const isLoadingDetail = isFetchingDetail && !activeConversation;
 
   // Mutations
   const createMutation = useCreateConversation();
@@ -76,7 +77,10 @@ export function ChatWorkspace() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
-  const selectedMainModelId = activeConversation?.mainAgentModel ?? catalog?.mainAgentModel ?? "";
+  const storedModel = activeConversation?.mainAgentModel;
+  const availableIds = catalog?.availableMainModels.map((m) => m.id);
+  const isStoredModelValid = storedModel && availableIds?.includes(storedModel);
+  const selectedMainModelId = (isStoredModelValid ? storedModel : null) ?? catalog?.mainAgentModel ?? "";
 
   const closeMenusOnOutsidePress = useEffectEvent((event: MouseEvent) => {
     if (profileRef.current && event.target instanceof Node && !profileRef.current.contains(event.target)) {
@@ -121,7 +125,7 @@ export function ChatWorkspace() {
   }, []);
 
   const runs = activeConversation?.runs ?? [];
-  const isLandingState = runs.length === 0 && !liveRun;
+  const isLandingState = !isLoadingDetail && runs.length === 0 && !liveRun;
 
   useEffect(() => {
     if (wasLandingRef.current && !isLandingState) {
@@ -526,6 +530,8 @@ export function ChatWorkspace() {
   function handleSelectConversation(id: string) {
     if (id === activeConversationId) return;
     setActiveConversationId(id);
+    setLiveRun(null);
+    setErrorMessage(null);
     setMobileSidebarOpen(false);
   }
 
@@ -622,6 +628,7 @@ export function ChatWorkspace() {
                     className={`inline-grid h-[26px] w-[26px] place-items-center border-0 bg-transparent rounded-[6px] text-[rgba(245,240,232,0.46)] cursor-pointer transition-[opacity,color,background] duration-[140ms] ease-linear hover:text-[rgba(245,240,232,0.88)] hover:bg-[rgba(255,255,255,0.08)] ${isMenuOpen || isActive ? "opacity-100" : "opacity-0 group-hover/row:opacity-100"}`}
                     aria-label={`Open menu for ${conversation.title}`}
                     aria-expanded={isMenuOpen}
+                    data-conversation-menu={conversation.id}
                     onClick={(event) => {
                       event.stopPropagation();
                       setHeaderMenuOpen(false);
@@ -633,7 +640,7 @@ export function ChatWorkspace() {
 
                   {isMenuOpen ? (
                     <SidebarMenuPortal
-                      triggerSelector={`[aria-label="Open menu for ${CSS.escape(conversation.title)}"]`}
+                      triggerSelector={`[data-conversation-menu="${conversation.id}"]`}
                       onDelete={(event) => {
                         event.stopPropagation();
                         void handleDeleteConversation(conversation.id);
@@ -734,7 +741,22 @@ export function ChatWorkspace() {
         </header>
 
         <div className="chat-stage relative min-h-0 overflow-hidden min-w-0" ref={stageRef}>
-          {isLandingState ? (
+          {isLoadingDetail ? (
+            <div className="h-full pt-2 px-[30px] max-[980px]:px-[18px]">
+              <div className="max-w-[860px] mx-auto flex flex-col gap-6 pt-4">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="flex flex-col gap-3">
+                    <div className="self-end w-[40%] h-[38px] rounded-[18px] bg-[rgba(255,255,255,0.04)] animate-pulse" />
+                    <div className="flex flex-col gap-2 w-[75%]">
+                      <div className="h-[14px] rounded-[6px] bg-[rgba(255,255,255,0.05)] animate-pulse" />
+                      <div className="h-[14px] rounded-[6px] bg-[rgba(255,255,255,0.04)] animate-pulse" style={{ width: "85%" }} />
+                      <div className="h-[14px] rounded-[6px] bg-[rgba(255,255,255,0.03)] animate-pulse" style={{ width: "60%" }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : isLandingState ? (
             <section className="chat-landing flex h-full flex-col items-center justify-center gap-4 pt-9 px-[30px] pb-[280px] text-center overflow-hidden max-[980px]:justify-end max-[980px]:px-[18px] max-[980px]:pt-6 max-[980px]:pb-[200px] max-[980px]:gap-3.5">
               {errorMessage ? <div className="max-w-[720px] mx-auto mb-[18px] border border-[rgba(181,103,69,0.3)] rounded-[18px] bg-[rgba(181,103,69,0.12)] text-[#f3c7b4] px-4 py-3.5">{errorMessage}</div> : null}
               <div className="inline-flex items-center justify-center rounded-full bg-[rgba(10,10,10,0.42)] text-[rgba(245,240,232,0.64)] py-2.5 px-4 text-[0.82rem] tracking-[0.12em] uppercase max-[980px]:text-[0.72rem] max-[980px]:py-[7px] max-[980px]:px-3">AI chat</div>
@@ -770,21 +792,6 @@ export function ChatWorkspace() {
             <div className="h-full overflow-y-auto overflow-x-hidden overscroll-contain pt-2 px-[30px] pb-[236px] min-w-0 max-[980px]:px-[18px] max-[980px]:w-full max-[980px]:max-w-full max-[980px]:pb-[180px]" ref={transcriptRef} onScroll={syncScrollShadows}>
               <div className="chat-transcript-inner min-h-0 min-w-0">
                 {errorMessage ? <div className="max-w-[860px] mx-auto mb-[18px] border border-[rgba(181,103,69,0.3)] rounded-[18px] bg-[rgba(181,103,69,0.12)] text-[#f3c7b4] px-4 py-3.5">{errorMessage}</div> : null}
-
-                {isLoadingDetail && runs.length === 0 && !liveRun ? (
-                  <div className="max-w-[860px] mx-auto flex flex-col gap-6 pt-4">
-                    {Array.from({ length: 3 }).map((_, i) => (
-                      <div key={i} className="flex flex-col gap-3">
-                        <div className="self-end w-[40%] h-[38px] rounded-[18px] bg-[rgba(255,255,255,0.04)] animate-pulse" />
-                        <div className="flex flex-col gap-2 w-[75%]">
-                          <div className="h-[14px] rounded-[6px] bg-[rgba(255,255,255,0.05)] animate-pulse" />
-                          <div className="h-[14px] rounded-[6px] bg-[rgba(255,255,255,0.04)] animate-pulse" style={{ width: "85%" }} />
-                          <div className="h-[14px] rounded-[6px] bg-[rgba(255,255,255,0.03)] animate-pulse" style={{ width: "60%" }} />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
 
                 {runs.map((run, index) => (
                   <RunThread
