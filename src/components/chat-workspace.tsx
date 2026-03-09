@@ -185,13 +185,15 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
     stage.dataset.scrollBottom = scrollBottom > 8 ? "true" : "false";
   }
 
+  // Scroll to bottom when live content updates (streaming)
   useEffect(() => {
+    if (!liveRun) return;
     transcriptRef.current?.scrollTo({
       top: transcriptRef.current.scrollHeight,
       behavior: "smooth",
     });
     syncScrollShadows();
-  }, [activeConversation, liveRun]);
+  }, [liveRun]);
 
   // Instant scroll to bottom when switching conversations
   useEffect(() => {
@@ -369,6 +371,8 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
       let lastRunId: string | null = null;
       let lastPartialText = "";
       const allEvents: TimelineEventEnvelope[] = [];
+      const pendingEvents: TimelineEventEnvelope[] = [];
+      let rafScheduled = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -392,37 +396,79 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
 
           const event = JSON.parse(line.slice(6)) as TimelineEventEnvelope;
           allEvents.push(event);
+          pendingEvents.push(event);
 
           if (event.type === "conversation.updated" && typeof event.payload?.title === "string") {
             updateConversationTitle(event.conversationId, event.payload.title);
           }
 
-          setLiveRun((current) => {
-            if (!current) {
-              return current;
-            }
+          // Batch state updates — flush at most once per animation frame
+          if (!rafScheduled) {
+            rafScheduled = true;
+            requestAnimationFrame(() => {
+              rafScheduled = false;
+              const batch = pendingEvents.splice(0);
+              if (batch.length === 0) return;
 
-            const nextPartialText =
-              event.type === "assistant.text.delta"
-                ? `${current.partialText}${String(event.payload?.delta ?? "")}`
-                : current.partialText;
+              setLiveRun((current) => {
+                if (!current) return current;
 
-            lastRunId = event.runId;
-            lastPartialText = nextPartialText;
+                let text = current.partialText;
+                let status = current.status;
+                let error = current.error;
+                let runId = current.runId;
 
-            return {
-              ...current,
-              runId: event.runId,
-              partialText: nextPartialText,
-              events: [...current.events, event],
-              status: event.type === "run.failed" ? "failed" : current.status,
-              error:
-                event.type === "run.failed"
-                  ? String(event.payload?.error ?? "The agent run failed.")
-                  : current.error,
-            };
-          });
+                for (const ev of batch) {
+                  runId = ev.runId;
+                  if (ev.type === "assistant.text.delta") {
+                    text += String(ev.payload?.delta ?? "");
+                  }
+                  if (ev.type === "run.failed") {
+                    status = "failed";
+                    error = String(ev.payload?.error ?? "The agent run failed.");
+                  }
+                }
+
+                lastRunId = runId;
+                lastPartialText = text;
+
+                return {
+                  ...current,
+                  runId,
+                  partialText: text,
+                  events: [...current.events, ...batch],
+                  status,
+                  error,
+                };
+              });
+            });
+          }
         }
+      }
+
+      // Flush any remaining batched events synchronously before transitioning
+      if (pendingEvents.length > 0) {
+        const batch = pendingEvents.splice(0);
+        setLiveRun((current) => {
+          if (!current) return current;
+          let text = current.partialText;
+          let status = current.status;
+          let error = current.error;
+          let runId = current.runId;
+          for (const ev of batch) {
+            runId = ev.runId;
+            if (ev.type === "assistant.text.delta") {
+              text += String(ev.payload?.delta ?? "");
+            }
+            if (ev.type === "run.failed") {
+              status = "failed";
+              error = String(ev.payload?.error ?? "The agent run failed.");
+            }
+          }
+          lastRunId = runId;
+          lastPartialText = text;
+          return { ...current, runId, partialText: text, events: [...current.events, ...batch], status, error };
+        });
       }
 
       // Phase 5: Post-stream cache patch instead of refreshConversation()
@@ -486,7 +532,14 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
         });
       }
 
-      setLiveRun(null);
+      // Clear liveRun after React has rendered the cache-patched runs.
+      // The two-frame delay ensures the patched `activeConversation.runs`
+      // is in the DOM before liveRun is removed, preventing scroll jumps.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          setLiveRun(null);
+        });
+      });
     } catch (error) {
       const message = error instanceof Error ? normalizeApiErrorMessage(error.message) : "Failed to send prompt.";
       setErrorMessage(message);

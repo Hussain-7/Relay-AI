@@ -341,21 +341,60 @@ export async function streamMainAgentRun(input: {
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       let titleUpdatePromise: Promise<string> | null = null;
+      const pendingWrites: Promise<unknown>[] = [];
+      let eventSeq = 0;
+
+      // Stream-first emit: send SSE to client immediately, persist to DB in background.
+      // Only structural events (run.started, run.completed, run.failed, assistant.message.completed)
+      // are awaited to guarantee ordering for post-run queries.
+      const streamingDeltaTypes = new Set([
+        "assistant.text.delta",
+        "assistant.thinking.delta",
+        "tool.call.input.delta",
+      ]);
 
       const emit = async (
         type: TimelineEventEnvelope["type"],
         source: TimelineEventEnvelope["source"],
         payload?: Record<string, unknown> | null,
       ) => {
-        const event = await appendRunEvent({
-          runId: createdRun.id,
-          conversationId: input.conversationId,
-          type,
-          source,
-          payload,
-        });
+        const isFireAndForget = streamingDeltaTypes.has(type);
 
-        await emitSseEvent(controller, event);
+        if (isFireAndForget) {
+          // Send SSE immediately with a synthetic envelope (no DB round-trip)
+          const syntheticId = `evt-${createdRun.id}-${eventSeq++}`;
+          const envelope: TimelineEventEnvelope = {
+            id: syntheticId,
+            runId: createdRun.id,
+            conversationId: input.conversationId,
+            type,
+            source,
+            ts: new Date().toISOString(),
+            payload: payload ? { ...payload, source } : { source },
+          };
+          await emitSseEvent(controller, envelope);
+
+          // Persist in background — don't block the stream
+          pendingWrites.push(
+            appendRunEvent({
+              runId: createdRun.id,
+              conversationId: input.conversationId,
+              type,
+              source,
+              payload,
+            }).catch(() => {}),
+          );
+        } else {
+          // Structural events: persist first, then emit
+          const event = await appendRunEvent({
+            runId: createdRun.id,
+            conversationId: input.conversationId,
+            type,
+            source,
+            payload,
+          });
+          await emitSseEvent(controller, event);
+        }
       };
 
       try {
@@ -410,7 +449,7 @@ export async function streamMainAgentRun(input: {
           },
           thinking: {
             type: "enabled",
-            budget_tokens: 2048,
+            budget_tokens: 1024,
           },
           system: [
             {
@@ -636,6 +675,8 @@ export async function streamMainAgentRun(input: {
 
         await emitSseEvent(controller, event);
       } finally {
+        // Flush any remaining background DB writes before closing
+        await Promise.allSettled(pendingWrites);
         controller.close();
       }
     },
