@@ -247,13 +247,13 @@ export function createMainAgentTools(ctx: ToolRuntimeContext) {
           query: input.query,
           limit: input.limit,
         });
-        const payload = { toolName: "memory_search", toolRuntime: "custom_backend", resultCount: results.length };
+        const payload = { toolName: "memory_search", toolRuntime: "custom", resultCount: results.length };
         await ctx.emit("tool.call.completed", payload);
         return jsonResult(results);
       } catch (error) {
         await ctx.emit("tool.call.failed", {
           toolName: "memory_search",
-          toolRuntime: "custom_backend",
+          toolRuntime: "custom",
           error: error instanceof Error ? error.message : "Unknown memory search error",
         });
         throw error;
@@ -280,14 +280,14 @@ export function createMainAgentTools(ctx: ToolRuntimeContext) {
         });
         await ctx.emit("tool.call.completed", {
           toolName: "memory_write",
-          toolRuntime: "custom_backend",
+          toolRuntime: "custom",
           memoryEntryId: entry.id,
         });
         return `Saved memory entry "${entry.key}".`;
       } catch (error) {
         await ctx.emit("tool.call.failed", {
           toolName: "memory_write",
-          toolRuntime: "custom_backend",
+          toolRuntime: "custom",
           error: error instanceof Error ? error.message : "Unknown memory write error",
         });
         throw error;
@@ -316,24 +316,25 @@ export function createMainAgentTools(ctx: ToolRuntimeContext) {
           take: input.limit ?? 5,
         });
 
+        const result = runs.map((run) => ({
+          id: run.id,
+          createdAt: run.createdAt.toISOString(),
+          userPrompt: run.userPrompt,
+          finalText: run.finalText,
+        }));
+
         await ctx.emit("tool.call.completed", {
           toolName: "chat_search",
-          toolRuntime: "custom_backend",
+          toolRuntime: "custom",
           resultCount: runs.length,
+          resultPreview: jsonResult(result),
         });
 
-        return jsonResult(
-          runs.map((run) => ({
-            id: run.id,
-            createdAt: run.createdAt.toISOString(),
-            userPrompt: run.userPrompt,
-            finalText: run.finalText,
-          })),
-        );
+        return jsonResult(result);
       } catch (error) {
         await ctx.emit("tool.call.failed", {
           toolName: "chat_search",
-          toolRuntime: "custom_backend",
+          toolRuntime: "custom",
           error: error instanceof Error ? error.message : "Unknown chat search error",
         });
         throw error;
@@ -350,7 +351,7 @@ export function createMainAgentTools(ctx: ToolRuntimeContext) {
         const repos = await listKnownRepos(ctx.userId);
         await ctx.emit("tool.call.completed", {
           toolName: "github_list_repos",
-          toolRuntime: "custom_backend",
+          toolRuntime: "custom",
           resultCount: repos.length,
         });
 
@@ -361,7 +362,7 @@ export function createMainAgentTools(ctx: ToolRuntimeContext) {
       } catch (error) {
         await ctx.emit("tool.call.failed", {
           toolName: "github_list_repos",
-          toolRuntime: "custom_backend",
+          toolRuntime: "custom",
           error: error instanceof Error ? error.message : "Unknown GitHub list error",
         });
         throw error;
@@ -388,7 +389,7 @@ export function createMainAgentTools(ctx: ToolRuntimeContext) {
 
         await ctx.emit("tool.call.completed", {
           toolName: "github_connect_repo",
-          toolRuntime: "custom_backend",
+          toolRuntime: "custom",
           repoBindingId: binding.id,
         });
 
@@ -400,7 +401,7 @@ export function createMainAgentTools(ctx: ToolRuntimeContext) {
       } catch (error) {
         await ctx.emit("tool.call.failed", {
           toolName: "github_connect_repo",
-          toolRuntime: "custom_backend",
+          toolRuntime: "custom",
           error: error instanceof Error ? error.message : "Unknown GitHub connect error",
         });
         throw error;
@@ -429,7 +430,7 @@ export function createMainAgentTools(ctx: ToolRuntimeContext) {
 
         await ctx.emit("tool.call.completed", {
           toolName: "github_create_repo",
-          toolRuntime: "custom_backend",
+          toolRuntime: "custom",
           repoBindingId: binding.id,
         });
 
@@ -441,7 +442,7 @@ export function createMainAgentTools(ctx: ToolRuntimeContext) {
       } catch (error) {
         await ctx.emit("tool.call.failed", {
           toolName: "github_create_repo",
-          toolRuntime: "custom_backend",
+          toolRuntime: "custom",
           error: error instanceof Error ? error.message : "Unknown GitHub create error",
         });
         throw error;
@@ -470,7 +471,7 @@ export function createMainAgentTools(ctx: ToolRuntimeContext) {
 
         await ctx.emit("tool.call.completed", {
           toolName: "coding_session_start_or_continue",
-          toolRuntime: "custom_backend",
+          toolRuntime: "custom",
           codingSessionId: session.id,
           workspacePath: session.workspacePath,
         });
@@ -486,7 +487,7 @@ export function createMainAgentTools(ctx: ToolRuntimeContext) {
       } catch (error) {
         await ctx.emit("tool.call.failed", {
           toolName: "coding_session_start_or_continue",
-          toolRuntime: "custom_backend",
+          toolRuntime: "custom",
           error: error instanceof Error ? error.message : "Unknown coding session start error",
         });
         throw error;
@@ -512,7 +513,7 @@ export function createMainAgentTools(ctx: ToolRuntimeContext) {
 
         await ctx.emit("tool.call.completed", {
           toolName: "coding_session_status",
-          toolRuntime: "custom_backend",
+          toolRuntime: "custom",
           hasSession: Boolean(session),
         });
 
@@ -531,7 +532,7 @@ export function createMainAgentTools(ctx: ToolRuntimeContext) {
       } catch (error) {
         await ctx.emit("tool.call.failed", {
           toolName: "coding_session_status",
-          toolRuntime: "custom_backend",
+          toolRuntime: "custom",
           error: error instanceof Error ? error.message : "Unknown coding status error",
         });
         throw error;
@@ -555,7 +556,7 @@ export function createMainAgentTools(ctx: ToolRuntimeContext) {
 
         await ctx.emit("tool.call.completed", {
           toolName: "coding_session_pause",
-          toolRuntime: "custom_backend",
+          toolRuntime: "custom",
           codingSessionId: session.id,
         });
 
@@ -566,7 +567,7 @@ export function createMainAgentTools(ctx: ToolRuntimeContext) {
       } catch (error) {
         await ctx.emit("tool.call.failed", {
           toolName: "coding_session_pause",
-          toolRuntime: "custom_backend",
+          toolRuntime: "custom",
           error: error instanceof Error ? error.message : "Unknown coding pause error",
         });
         throw error;
@@ -596,7 +597,7 @@ export function createMainAgentTools(ctx: ToolRuntimeContext) {
 
         await ctx.emit("tool.call.completed", {
           toolName: "coding_session_create_pr",
-          toolRuntime: "custom_backend",
+          toolRuntime: "custom",
           prUrl: pullRequest.url,
         });
 
@@ -604,7 +605,7 @@ export function createMainAgentTools(ctx: ToolRuntimeContext) {
       } catch (error) {
         await ctx.emit("tool.call.failed", {
           toolName: "coding_session_create_pr",
-          toolRuntime: "custom_backend",
+          toolRuntime: "custom",
           error: error instanceof Error ? error.message : "Unknown PR create error",
         });
         throw error;

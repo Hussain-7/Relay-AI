@@ -219,9 +219,20 @@ function getAssistantHistoryContent(content: unknown): BetaContentBlockParam[] |
     return "";
   }
 
-  return content.filter((block): block is BetaContentBlockParam => {
-    return typeof block === "object" && block != null && "type" in block && block.type === "text";
-  });
+  return content
+    .filter((block): block is BetaContentBlockParam => {
+      return typeof block === "object" && block != null && "type" in block && block.type === "text";
+    })
+    .map((block) => {
+      // Strip citations from history — the encrypted_index references
+      // become invalid in subsequent turns and cause API errors
+      const anyBlock = block as unknown as Record<string, unknown>;
+      if (anyBlock.citations) {
+        const { citations: _, ...rest } = anyBlock;
+        return rest as unknown as BetaContentBlockParam;
+      }
+      return block;
+    });
 }
 
 function normalizeAnthropicErrorMessage(message: string) {
@@ -618,6 +629,19 @@ export async function streamMainAgentRun(input: {
                 await emit("tool.call.started", "main_agent", {
                   toolName: block.name,
                   toolRuntime: "anthropic_server",
+                  toolUseId: block.id,
+                  input: block.input,
+                  index: rawEvent.index,
+                });
+              }
+
+              // Client tool use (custom backend tools like chat_search, github, coding)
+              if (block.type === "tool_use") {
+                indexToToolUseId.set(rawEvent.index, block.id);
+                indexToToolName.set(rawEvent.index, block.name);
+                await emit("tool.call.started", "main_agent", {
+                  toolName: block.name,
+                  toolRuntime: "custom_backend",
                   toolUseId: block.id,
                   input: block.input,
                   index: rawEvent.index,
