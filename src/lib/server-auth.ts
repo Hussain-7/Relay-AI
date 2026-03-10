@@ -1,4 +1,5 @@
 import { env } from "@/lib/env";
+import { hasSupabaseAuth } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 
 export interface RequestUser {
@@ -18,37 +19,77 @@ function getHeaderString(headers: Headers, name: string) {
 }
 
 export async function requireRequestUser(headers: Headers): Promise<RequestUser> {
+  // 1. Try Supabase session (production path)
+  if (hasSupabaseAuth()) {
+    const user = await getSupabaseUser();
+    if (user) {
+      await ensureUserProfile(user);
+      return user;
+    }
+  }
+
+  // 2. Fallback: dev header auth
   const allowHeader =
     env.ALLOW_INSECURE_USER_HEADER || env.NODE_ENV === "development" || env.NODE_ENV === "test";
 
-  const requestedUserId = allowHeader ? getHeaderString(headers, "x-user-id") : null;
+  if (!allowHeader) {
+    throw new Error("Authentication required");
+  }
+
+  const requestedUserId = getHeaderString(headers, "x-user-id");
   const userId = requestedUserId ?? "demo-user";
   const email =
-    (allowHeader ? getHeaderString(headers, "x-user-email") : null) ?? `${userId}@relay-ai.local`;
-  const fullName = allowHeader ? getHeaderString(headers, "x-user-name") : null;
-  const avatarUrl = allowHeader ? getHeaderString(headers, "x-user-avatar") : null;
+    getHeaderString(headers, "x-user-email") ?? `${userId}@relay-ai.local`;
+  const fullName = getHeaderString(headers, "x-user-name");
+  const avatarUrl = getHeaderString(headers, "x-user-avatar");
 
-  const cachedAt = userExistsCache.get(userId);
+  const user = { userId, email, fullName, avatarUrl };
+  await ensureUserProfile(user);
+  return user;
+}
+
+async function getSupabaseUser(): Promise<RequestUser | null> {
+  try {
+    // Dynamic import to avoid pulling in cookies() for non-Supabase paths
+    const { getSupabaseServerClient } = await import("@/lib/supabase-server");
+    const supabase = await getSupabaseServerClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user || !user.email) {
+      return null;
+    }
+
+    return {
+      userId: user.id,
+      email: user.email,
+      fullName: (user.user_metadata?.full_name as string) ?? null,
+      avatarUrl: (user.user_metadata?.avatar_url as string) ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function ensureUserProfile(user: RequestUser) {
+  const cachedAt = userExistsCache.get(user.userId);
   const isCached = cachedAt !== undefined && Date.now() - cachedAt < USER_CACHE_TTL_MS;
 
   if (!isCached) {
     await prisma.userProfile.upsert({
-      where: { userId },
+      where: { userId: user.userId },
       update: {
-        email,
-        fullName,
-        avatarUrl,
+        email: user.email,
+        fullName: user.fullName,
+        avatarUrl: user.avatarUrl,
       },
       create: {
-        userId,
-        email,
-        fullName,
-        avatarUrl,
+        userId: user.userId,
+        email: user.email,
+        fullName: user.fullName,
+        avatarUrl: user.avatarUrl,
       },
     });
 
-    userExistsCache.set(userId, Date.now());
+    userExistsCache.set(user.userId, Date.now());
   }
-
-  return { userId, email, fullName, avatarUrl };
 }

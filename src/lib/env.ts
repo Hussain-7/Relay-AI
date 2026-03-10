@@ -41,6 +41,10 @@ export function hasSupabaseRealtimeConfig() {
   return Boolean(env.NEXT_PUBLIC_SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY);
 }
 
+export function hasSupabaseAuth() {
+  return Boolean(env.NEXT_PUBLIC_SUPABASE_URL && env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+}
+
 export function hasE2bConfig() {
   return Boolean(env.E2B_API_KEY);
 }

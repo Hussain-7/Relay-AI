@@ -10,12 +10,32 @@ import type {
 import { fetchJson } from "@/lib/chat-utils";
 
 export const queryKeys = {
+  user: ["user"] as const,
   models: ["models"] as const,
   conversations: ["conversations"] as const,
   conversation: (id: string) => ["conversation", id] as const,
   githubStatus: ["github-status"] as const,
   preferences: ["preferences"] as const,
 };
+
+export interface AuthUser {
+  userId: string;
+  email: string;
+  fullName: string | null;
+  avatarUrl: string | null;
+}
+
+export function useUser() {
+  return useQuery({
+    queryKey: queryKeys.user,
+    queryFn: async () => {
+      const data = await fetchJson<{ user: AuthUser | null }>("/api/user");
+      return data.user;
+    },
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+}
 
 export function useModelCatalog() {
   return useQuery({

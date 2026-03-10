@@ -14,6 +14,7 @@ import {
   useUpdateConversationModel,
   useGithubStatus,
   usePreferences,
+  useUser,
   queryKeys,
 } from "@/lib/api-hooks";
 import type { LiveRunState } from "@/lib/chat-utils";
@@ -62,6 +63,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   );
 
   // TanStack Query hooks
+  const { data: authUser } = useUser();
   const { data: catalog } = useModelCatalog();
   const { data: conversations = [], isLoading: isLoadingConversations } = useConversations();
   const { data: githubStatus } = useGithubStatus();
@@ -777,10 +779,16 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
             className="grid w-full grid-cols-[36px_1fr_16px] items-center gap-2.5 border-0 rounded-[10px] bg-transparent text-inherit cursor-pointer py-2.5 px-2 text-left transition-[background] duration-[140ms] ease-linear hover:bg-[rgba(255,255,255,0.065)]"
             onClick={() => setProfileMenuOpen((current) => !current)}
           >
-            <div className="grid h-9 w-9 place-items-center rounded-full bg-[rgba(237,233,225,0.12)] text-[0.72rem] font-semibold">N</div>
+            {authUser?.avatarUrl ? (
+              <img src={authUser.avatarUrl} alt="" className="h-9 w-9 rounded-full object-cover" referrerPolicy="no-referrer" />
+            ) : (
+              <div className="grid h-9 w-9 place-items-center rounded-full bg-[rgba(237,233,225,0.12)] text-[0.72rem] font-semibold">
+                {(authUser?.fullName?.[0] ?? authUser?.email?.[0] ?? "U").toUpperCase()}
+              </div>
+            )}
             <div className="min-w-0">
-              <div className="text-[0.88rem] text-[rgba(245,240,232,0.88)]">Demo account</div>
-              <div className="text-[0.72rem] text-[rgba(236,230,219,0.44)]">Local development mode</div>
+              <div className="truncate text-[0.88rem] text-[rgba(245,240,232,0.88)]">{authUser?.fullName ?? authUser?.email ?? "Account"}</div>
+              <div className="truncate text-[0.72rem] text-[rgba(236,230,219,0.44)]">{authUser?.email ?? ""}</div>
             </div>
             <span className="inline-grid place-items-center text-[rgba(236,230,219,0.36)]"><IconChevron /></span>
           </button>
@@ -822,6 +830,20 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                 ) : (
                   <span className="text-[rgba(245,240,232,0.38)] font-medium">Not configured</span>
                 )}
+              </div>
+              <div className="mt-1 pt-2 border-t border-[rgba(255,255,255,0.08)]">
+                <button
+                  type="button"
+                  className="w-full rounded-[8px] border-0 bg-transparent text-left text-[0.8rem] text-[rgba(245,240,232,0.55)] cursor-pointer py-[7px] px-1 transition-colors duration-100 hover:text-[rgba(245,240,232,0.85)]"
+                  onClick={async () => {
+                    const { getSupabaseBrowserClient } = await import("@/lib/supabase-browser");
+                    const supabase = getSupabaseBrowserClient();
+                    await supabase.auth.signOut();
+                    router.push("/login");
+                  }}
+                >
+                  Sign out
+                </button>
               </div>
             </div>
           ) : null}
