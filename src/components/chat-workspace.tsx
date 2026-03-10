@@ -465,11 +465,14 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                 lastRunId = runId;
                 lastPartialText = text;
 
+                // Only store events needed for timeline rendering (skip text deltas)
+                const timelineEvents = batch.filter((ev) => ev.type !== "assistant.text.delta");
+
                 return {
                   ...current,
                   runId,
                   partialText: text,
-                  events: [...current.events, ...batch],
+                  events: timelineEvents.length > 0 ? [...current.events, ...timelineEvents] : current.events,
                   status,
                   error,
                 };
@@ -500,7 +503,8 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
           }
           lastRunId = runId;
           lastPartialText = text;
-          return { ...current, runId, partialText: text, events: [...current.events, ...batch], status, error };
+          const timelineEvents = batch.filter((ev) => ev.type !== "assistant.text.delta");
+          return { ...current, runId, partialText: text, events: timelineEvents.length > 0 ? [...current.events, ...timelineEvents] : current.events, status, error };
         });
       }
 

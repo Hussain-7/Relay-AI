@@ -30,9 +30,9 @@ export function ToolStepDetails({ entry }: { entry: ToolTimelineEntry }) {
       </button>
 
       {isExpanded ? (
-        <div className="grid gap-3 mt-3">
+        <div className="grid gap-3 mt-3 min-w-0">
           {hasInput ? (
-            <section className="border border-[rgba(255,255,255,0.08)] rounded-[18px] bg-[rgba(255,255,255,0.03)] p-3">
+            <section className="border border-[rgba(255,255,255,0.08)] rounded-[18px] bg-[rgba(255,255,255,0.03)] p-3 min-w-0 overflow-hidden">
               <div className="mb-2 text-[rgba(245,240,232,0.5)] text-[0.72rem] tracking-[0.12em] uppercase">Request</div>
               <pre className="overflow-auto m-0 rounded-[16px] bg-[rgba(8,8,8,0.4)] px-3.5 py-3 text-[rgba(255,255,255,0.82)] text-[0.78rem] leading-[1.55] whitespace-pre-wrap break-words [overflow-wrap:anywhere]" aria-label={`${entry.title} input`}>
                 {entry.input}
@@ -40,7 +40,7 @@ export function ToolStepDetails({ entry }: { entry: ToolTimelineEntry }) {
             </section>
           ) : null}
           {hasOutput ? (
-            <section className="border border-[rgba(255,255,255,0.08)] rounded-[18px] bg-[rgba(255,255,255,0.03)] p-3">
+            <section className="border border-[rgba(255,255,255,0.08)] rounded-[18px] bg-[rgba(255,255,255,0.03)] p-3 min-w-0 overflow-hidden">
               <div className="mb-2 text-[rgba(245,240,232,0.5)] text-[0.72rem] tracking-[0.12em] uppercase">Response</div>
               <pre className="overflow-auto m-0 rounded-[16px] bg-[rgba(8,8,8,0.4)] px-3.5 py-3 text-[rgba(255,255,255,0.82)] text-[0.78rem] leading-[1.55] whitespace-pre-wrap break-words [overflow-wrap:anywhere] border border-[rgba(122,168,148,0.18)]" aria-label={`${entry.title} output`}>
                 {entry.output}

@@ -326,11 +326,15 @@ function inferServerToolName(block: BetaContentBlock) {
   }
 }
 
-async function emitSseEvent(
+function emitSseEvent(
   controller: ReadableStreamDefaultController<Uint8Array>,
   event: TimelineEventEnvelope,
 ) {
-  controller.enqueue(encoder.encode(serializeSseEvent(event)));
+  try {
+    controller.enqueue(encoder.encode(serializeSseEvent(event)));
+  } catch {
+    // Client may have disconnected — event still persists to DB via pendingWrites
+  }
 }
 
 async function maybeGenerateConversationTitle(input: {
@@ -378,7 +382,7 @@ async function maybeUpdateConversationTitle(input: {
     type: TimelineEventEnvelope["type"],
     source: TimelineEventEnvelope["source"],
     payload?: Record<string, unknown> | null,
-  ) => Promise<void>;
+  ) => void;
 }) {
   if (!untitledConversationNames.has(input.currentTitle) || !input.prompt.trim()) {
     return input.currentTitle;
@@ -400,7 +404,7 @@ async function maybeUpdateConversationTitle(input: {
     },
   });
 
-  await input.emit("conversation.updated", "system", {
+  input.emit("conversation.updated", "system", {
     title: nextTitle,
   });
 
@@ -487,57 +491,33 @@ export async function streamMainAgentRun(input: {
       const pendingWrites: Promise<unknown>[] = [];
       let eventSeq = 0;
 
-      // Stream-first emit: send SSE to client immediately, persist to DB in background.
-      // Only structural events (run.started, run.completed, run.failed, assistant.message.completed)
-      // are awaited to guarantee ordering for post-run queries.
-      const streamingDeltaTypes = new Set([
-        "assistant.text.delta",
-        "assistant.thinking.delta",
-        "tool.call.input.delta",
-      ]);
-
-      const emit = async (
+      // All events: send SSE to client immediately, persist to DB in background.
+      // This eliminates DB round-trip latency from the streaming path.
+      const emit = (
         type: TimelineEventEnvelope["type"],
         source: TimelineEventEnvelope["source"],
         payload?: Record<string, unknown> | null,
       ) => {
-        const isFireAndForget = streamingDeltaTypes.has(type);
-
-        if (isFireAndForget) {
-          // Send SSE immediately with a synthetic envelope (no DB round-trip)
-          const syntheticId = `evt-${createdRun.id}-${eventSeq++}`;
-          const envelope: TimelineEventEnvelope = {
-            id: syntheticId,
-            runId: createdRun.id,
-            conversationId: input.conversationId,
-            type,
-            source,
-            ts: new Date().toISOString(),
-            payload: payload ? { ...payload, source } : { source },
-          };
-          await emitSseEvent(controller, envelope);
-
-          // Persist in background — don't block the stream
-          pendingWrites.push(
-            appendRunEvent({
-              runId: createdRun.id,
-              conversationId: input.conversationId,
-              type,
-              source,
-              payload,
-            }).catch(() => {}),
-          );
-        } else {
-          // Structural events: persist first, then emit
-          const event = await appendRunEvent({
+        const syntheticId = `evt-${createdRun.id}-${eventSeq++}`;
+        const envelope: TimelineEventEnvelope = {
+          id: syntheticId,
+          runId: createdRun.id,
+          conversationId: input.conversationId,
+          type,
+          source,
+          ts: new Date().toISOString(),
+          payload: payload ? { ...payload, source } : { source },
+        };
+        emitSseEvent(controller, envelope);
+        pendingWrites.push(
+          appendRunEvent({
             runId: createdRun.id,
             conversationId: input.conversationId,
             type,
             source,
             payload,
-          });
-          await emitSseEvent(controller, event);
-        }
+          }).catch(() => {}),
+        );
       };
 
       try {
@@ -550,7 +530,7 @@ export async function streamMainAgentRun(input: {
           emit,
         });
 
-        await emit("run.started", "system", {
+        emit("run.started", "system", {
           mainAgentSessionId: mainAgentSession.id,
           attachmentIds: attachments.map((attachment) => attachment.id),
         });
@@ -653,14 +633,14 @@ export async function streamMainAgentRun(input: {
               const block = rawEvent.content_block;
 
               if (block.type === "text" && block.text) {
-                await emit("assistant.text.delta", "main_agent", {
+                emit("assistant.text.delta", "main_agent", {
                   delta: block.text,
                   index: rawEvent.index,
                 });
               }
 
               if (block.type === "thinking" && block.thinking) {
-                await emit("assistant.thinking.delta", "main_agent", {
+                emit("assistant.thinking.delta", "main_agent", {
                   delta: block.thinking,
                   index: rawEvent.index,
                 });
@@ -669,7 +649,7 @@ export async function streamMainAgentRun(input: {
               if (block.type === "server_tool_use") {
                 indexToToolUseId.set(rawEvent.index, block.id);
                 indexToToolName.set(rawEvent.index, block.name);
-                await emit("tool.call.started", "main_agent", {
+                emit("tool.call.started", "main_agent", {
                   toolName: block.name,
                   toolRuntime: "anthropic_server",
                   toolUseId: block.id,
@@ -682,7 +662,7 @@ export async function streamMainAgentRun(input: {
               if (block.type === "tool_use") {
                 indexToToolUseId.set(rawEvent.index, block.id);
                 indexToToolName.set(rawEvent.index, block.name);
-                await emit("tool.call.started", "main_agent", {
+                emit("tool.call.started", "main_agent", {
                   toolName: block.name,
                   toolRuntime: "custom_backend",
                   toolUseId: block.id,
@@ -696,7 +676,7 @@ export async function streamMainAgentRun(input: {
                 const mcpBlock = block as unknown as { id: string; name: string; input: unknown; server_name: string };
                 indexToToolUseId.set(rawEvent.index, mcpBlock.id);
                 indexToToolName.set(rawEvent.index, mcpBlock.name);
-                await emit("tool.call.started", "main_agent", {
+                emit("tool.call.started", "main_agent", {
                   toolName: mcpBlock.name,
                   toolRuntime: `mcp:${mcpBlock.server_name}`,
                   toolUseId: mcpBlock.id,
@@ -714,7 +694,7 @@ export async function streamMainAgentRun(input: {
                   .find(([, id]) => id === toolUseId);
                 const toolName = matchingName ? indexToToolName.get(matchingName[0]) ?? "mcp_tool" : "mcp_tool";
 
-                await emit("tool.call.completed", "main_agent", {
+                emit("tool.call.completed", "main_agent", {
                   toolName,
                   toolRuntime: "mcp",
                   toolUseId,
@@ -729,7 +709,7 @@ export async function streamMainAgentRun(input: {
                   const mcpBlock = block as unknown as { id: string; name: string; input: unknown; server_name: string };
                   indexToToolUseId.set(rawEvent.index, mcpBlock.id);
                   indexToToolName.set(rawEvent.index, mcpBlock.name);
-                  await emit("tool.call.started", "main_agent", {
+                  emit("tool.call.started", "main_agent", {
                     toolName: mcpBlock.name,
                     toolRuntime: `mcp:${mcpBlock.server_name}`,
                     toolUseId: mcpBlock.id,
@@ -741,7 +721,7 @@ export async function streamMainAgentRun(input: {
                 // MCP tool result
                 if (blockType === "mcp_tool_result") {
                   const mcpResult = block as unknown as { tool_use_id: string; content: unknown; is_error?: boolean };
-                  await emit("tool.call.completed", "main_agent", {
+                  emit("tool.call.completed", "main_agent", {
                     toolName: indexToToolName.get(rawEvent.index) ?? "mcp_tool",
                     toolRuntime: "mcp",
                     toolUseId: mcpResult.tool_use_id,
@@ -753,7 +733,7 @@ export async function streamMainAgentRun(input: {
 
               // Handle compaction blocks (context was summarized)
               if ("type" in block && (block as unknown as { type: string }).type === "compaction") {
-                await emit("tool.call.completed", "system", {
+                emit("tool.call.completed", "system", {
                   toolName: "compaction",
                   toolRuntime: "anthropic_server",
                   result: "Context was automatically compacted to manage conversation length.",
@@ -766,7 +746,7 @@ export async function streamMainAgentRun(input: {
                 block.type === "code_execution_tool_result" ||
                 block.type === "tool_search_tool_result"
               ) {
-                await emit("tool.call.completed", "main_agent", {
+                emit("tool.call.completed", "main_agent", {
                   toolName: inferServerToolName(block),
                   toolRuntime: "anthropic_server",
                   toolUseId: block.tool_use_id,
@@ -782,7 +762,7 @@ export async function streamMainAgentRun(input: {
                   blockType === "text_editor_code_execution_tool_result"
                 ) {
                   const anyBlock = block as unknown as { type: string; tool_use_id: string; content: unknown };
-                  await emit("tool.call.completed", "main_agent", {
+                  emit("tool.call.completed", "main_agent", {
                     toolName: blockType === "bash_code_execution_tool_result" ? "code_execution" : "text_editor",
                     toolRuntime: "anthropic_server",
                     toolUseId: anyBlock.tool_use_id,
@@ -802,7 +782,7 @@ export async function streamMainAgentRun(input: {
                   const safeTitle = c.title.replace(/"/g, "'");
                   return ` [${domain}](${c.url} "${safeTitle}")`;
                 }).join("");
-                await emit("assistant.text.delta", "main_agent", {
+                emit("assistant.text.delta", "main_agent", {
                   delta: citationSuffix,
                   index: rawEvent.index,
                 });
@@ -883,14 +863,14 @@ export async function streamMainAgentRun(input: {
                   }
                 }
 
-                await emit("assistant.text.delta", "main_agent", {
+                emit("assistant.text.delta", "main_agent", {
                   delta: textToEmit,
                   index: rawEvent.index,
                 });
               }
 
               if (rawEvent.delta.type === "thinking_delta") {
-                await emit("assistant.thinking.delta", "main_agent", {
+                emit("assistant.thinking.delta", "main_agent", {
                   delta: rawEvent.delta.thinking,
                   index: rawEvent.index,
                 });
@@ -899,7 +879,7 @@ export async function streamMainAgentRun(input: {
               if (rawEvent.delta.type === "input_json_delta") {
                 const nextSnapshot = `${toolInputSnapshots.get(rawEvent.index) ?? ""}${rawEvent.delta.partial_json}`;
                 toolInputSnapshots.set(rawEvent.index, nextSnapshot);
-                await emit("tool.call.input.delta", "main_agent", {
+                emit("tool.call.input.delta", "main_agent", {
                   delta: rawEvent.delta.partial_json,
                   snapshot: nextSnapshot,
                   index: rawEvent.index,
@@ -922,7 +902,7 @@ export async function streamMainAgentRun(input: {
             const name = String(blockAny.name ?? "mcp_tool");
             const serverName = String(blockAny.server_name ?? "mcp");
             mcpToolNames.set(String(blockAny.id), name);
-            await emit("tool.call.started", "main_agent", {
+            emit("tool.call.started", "main_agent", {
               toolName: name,
               toolRuntime: `mcp:${serverName}`,
               toolUseId: blockAny.id,
@@ -941,7 +921,7 @@ export async function streamMainAgentRun(input: {
                 .join("\n")
                 .slice(0, 2000);
             }
-            await emit(
+            emit(
               blockAny.is_error ? "tool.call.failed" : "tool.call.completed",
               "main_agent",
               {
@@ -956,14 +936,6 @@ export async function streamMainAgentRun(input: {
 
         const finalText = getTextWithCitations(finalMessage.content);
 
-        await prisma.message.create({
-          data: {
-            conversationId: input.conversationId,
-            role: "ASSISTANT",
-            contentJson: finalMessage.content as unknown as Prisma.InputJsonValue,
-          },
-        });
-
         const usageRaw = finalMessage.usage as unknown as Record<string, unknown>;
         const inputTokens = finalMessage.usage.input_tokens;
         const outputTokens = finalMessage.usage.output_tokens;
@@ -977,57 +949,69 @@ export async function streamMainAgentRun(input: {
           cacheWriteTokens,
         });
 
-        await prisma.agentRun.update({
-          where: { id: createdRun.id },
-          data: {
-            status: RunStatus.COMPLETED,
-            finalText,
-            finalMessageJson: finalMessage as unknown as Prisma.InputJsonValue,
-            model: finalMessage.model,
-            inputTokens,
-            outputTokens,
-            cacheReadTokens,
-            cacheWriteTokens,
-            costUsd,
-            metadataJson: {
-              model: finalMessage.model,
-              stopReason: finalMessage.stop_reason,
-              usage: {
-                inputTokens,
-                outputTokens,
-                cacheCreationInputTokens: cacheWriteTokens,
-                cacheReadInputTokens: cacheReadTokens,
-                serverToolUse: usageRaw.server_tool_use ?? null,
-              },
-            } as Prisma.InputJsonValue,
-            completedAt: new Date(),
-          },
-        });
-
-        await prisma.mainAgentSession.update({
-          where: { id: mainAgentSession.id },
-          data: {
-            anthropicModel: finalMessage.model,
-          },
-        });
-
+        // Wait for title update so the event reaches the client before stream close
         await titleUpdatePromise;
 
-        await emit("assistant.message.completed", "main_agent", {
+        // Send final SSE events to client immediately (no DB round-trip)
+        emit("assistant.message.completed", "main_agent", {
           text: finalText,
           model: finalMessage.model,
           stopReason: finalMessage.stop_reason,
           usage: {
-            inputTokens: finalMessage.usage.input_tokens,
-            outputTokens: finalMessage.usage.output_tokens,
-            cacheCreationInputTokens: (finalMessage.usage as unknown as Record<string, unknown>).cache_creation_input_tokens ?? null,
-            cacheReadInputTokens: (finalMessage.usage as unknown as Record<string, unknown>).cache_read_input_tokens ?? null,
+            inputTokens,
+            outputTokens,
+            cacheCreationInputTokens: cacheWriteTokens,
+            cacheReadInputTokens: cacheReadTokens,
           },
         });
 
-        await emit("run.completed", "system", {
+        emit("run.completed", "system", {
           status: "completed",
         });
+
+        // Close stream — client has all data it needs
+        try { controller.close(); } catch { /* client may have disconnected */ }
+
+        // DB finalization runs after stream close (still within start(), process stays alive)
+        await Promise.all([
+          prisma.message.create({
+            data: {
+              conversationId: input.conversationId,
+              role: "ASSISTANT",
+              contentJson: finalMessage.content as unknown as Prisma.InputJsonValue,
+            },
+          }),
+          prisma.agentRun.update({
+            where: { id: createdRun.id },
+            data: {
+              status: RunStatus.COMPLETED,
+              finalText,
+              finalMessageJson: finalMessage as unknown as Prisma.InputJsonValue,
+              model: finalMessage.model,
+              inputTokens,
+              outputTokens,
+              cacheReadTokens,
+              cacheWriteTokens,
+              costUsd,
+              metadataJson: {
+                model: finalMessage.model,
+                stopReason: finalMessage.stop_reason,
+                usage: {
+                  inputTokens,
+                  outputTokens,
+                  cacheCreationInputTokens: cacheWriteTokens,
+                  cacheReadInputTokens: cacheReadTokens,
+                  serverToolUse: usageRaw.server_tool_use ?? null,
+                },
+              } as Prisma.InputJsonValue,
+              completedAt: new Date(),
+            },
+          }),
+          prisma.mainAgentSession.update({
+            where: { id: mainAgentSession.id },
+            data: { anthropicModel: finalMessage.model },
+          }),
+        ]);
 
         void invalidateCache(
           `conv:${input.conversationId}`,
@@ -1037,8 +1021,12 @@ export async function streamMainAgentRun(input: {
         const message = getMainAgentErrorMessage(error);
 
         if (titleUpdatePromise) {
-          await titleUpdatePromise;
+          await titleUpdatePromise.catch(() => {});
         }
+
+        emit("run.failed", "system", { error: message });
+
+        try { controller.close(); } catch { /* client may have disconnected */ }
 
         await prisma.agentRun.update({
           where: { id: createdRun.id },
@@ -1050,22 +1038,9 @@ export async function streamMainAgentRun(input: {
             completedAt: new Date(),
           },
         });
-
-        const event = await appendRunEvent({
-          runId: createdRun.id,
-          conversationId: input.conversationId,
-          type: "run.failed",
-          source: "system",
-          payload: {
-            error: message,
-          },
-        });
-
-        await emitSseEvent(controller, event);
       } finally {
-        // Flush any remaining background DB writes before closing
+        // Flush remaining background DB writes (event persistence)
         await Promise.allSettled(pendingWrites);
-        controller.close();
       }
     },
   });
