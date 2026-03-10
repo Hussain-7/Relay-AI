@@ -9,6 +9,15 @@ export interface RequestUser {
   avatarUrl: string | null;
 }
 
+// Email allowlist — only these accounts can access the app.
+// Remove this set (and the check below) to open access to all authenticated users.
+const ALLOWED_EMAILS = new Set([
+  "hussain2000.rizvi@gmail.com",
+  "hussain2000.rizvi2@gmail.com",
+  "syed.rizvi@trilogy.com",
+  "hussain7.rizvi@gmail.com",
+]);
+
 const USER_CACHE_TTL_MS = 5 * 60 * 1000;
 const userExistsCache = new Map<string, number>();
 
@@ -23,6 +32,9 @@ export async function requireRequestUser(headers: Headers): Promise<RequestUser>
   if (hasSupabaseAuth()) {
     const user = await getSupabaseUser();
     if (user) {
+      if (!ALLOWED_EMAILS.has(user.email.toLowerCase())) {
+        throw new Error("Access denied — your account is not on the allowlist.");
+      }
       await ensureUserProfile(user);
       return user;
     }
