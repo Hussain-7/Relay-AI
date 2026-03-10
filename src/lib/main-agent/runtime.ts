@@ -267,7 +267,7 @@ function getMainAgentErrorMessage(error: unknown) {
 }
 
 function mapMessagesForModel(messages: Array<{ role: string; contentJson: unknown }>): BetaMessageParam[] {
-  return messages.flatMap((message) => {
+  const mapped = messages.flatMap((message) => {
     if (message.role === "SYSTEM") {
       return [];
     }
@@ -288,6 +288,26 @@ function mapMessagesForModel(messages: Array<{ role: string; contentJson: unknow
       },
     ];
   });
+
+  // Add cache_control breakpoint on the second-to-last message for prompt caching.
+  // This caches the conversation history so only the latest turn is uncached.
+  if (mapped.length >= 2) {
+    const target = mapped[mapped.length - 2]!;
+    if (typeof target.content === "string") {
+      target.content = [
+        {
+          type: "text" as const,
+          text: target.content,
+          cache_control: { type: "ephemeral" as const },
+        },
+      ];
+    } else if (Array.isArray(target.content) && target.content.length > 0) {
+      const lastBlock = target.content[target.content.length - 1] as unknown as Record<string, unknown>;
+      lastBlock.cache_control = { type: "ephemeral" };
+    }
+  }
+
+  return mapped;
 }
 
 function inferServerToolName(block: BetaContentBlock) {
@@ -557,16 +577,17 @@ export async function streamMainAgentRun(input: {
 
         const runner = anthropic.beta.messages.toolRunner({
           model: activeModel,
-          max_tokens: 4096,
-          max_iterations: 8,
+          max_tokens: 16384,
+          max_iterations: 20,
           stream: true,
           betas,
           metadata: {
             user_id: input.userId,
           },
+          // Adaptive thinking: auto-adjusts budget based on task complexity
           thinking: {
             type: "enabled",
-            budget_tokens: 1024,
+            budget_tokens: 10240,
           },
           system: [
             {
