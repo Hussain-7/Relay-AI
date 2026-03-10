@@ -849,8 +849,46 @@ export async function streamMainAgentRun(input: {
 
         const finalMessage: BetaMessage = await runner.done();
 
-        // Debug: log raw finalMessage content blocks
-        console.log("[raw-response]", JSON.stringify(finalMessage.content, null, 2));
+        // Emit MCP tool events from the final response (toolRunner handles MCP
+        // between iterations, so they don't appear in the streaming loop)
+        const mcpToolNames = new Map<string, string>();
+        for (const block of finalMessage.content) {
+          const blockAny = block as unknown as Record<string, unknown>;
+          if (blockAny.type === "mcp_tool_use") {
+            const name = String(blockAny.name ?? "mcp_tool");
+            const serverName = String(blockAny.server_name ?? "mcp");
+            mcpToolNames.set(String(blockAny.id), name);
+            await emit("tool.call.started", "main_agent", {
+              toolName: name,
+              toolRuntime: `mcp:${serverName}`,
+              toolUseId: blockAny.id,
+              input: blockAny.input,
+            });
+          }
+          if (blockAny.type === "mcp_tool_result") {
+            const toolUseId = String(blockAny.tool_use_id ?? "");
+            const content = blockAny.content;
+            // Extract text from content array if present
+            let resultText = "";
+            if (Array.isArray(content)) {
+              resultText = (content as Array<{ type: string; text?: string }>)
+                .filter((c) => c.type === "text" && c.text)
+                .map((c) => c.text)
+                .join("\n")
+                .slice(0, 2000);
+            }
+            await emit(
+              blockAny.is_error ? "tool.call.failed" : "tool.call.completed",
+              "main_agent",
+              {
+                toolName: mcpToolNames.get(toolUseId) ?? "mcp_tool",
+                toolRuntime: "mcp",
+                toolUseId,
+                result: resultText || content,
+              },
+            );
+          }
+        }
 
         const finalText = getTextWithCitations(finalMessage.content);
 
