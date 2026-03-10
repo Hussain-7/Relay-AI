@@ -85,6 +85,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [deletingConversationId, setDeletingConversationId] = useState<string | null>(null);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
   const deferredSidebarQuery = useDeferredValue(sidebarQuery);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -288,8 +289,23 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   }
 
   async function handleUpload(files: FileList | null) {
-    if (!files?.length || !activeConversation) {
-      return;
+    if (!files?.length) return;
+
+    // Need a conversation ID to upload.
+    let convId = activeConversation?.id ?? activeConversationId;
+
+    if (!convId) {
+      // On /chat/new — create conversation silently (don't navigate yet)
+      try {
+        const newId = crypto.randomUUID();
+        const created = await createMutation.mutateAsync({ id: newId });
+        convId = created.id;
+        // Update URL without remounting so attachments aren't lost
+        window.history.replaceState(null, "", `/chat/${convId}`);
+      } catch {
+        setErrorMessage("Failed to create conversation for upload.");
+        return;
+      }
     }
 
     try {
@@ -297,7 +313,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
 
       for (const file of Array.from(files)) {
         const formData = new FormData();
-        formData.append("conversationId", activeConversation.id);
+        formData.append("conversationId", convId);
         formData.append("file", file);
 
         const response = await fetch("/api/uploads", {
@@ -945,7 +961,21 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
             animateComposerDock ? "composer-panel-animate-dock" : "",
           ].join(" ")}
         >
-          <div className="composer-shell flex max-w-[980px] w-full min-w-0 min-h-[120px] flex-col gap-3.5 mx-auto border border-[rgba(255,255,255,0.08)] rounded-[26px] bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.02)),rgba(54,52,47,0.84)] pt-[18px] px-[22px] pb-4 shadow-[0_4px_16px_rgba(0,0,0,0.12)] max-[980px]:w-full max-[980px]:max-w-full max-[980px]:m-0 max-[980px]:min-h-0 max-[980px]:gap-2.5 max-[980px]:pt-3.5 max-[980px]:px-4 max-[980px]:pb-3 max-[980px]:rounded-[20px]">
+          <div
+            className={`composer-shell flex max-w-[980px] w-full min-w-0 min-h-[120px] flex-col gap-3.5 mx-auto border rounded-[26px] bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.02)),rgba(54,52,47,0.84)] pt-[18px] px-[22px] pb-4 shadow-[0_4px_16px_rgba(0,0,0,0.12)] max-[980px]:w-full max-[980px]:max-w-full max-[980px]:m-0 max-[980px]:min-h-0 max-[980px]:gap-2.5 max-[980px]:pt-3.5 max-[980px]:px-4 max-[980px]:pb-3 max-[980px]:rounded-[20px] transition-[border-color] duration-150 ${isDraggingOver ? "border-[rgba(212,112,73,0.6)]" : "border-[rgba(255,255,255,0.08)]"}`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setIsDraggingOver(true);
+            }}
+            onDragLeave={() => setIsDraggingOver(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setIsDraggingOver(false);
+              if (e.dataTransfer?.files?.length) {
+                void handleUpload(e.dataTransfer.files);
+              }
+            }}
+          >
             {composerAttachments.length ? (
               <div className="flex flex-wrap gap-2 mb-2">
                 {composerAttachments.map((attachment) => (
@@ -971,6 +1001,25 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
                   void handleSend();
+                }
+              }}
+              onPaste={(event) => {
+                const items = event.clipboardData?.items;
+                if (!items) return;
+
+                const files: File[] = [];
+                for (const item of Array.from(items)) {
+                  if (item.kind === "file") {
+                    const file = item.getAsFile();
+                    if (file) files.push(file);
+                  }
+                }
+
+                if (files.length > 0) {
+                  event.preventDefault();
+                  const dt = new DataTransfer();
+                  for (const f of files) dt.items.add(f);
+                  void handleUpload(dt.files);
                 }
               }}
               rows={1}
