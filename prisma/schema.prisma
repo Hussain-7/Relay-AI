@@ -60,6 +60,7 @@ model UserProfile {
   email               String             @unique
   fullName            String?
   avatarUrl           String?
+  preferencesJson     Json?
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
   conversations       Conversation[]
@@ -187,6 +188,12 @@ model AgentRun {
   finalText           String?
   finalMessageJson    Json?
   metadataJson        Json?
+  model               String?
+  inputTokens         Int?
+  outputTokens        Int?
+  cacheReadTokens     Int?
+  cacheWriteTokens    Int?
+  costUsd             Float?
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
   completedAt         DateTime?

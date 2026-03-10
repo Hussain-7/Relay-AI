@@ -15,9 +15,10 @@ import { type AttachmentDto, type TimelineEventEnvelope } from "@/lib/contracts"
 import { env, hasAnthropicApiKey } from "@/lib/env";
 import { getConfiguredMcpServers } from "@/lib/main-agent/mcp";
 import { buildMainAgentSystemPrompt } from "@/lib/main-agent/system-prompt";
-import { MAIN_AGENT_SERVER_TOOLS } from "@/lib/main-agent/tools";
-import { getMainAgentTools } from "@/lib/main-agent/tools";
+import { MAIN_AGENT_SERVER_TOOLS, getMainAgentTools } from "@/lib/main-agent/tools";
+import { createMemoryTool, createMemorySearchTool, createMemoryWriteTool } from "@/lib/main-agent/tools/memory";
 import { prisma } from "@/lib/prisma";
+import { calculateCostUsd } from "@/lib/usage";
 import { appendRunEvent, serializeSseEvent } from "@/lib/run-events";
 import { invalidateCache } from "@/lib/server-cache";
 
@@ -413,6 +414,11 @@ export async function streamMainAgentRun(input: {
   userId: string;
   prompt: string;
   attachmentIds: string[];
+  preferences?: {
+    thinking?: boolean;
+    effort?: "low" | "medium" | "high";
+    memory?: boolean;
+  };
 }) {
   const conversation = await prisma.conversation.findUniqueOrThrow({
     where: { id: input.conversationId },
@@ -568,6 +574,8 @@ export async function streamMainAgentRun(input: {
         });
         const configuredMcpServers = getConfiguredMcpServers();
         const activeModel = mainAgentSession.anthropicModel ?? env.ANTHROPIC_MAIN_MODEL;
+        const prefs = input.preferences ?? {};
+        const thinkingEnabled = prefs.thinking !== false;
         const betas: string[] = [
           "compact-2026-01-12",
           "context-management-2025-06-27",
@@ -584,11 +592,10 @@ export async function streamMainAgentRun(input: {
           metadata: {
             user_id: input.userId,
           },
-          // Adaptive thinking: auto-adjusts budget based on task complexity
-          thinking: {
-            type: "enabled",
-            budget_tokens: 10240,
-          },
+          // Thinking: adaptive when enabled, omitted when disabled
+          ...(thinkingEnabled ? { thinking: { type: "adaptive" as const } } : {}),
+          // Effort: controls response thoroughness
+          ...(prefs.effort && prefs.effort !== "high" ? { output_config: { effort: prefs.effort } } : {}),
           system: [
             {
               type: "text" as const,
@@ -600,7 +607,7 @@ export async function streamMainAgentRun(input: {
           ],
           context_management: {
             edits: [
-              { type: "clear_thinking_20251015" as const },
+              ...(thinkingEnabled ? [{ type: "clear_thinking_20251015" as const }] : []),
               {
                 type: "compact_20260112" as const,
                 trigger: { type: "input_tokens" as const, value: 140000 },
@@ -617,6 +624,11 @@ export async function streamMainAgentRun(input: {
           tools: [
             ...MAIN_AGENT_SERVER_TOOLS.map((tool) => tool.tool),
             ...tools,
+            ...(prefs.memory ? [
+              createMemoryTool({ userId: input.userId, conversationId: input.conversationId, runId: createdRun.id, emit: async (type, payload) => emit(type, "main_agent", payload) }),
+              createMemorySearchTool({ userId: input.userId, conversationId: input.conversationId, runId: createdRun.id, emit: async (type, payload) => emit(type, "main_agent", payload) }),
+              createMemoryWriteTool({ userId: input.userId, conversationId: input.conversationId, runId: createdRun.id, emit: async (type, payload) => emit(type, "main_agent", payload) }),
+            ] : []),
             // Generate mcp_toolset entries for each configured MCP server
             ...configuredMcpServers.map((server) => ({
               type: "mcp_toolset" as const,
@@ -952,21 +964,40 @@ export async function streamMainAgentRun(input: {
           },
         });
 
+        const usageRaw = finalMessage.usage as unknown as Record<string, unknown>;
+        const inputTokens = finalMessage.usage.input_tokens;
+        const outputTokens = finalMessage.usage.output_tokens;
+        const cacheReadTokens = Number(usageRaw.cache_read_input_tokens ?? 0);
+        const cacheWriteTokens = Number(usageRaw.cache_creation_input_tokens ?? 0);
+        const costUsd = calculateCostUsd({
+          model: finalMessage.model,
+          inputTokens,
+          outputTokens,
+          cacheReadTokens,
+          cacheWriteTokens,
+        });
+
         await prisma.agentRun.update({
           where: { id: createdRun.id },
           data: {
             status: RunStatus.COMPLETED,
             finalText,
             finalMessageJson: finalMessage as unknown as Prisma.InputJsonValue,
+            model: finalMessage.model,
+            inputTokens,
+            outputTokens,
+            cacheReadTokens,
+            cacheWriteTokens,
+            costUsd,
             metadataJson: {
               model: finalMessage.model,
               stopReason: finalMessage.stop_reason,
               usage: {
-                inputTokens: finalMessage.usage.input_tokens,
-                outputTokens: finalMessage.usage.output_tokens,
-                cacheCreationInputTokens: (finalMessage.usage as unknown as Record<string, unknown>).cache_creation_input_tokens ?? null,
-                cacheReadInputTokens: (finalMessage.usage as unknown as Record<string, unknown>).cache_read_input_tokens ?? null,
-                serverToolUse: (finalMessage.usage as unknown as Record<string, unknown>).server_tool_use ?? null,
+                inputTokens,
+                outputTokens,
+                cacheCreationInputTokens: cacheWriteTokens,
+                cacheReadInputTokens: cacheReadTokens,
+                serverToolUse: usageRaw.server_tool_use ?? null,
               },
             } as Prisma.InputJsonValue,
             completedAt: new Date(),

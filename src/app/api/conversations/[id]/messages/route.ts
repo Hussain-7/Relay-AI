@@ -9,6 +9,11 @@ export const dynamic = "force-dynamic";
 const createMessageSchema = z.object({
   prompt: z.string().trim().min(1),
   attachmentIds: z.array(z.string()).default([]),
+  preferences: z.object({
+    thinking: z.boolean().default(true),
+    effort: z.enum(["low", "medium", "high"]).default("high"),
+    memory: z.boolean().default(false),
+  }).optional(),
 });
 
 export async function POST(
@@ -30,6 +35,7 @@ export async function POST(
       userId: user.userId,
       prompt: body.prompt,
       attachmentIds: body.attachmentIds,
+      preferences: body.preferences,
     });
 
     return new Response(run.stream, {

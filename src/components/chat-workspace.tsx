@@ -13,6 +13,7 @@ import {
   useDeleteConversation,
   useUpdateConversationModel,
   useGithubStatus,
+  usePreferences,
   queryKeys,
 } from "@/lib/api-hooks";
 import type { LiveRunState } from "@/lib/chat-utils";
@@ -34,7 +35,7 @@ import {
   IconMore,
 } from "@/components/icons";
 import { SidebarMenuPortal } from "@/components/chat/sidebar-menu-portal";
-import { ComposerModelMenuPortal } from "@/components/chat/composer-model-menu";
+import { ComposerModelMenuPortal, type AgentPreferences } from "@/components/chat/composer-model-menu";
 import { AttachmentChip } from "@/components/chat/attachment-chip";
 import { RunThread } from "@/components/chat/run-thread";
 import { setPendingMessage, peekPendingMessage, consumePendingMessage } from "@/lib/pending-message";
@@ -86,6 +87,12 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   const [isSending, setIsSending] = useState(false);
   const [deletingConversationId, setDeletingConversationId] = useState<string | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const { preferences: userPreferences, savePreferences } = usePreferences();
+  const agentPreferences: AgentPreferences = {
+    thinking: userPreferences.agent.thinking,
+    effort: userPreferences.agent.effort,
+    memory: userPreferences.agent.memory,
+  };
   const deferredSidebarQuery = useDeferredValue(sidebarQuery);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -102,7 +109,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   const storedModel = activeConversation?.mainAgentModel;
   const availableIds = catalog?.availableMainModels.map((m) => m.id);
   const isStoredModelValid = storedModel && availableIds?.includes(storedModel);
-  const selectedMainModelId = (isStoredModelValid ? storedModel : null) ?? catalog?.mainAgentModel ?? "";
+  const selectedMainModelId = (isStoredModelValid ? storedModel : null) ?? userPreferences.agent.model ?? catalog?.mainAgentModel ?? "";
 
   const closeMenusOnOutsidePress = useEffectEvent((event: MouseEvent) => {
     if (profileRef.current && event.target instanceof Node && !profileRef.current.contains(event.target)) {
@@ -151,7 +158,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   const hasLiveContent = Boolean(liveRun);
   const isLandingState = !hasLiveContent && (isNewChat || (!isLoadingDetail && runs.length === 0));
 
-  // Clear liveRun once the fetched runs include it — guarantees no DOM gap
+  // Safety net: clear liveRun if the fetched runs already include it (e.g. after refetch)
   useEffect(() => {
     if (liveRun?.runId && runs.some((r) => r.id === liveRun.runId)) {
       setLiveRun(null);
@@ -382,6 +389,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
         body: JSON.stringify({
           prompt,
           attachmentIds: attachments.map((attachment) => attachment.id),
+          preferences: agentPreferences,
         }),
       });
 
@@ -548,17 +556,20 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
             ),
         );
 
-        // Background refetch for server truth after optimistic patch
+        // Clear liveRun immediately — the cache patch above ensures no DOM gap
+        setLiveRun(null);
+
+        // Background refetch for eventual server truth (don't refetch immediately
+        // to avoid overwriting the optimistic patch before the server has persisted)
         void queryClient.invalidateQueries({
           queryKey: queryKeys.conversation(conversationId),
+          refetchType: "none",
         });
         void queryClient.invalidateQueries({
           queryKey: queryKeys.conversations,
+          refetchType: "none",
         });
       }
-
-      // Don't clear liveRun here — the effect below will clear it
-      // once `runs` includes this run ID, preventing any DOM gap.
     } catch (error) {
       const message = error instanceof Error ? normalizeApiErrorMessage(error.message) : "Failed to send prompt.";
       setErrorMessage(message);
@@ -610,22 +621,23 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   }
 
   function handleSelectMainModel(modelId: string) {
-    if (!activeConversation || activeConversation.mainAgentModel === modelId) {
-      setModelMenuOpen(false);
-      return;
-    }
-
     setModelMenuOpen(false);
-    setErrorMessage(null);
 
-    updateModelMutation.mutate(
-      { id: activeConversation.id, model: modelId },
-      {
-        onError: (error) => {
-          setErrorMessage(error instanceof Error ? error.message : "Failed to update the model.");
+    // Save as global default preference
+    savePreferences({ agent: { ...userPreferences.agent, model: modelId } });
+
+    // Also update the current conversation's model if we have one
+    if (activeConversation && activeConversation.mainAgentModel !== modelId) {
+      setErrorMessage(null);
+      updateModelMutation.mutate(
+        { id: activeConversation.id, model: modelId },
+        {
+          onError: (error) => {
+            setErrorMessage(error instanceof Error ? error.message : "Failed to update the model.");
+          },
         },
-      },
-    );
+      );
+    }
   }
 
   function handleSelectConversation(id: string) {
@@ -1068,6 +1080,10 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                       isUpdating={updateModelMutation.isPending}
                       onSelect={(modelId) => {
                         handleSelectMainModel(modelId);
+                      }}
+                      preferences={agentPreferences}
+                      onPreferencesChange={(prefs) => {
+                        savePreferences({ agent: { ...userPreferences.agent, ...prefs } });
                       }}
                     />
                   ) : null}

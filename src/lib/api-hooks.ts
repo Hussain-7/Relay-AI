@@ -14,6 +14,7 @@ export const queryKeys = {
   conversations: ["conversations"] as const,
   conversation: (id: string) => ["conversation", id] as const,
   githubStatus: ["github-status"] as const,
+  preferences: ["preferences"] as const,
 };
 
 export function useModelCatalog() {
@@ -22,6 +23,51 @@ export function useModelCatalog() {
     queryFn: () => fetchJson<ModelCatalogDto>("/api/models"),
     staleTime: Infinity,
   });
+}
+
+export interface UserPreferences {
+  agent: {
+    model: string;
+    thinking: boolean;
+    effort: "low" | "medium" | "high";
+    memory: boolean;
+  };
+}
+
+const defaultPreferences: UserPreferences = {
+  agent: { model: "claude-sonnet-4-6", thinking: true, effort: "high", memory: false },
+};
+
+export function usePreferences() {
+  const queryClient = useQueryClient();
+
+  const query = useQuery({
+    queryKey: queryKeys.preferences,
+    queryFn: async () => {
+      const data = await fetchJson<{ preferences: UserPreferences }>("/api/preferences");
+      return data.preferences;
+    },
+    staleTime: Infinity,
+  });
+
+  const mutation = useMutation({
+    mutationFn: async (prefs: Partial<UserPreferences>) => {
+      const data = await fetchJson<{ preferences: UserPreferences }>("/api/preferences", {
+        method: "PATCH",
+        body: JSON.stringify(prefs),
+      });
+      return data.preferences;
+    },
+    onSuccess: (prefs) => {
+      queryClient.setQueryData(queryKeys.preferences, prefs);
+    },
+  });
+
+  return {
+    preferences: query.data ?? defaultPreferences,
+    isLoading: query.isLoading,
+    savePreferences: mutation.mutate,
+  };
 }
 
 export function useGithubStatus() {

@@ -28,7 +28,7 @@ export function RunThread({
   isLast?: boolean;
 }) {
   const entries = useMemo(() => buildTimelineEntries(events), [events]);
-  const showPendingCard = isLive && entries.length === 0 && !finalText;
+  const showPendingDot = isLive && entries.length === 0 && !finalText;
   const hasAgentResponse = Boolean(finalText);
 
   // Citation tooltip state
@@ -94,7 +94,18 @@ export function RunThread({
         </div>
       </div>
 
-      {entries.length || showPendingCard ? <RunActivityAccordion entries={entries} isLive={isLive} /> : null}
+      {showPendingDot ? (
+        <div className="flex items-center py-3 px-1 text-accent">
+          <span className="pending-spark-pulse inline-grid place-items-center">
+            <svg aria-hidden="true" viewBox="0 0 24 24" className="h-8 w-8">
+              <path d="M12 3.5 13.9 9l5.6 1.9-5.6 1.9L12 18.5l-1.9-5.7L4.5 10.9 10.1 9 12 3.5Z" fill="currentColor" />
+              <path d="M12 3.5 13.9 9l5.6 1.9-5.6 1.9L12 18.5l-1.9-5.7L4.5 10.9 10.1 9 12 3.5Z" fill="currentColor" transform="rotate(45 12 12)" />
+            </svg>
+          </span>
+        </div>
+      ) : null}
+
+      {entries.length > 0 ? <RunActivityAccordion entries={entries} isLive={isLive} /> : null}
 
       {finalText ? (
         <div className="message-row flex w-full min-w-0 justify-start">

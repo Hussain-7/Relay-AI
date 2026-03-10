@@ -296,6 +296,17 @@ textarea {
   100% { background-position: -100% 0; }
 }
 
+/* ── Pending spark pulse (waiting for first timeline step) ── */
+
+.pending-spark-pulse {
+  animation: spark-pulse 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes spark-pulse {
+  0%, 100% { transform: scale(0.7); opacity: 0.45; }
+  50% { transform: scale(1.25); opacity: 1; }
+}
+
 /* ── Animations ── */
 
 @media (prefers-reduced-motion: no-preference) {

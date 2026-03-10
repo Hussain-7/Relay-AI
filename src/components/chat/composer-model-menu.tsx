@@ -6,18 +6,42 @@ import { createPortal } from "react-dom";
 import type { ModelCatalogDto } from "@/lib/contracts";
 import { IconCheck } from "@/components/icons";
 
+export interface AgentPreferences {
+  thinking: boolean;
+  effort: "low" | "medium" | "high";
+  memory: boolean;
+}
+
+function ToggleSwitch({ enabled, onChange }: { enabled: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={enabled}
+      className={`relative inline-flex h-[20px] w-[36px] shrink-0 cursor-pointer rounded-full border-0 transition-colors duration-150 ${enabled ? "bg-[rgba(212,112,73,0.7)]" : "bg-[rgba(255,255,255,0.12)]"}`}
+      onClick={() => onChange(!enabled)}
+    >
+      <span className={`pointer-events-none inline-block h-[16px] w-[16px] rounded-full bg-white shadow-sm transition-transform duration-150 translate-y-[2px] ${enabled ? "translate-x-[18px]" : "translate-x-[2px]"}`} />
+    </button>
+  );
+}
+
 export function ComposerModelMenuPortal({
   anchor,
   models,
   selectedModelId,
   isUpdating,
   onSelect,
+  preferences,
+  onPreferencesChange,
 }: {
   anchor: HTMLElement | null;
   models: ModelCatalogDto["availableMainModels"];
   selectedModelId: string;
   isUpdating: boolean;
   onSelect: (modelId: string) => void;
+  preferences: AgentPreferences;
+  onPreferencesChange: (prefs: AgentPreferences) => void;
 }) {
   const panelRef = useRef<HTMLDivElement | null>(null);
 
@@ -76,6 +100,47 @@ export function ComposerModelMenuPortal({
           </button>
         );
       })}
+
+      <div className="mt-1 pt-2 border-t border-[rgba(255,255,255,0.06)] px-4 pb-1 flex flex-col gap-2.5">
+        <div className="flex items-center justify-between">
+          <div className="flex flex-col">
+            <span className="text-[rgba(245,240,232,0.86)] text-[0.84rem] font-medium">Extended Thinking</span>
+            <span className="text-[rgba(245,240,232,0.4)] text-[0.72rem]">Adaptive reasoning depth</span>
+          </div>
+          <ToggleSwitch enabled={preferences.thinking} onChange={(v) => onPreferencesChange({ ...preferences, thinking: v })} />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div className="flex flex-col">
+            <span className="text-[rgba(245,240,232,0.86)] text-[0.84rem] font-medium">Effort</span>
+            <span className="text-[rgba(245,240,232,0.4)] text-[0.72rem]">Response thoroughness</span>
+          </div>
+          <div className="flex gap-1">
+            {(["low", "medium", "high"] as const).map((level) => (
+              <button
+                key={level}
+                type="button"
+                className={`px-2 py-0.5 text-[0.7rem] rounded-[6px] border-0 cursor-pointer transition-all duration-140 ${
+                  preferences.effort === level
+                    ? "bg-[rgba(212,112,73,0.25)] text-[rgba(245,220,200,0.95)]"
+                    : "bg-[rgba(255,255,255,0.06)] text-[rgba(245,240,232,0.5)] hover:bg-[rgba(255,255,255,0.1)]"
+                }`}
+                onClick={() => onPreferencesChange({ ...preferences, effort: level })}
+              >
+                {level}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div className="flex flex-col">
+            <span className="text-[rgba(245,240,232,0.86)] text-[0.84rem] font-medium">Memory</span>
+            <span className="text-[rgba(245,240,232,0.4)] text-[0.72rem]">Persist workspace context</span>
+          </div>
+          <ToggleSwitch enabled={preferences.memory} onChange={(v) => onPreferencesChange({ ...preferences, memory: v })} />
+        </div>
+      </div>
     </div>,
     document.body,
   );
