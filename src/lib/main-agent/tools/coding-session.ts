@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 
-import { startOrResumeCodingSession, pauseCodingSession, getLatestCodingSession } from "@/lib/coding/session-service";
+import { startOrResumeCodingSession, pauseCodingSession, getLatestCodingSession, runCodingTask } from "@/lib/coding/session-service";
 import { prisma } from "@/lib/prisma";
 import type { ToolCatalogEntry, ToolRuntimeContext } from "./context";
 import { jsonResult } from "./context";
@@ -44,6 +44,7 @@ export function createCodingSessionStartTool(ctx: ToolRuntimeContext) {
     }),
     async run(input) {
       try {
+        // 1. Provision or resume the sandbox
         const session = await startOrResumeCodingSession({
           conversationId: ctx.conversationId,
           userId: ctx.userId,
@@ -52,19 +53,34 @@ export function createCodingSessionStartTool(ctx: ToolRuntimeContext) {
           taskBrief: input.taskBrief,
           branchStrategy: input.branchStrategy,
         });
+
+        // 2. Clone repo + run the coding agent with the task
+        const taskResult = await runCodingTask({
+          codingSessionId: session.id,
+          conversationId: ctx.conversationId,
+          runId: ctx.runId,
+          userId: ctx.userId,
+          taskBrief: input.taskBrief,
+        });
+
         await ctx.emit("tool.call.completed", {
           toolName: "coding_session_start_or_continue",
           toolRuntime: "custom",
           codingSessionId: session.id,
-          workspacePath: session.workspacePath,
+          sandboxId: taskResult.sandboxId,
+          workspacePath: taskResult.workspacePath,
+          status: taskResult.exitCode === 0 ? "completed" : "failed",
+          eventCount: taskResult.eventCount,
         });
+
         return jsonResult({
           codingSessionId: session.id,
-          status: session.status,
-          workspacePath: session.workspacePath,
-          branch: session.branch,
-          repoBindingId: session.repoBindingId,
-          note: "The workspace is provisioned. The dedicated remote Claude Code runner handoff remains a separate control-plane step.",
+          status: taskResult.exitCode === 0 ? "completed" : "failed",
+          workspacePath: taskResult.workspacePath,
+          branch: taskResult.branch,
+          repoFullName: taskResult.repoFullName,
+          result: taskResult.result,
+          agentSessionId: taskResult.sessionId,
         });
       } catch (error) {
         await ctx.emit("tool.call.failed", {

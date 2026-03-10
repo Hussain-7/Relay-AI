@@ -14,7 +14,7 @@ import { ensureMainAgentSession } from "@/lib/conversations";
 import { type AttachmentDto, type TimelineEventEnvelope } from "@/lib/contracts";
 import { env, hasAnthropicApiKey } from "@/lib/env";
 import { getConfiguredMcpServers } from "@/lib/main-agent/mcp";
-import { MAIN_AGENT_SYSTEM_PROMPT } from "@/lib/main-agent/system-prompt";
+import { buildMainAgentSystemPrompt } from "@/lib/main-agent/system-prompt";
 import { MAIN_AGENT_SERVER_TOOLS } from "@/lib/main-agent/tools";
 import { getMainAgentTools } from "@/lib/main-agent/tools";
 import { prisma } from "@/lib/prisma";
@@ -571,7 +571,9 @@ export async function streamMainAgentRun(input: {
           system: [
             {
               type: "text" as const,
-              text: MAIN_AGENT_SYSTEM_PROMPT,
+              text: buildMainAgentSystemPrompt({
+                mcpServerNames: configuredMcpServers.map((s) => s.name),
+              }),
               cache_control: { type: "ephemeral" as const },
             },
           ],
@@ -591,7 +593,15 @@ export async function streamMainAgentRun(input: {
               contentJson: message.contentJson,
             })),
           ),
-          tools: [...MAIN_AGENT_SERVER_TOOLS.map((tool) => tool.tool), ...tools],
+          tools: [
+            ...MAIN_AGENT_SERVER_TOOLS.map((tool) => tool.tool),
+            ...tools,
+            // Generate mcp_toolset entries for each configured MCP server
+            ...configuredMcpServers.map((server) => ({
+              type: "mcp_toolset" as const,
+              mcp_server_name: server.name,
+            })),
+          ],
           ...(configuredMcpServers.length ? { mcp_servers: configuredMcpServers } : {}),
         } as Parameters<typeof anthropic.beta.messages.toolRunner>[0]);
 
@@ -646,6 +656,35 @@ export async function streamMainAgentRun(input: {
                   input: block.input,
                   index: rawEvent.index,
                 });
+              }
+
+              // MCP tool use (tools from external MCP servers)
+              if ("type" in block) {
+                const blockType = (block as unknown as { type: string }).type;
+                if (blockType === "mcp_tool_use") {
+                  const mcpBlock = block as unknown as { id: string; name: string; input: unknown; server_name: string };
+                  indexToToolUseId.set(rawEvent.index, mcpBlock.id);
+                  indexToToolName.set(rawEvent.index, mcpBlock.name);
+                  await emit("tool.call.started", "main_agent", {
+                    toolName: mcpBlock.name,
+                    toolRuntime: `mcp:${mcpBlock.server_name}`,
+                    toolUseId: mcpBlock.id,
+                    input: mcpBlock.input,
+                    index: rawEvent.index,
+                  });
+                }
+
+                // MCP tool result
+                if (blockType === "mcp_tool_result") {
+                  const mcpResult = block as unknown as { tool_use_id: string; content: unknown; is_error?: boolean };
+                  await emit("tool.call.completed", "main_agent", {
+                    toolName: indexToToolName.get(rawEvent.index) ?? "mcp_tool",
+                    toolRuntime: "mcp",
+                    toolUseId: mcpResult.tool_use_id,
+                    result: mcpResult.content,
+                    isError: mcpResult.is_error ?? false,
+                  });
+                }
               }
 
               // Handle compaction blocks (context was summarized)

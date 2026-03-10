@@ -13,7 +13,7 @@ export async function GET(request: Request) {
       return Response.json({ configured: false, installed: false });
     }
 
-    // Always verify against GitHub API — handles both installs and uninstalls
+    // Check GitHub API for installations and auto-link to current user
     try {
       const appClient = new Octokit({
         authStrategy: createAppAuth,
@@ -26,7 +26,6 @@ export async function GET(request: Request) {
       const { data: installations } = await appClient.request("GET /app/installations");
 
       if (installations.length > 0) {
-        // Sync the installation to our DB
         const installationId = String(installations[0]!.id);
         await prisma.githubInstallation.upsert({
           where: {
@@ -50,29 +49,27 @@ export async function GET(request: Request) {
           installUrl: `/api/github/install`,
         });
       }
-
-      // No installations found on GitHub — clean up DB if stale
-      await prisma.githubInstallation.deleteMany({
-        where: { userId: user.userId },
-      });
-
-      return Response.json({
-        configured: true,
-        installed: false,
-        installUrl: `/api/github/install`,
-      });
     } catch {
       // GitHub API failed — fall back to DB
       const existing = await prisma.githubInstallation.findFirst({
         where: { userId: user.userId },
       });
 
-      return Response.json({
-        configured: true,
-        installed: Boolean(existing),
-        installUrl: `/api/github/install`,
-      });
+      if (existing) {
+        return Response.json({
+          configured: true,
+          installed: true,
+          account: existing.accountLogin ?? null,
+          installUrl: `/api/github/install`,
+        });
+      }
     }
+
+    return Response.json({
+      configured: true,
+      installed: false,
+      installUrl: `/api/github/install`,
+    });
   } catch {
     return Response.json({ configured: false, installed: false });
   }

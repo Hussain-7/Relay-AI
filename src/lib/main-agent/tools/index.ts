@@ -2,8 +2,9 @@ export type { ToolRuntimeContext, ToolCatalogEntry } from "./context";
 
 import type { ToolRuntimeContext } from "./context";
 import { createChatSearchTool, chatSearchCatalog } from "./chat-search";
-import { createGithubListReposTool, createGithubConnectRepoTool, createGithubCreateRepoTool, createGithubCreatePrTool, githubCatalog } from "./github";
+import { createGithubListReposTool, createGithubConnectRepoTool, createGithubCreateRepoTool, createGithubCreatePrTool, createGithubSearchReposTool, createGithubDeleteRepoBindingTool, githubCatalog } from "./github";
 import { createCodingSessionStartTool, createCodingSessionStatusTool, createCodingSessionPauseTool, codingSessionCatalog } from "./coding-session";
+import { createSandboxExecTool, createSandboxWriteFileTool, sandboxExecCatalog } from "./sandbox-exec";
 import { memoryCatalog } from "./memory";
 
 // ── Server tools (executed by the Anthropic API) ──
@@ -70,10 +71,14 @@ export function getMainAgentTools(ctx: ToolRuntimeContext) {
     createGithubListReposTool(ctx),
     createGithubConnectRepoTool(ctx),
     createGithubCreateRepoTool(ctx),
+    createGithubSearchReposTool(ctx),
+    createGithubDeleteRepoBindingTool(ctx),
     createCodingSessionStartTool(ctx),
     createCodingSessionStatusTool(ctx),
     createCodingSessionPauseTool(ctx),
     createGithubCreatePrTool(ctx),
+    createSandboxExecTool(ctx),
+    createSandboxWriteFileTool(ctx),
   ];
 }
 
@@ -95,6 +100,7 @@ export const TOOL_CATALOG = [
   chatSearchCatalog,
   githubCatalog,
   ...codingSessionCatalog,
+  sandboxExecCatalog,
   // Disabled tools (available but not wired up)
   memoryCatalog,
 ];

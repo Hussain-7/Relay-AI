@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 
-import { connectRepoBinding, createPullRequestForBinding, createRemoteRepo, getGitHubConfigurationStatus, listKnownRepos } from "@/lib/github/service";
+import { connectRepoBinding, createPullRequestForBinding, createRemoteRepo, deleteRepoBinding, getGitHubConfigurationStatus, listKnownRepos, listGithubRepos, searchGithubRepos } from "@/lib/github/service";
 import type { ToolCatalogEntry, ToolRuntimeContext } from "./context";
 import { jsonResult } from "./context";
 
@@ -21,13 +21,21 @@ export function createGithubListReposTool(ctx: ToolRuntimeContext) {
     inputSchema: z.object({}),
     async run() {
       try {
-        const repos = await listKnownRepos(ctx.userId);
+        const [connectedRepos, githubRepos] = await Promise.all([
+          listKnownRepos(ctx.userId),
+          listGithubRepos(ctx.userId),
+        ]);
         await ctx.emit("tool.call.completed", {
           toolName: "github_list_repos",
           toolRuntime: "custom",
-          resultCount: repos.length,
+          connectedCount: connectedRepos.length,
+          availableCount: githubRepos.length,
         });
-        return jsonResult({ configuration: getGitHubConfigurationStatus(), repos });
+        return jsonResult({
+          configuration: getGitHubConfigurationStatus(),
+          connectedRepos,
+          availableGithubRepos: githubRepos,
+        });
       } catch (error) {
         await ctx.emit("tool.call.failed", {
           toolName: "github_list_repos",
@@ -152,6 +160,62 @@ export function createGithubCreatePrTool(ctx: ToolRuntimeContext) {
           toolName: "coding_session_create_pr",
           toolRuntime: "custom",
           error: error instanceof Error ? error.message : "Unknown PR create error",
+        });
+        throw error;
+      }
+    },
+  });
+}
+
+export function createGithubSearchReposTool(ctx: ToolRuntimeContext) {
+  return betaZodTool({
+    name: "github_search_repos",
+    description: "Search repositories on the user's GitHub account that the app has access to.",
+    inputSchema: z.object({
+      query: z.string().min(1).describe("Search query to filter repos by name or description"),
+    }),
+    async run(input) {
+      try {
+        const repos = await searchGithubRepos(ctx.userId, input.query);
+        await ctx.emit("tool.call.completed", {
+          toolName: "github_search_repos",
+          toolRuntime: "custom",
+          resultCount: repos.length,
+        });
+        return jsonResult(repos);
+      } catch (error) {
+        await ctx.emit("tool.call.failed", {
+          toolName: "github_search_repos",
+          toolRuntime: "custom",
+          error: error instanceof Error ? error.message : "Unknown search error",
+        });
+        throw error;
+      }
+    },
+  });
+}
+
+export function createGithubDeleteRepoBindingTool(ctx: ToolRuntimeContext) {
+  return betaZodTool({
+    name: "github_disconnect_repo",
+    description: "Remove a connected repository binding from this workspace.",
+    inputSchema: z.object({
+      repoBindingId: z.string().min(1).describe("The ID of the repo binding to remove"),
+    }),
+    async run(input) {
+      try {
+        await deleteRepoBinding(ctx.userId, input.repoBindingId);
+        await ctx.emit("tool.call.completed", {
+          toolName: "github_disconnect_repo",
+          toolRuntime: "custom",
+          repoBindingId: input.repoBindingId,
+        });
+        return jsonResult({ deleted: true, repoBindingId: input.repoBindingId });
+      } catch (error) {
+        await ctx.emit("tool.call.failed", {
+          toolName: "github_disconnect_repo",
+          toolRuntime: "custom",
+          error: error instanceof Error ? error.message : "Unknown delete error",
         });
         throw error;
       }
