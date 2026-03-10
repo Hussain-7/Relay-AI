@@ -264,17 +264,20 @@ export function buildTimelineEntries(events: TimelineEventEnvelope[]) {
         const key =
           (typeof event.payload?.toolUseId === "string" && event.payload.toolUseId) ||
           `${String(event.payload?.toolName ?? "tool")}-${event.id}`;
-        const toolEntry: ToolTimelineEntry = {
-          id: key,
-          kind: "tool",
-          title: String(event.payload?.toolName ?? "Tool call"),
-          runtime: typeof event.payload?.toolRuntime === "string" ? event.payload.toolRuntime : null,
-          status: "running",
-          input: stringifyUnknown(event.payload?.input),
-          output: "",
-        };
-        toolEntries.set(key, toolEntry);
-        entries.push(toolEntry);
+        // Avoid duplicates if the same tool use ID appears multiple times
+        if (!toolEntries.has(key)) {
+          const toolEntry: ToolTimelineEntry = {
+            id: key,
+            kind: "tool",
+            title: String(event.payload?.toolName ?? "Tool call"),
+            runtime: typeof event.payload?.toolRuntime === "string" ? event.payload.toolRuntime : null,
+            status: "running",
+            input: stringifyUnknown(event.payload?.input),
+            output: "",
+          };
+          toolEntries.set(key, toolEntry);
+          entries.push(toolEntry);
+        }
         break;
       }
       case "tool.call.input.delta": {

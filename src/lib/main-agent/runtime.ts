@@ -658,6 +658,37 @@ export async function streamMainAgentRun(input: {
                 });
               }
 
+              // MCP tool use (external MCP server tools)
+              if ((block as unknown as { type: string }).type === "mcp_tool_use") {
+                const mcpBlock = block as unknown as { id: string; name: string; input: unknown; server_name: string };
+                indexToToolUseId.set(rawEvent.index, mcpBlock.id);
+                indexToToolName.set(rawEvent.index, mcpBlock.name);
+                await emit("tool.call.started", "main_agent", {
+                  toolName: mcpBlock.name,
+                  toolRuntime: `mcp:${mcpBlock.server_name}`,
+                  toolUseId: mcpBlock.id,
+                  input: mcpBlock.input,
+                  index: rawEvent.index,
+                });
+              }
+
+              // MCP tool result
+              if ((block as unknown as { type: string }).type === "mcp_tool_result") {
+                const mcpResult = block as unknown as { tool_use_id: string; content: unknown };
+                const toolUseId = mcpResult.tool_use_id;
+                // Find the matching tool name from our tracking
+                const matchingName = Array.from(indexToToolUseId.entries())
+                  .find(([, id]) => id === toolUseId);
+                const toolName = matchingName ? indexToToolName.get(matchingName[0]) ?? "mcp_tool" : "mcp_tool";
+
+                await emit("tool.call.completed", "main_agent", {
+                  toolName,
+                  toolRuntime: "mcp",
+                  toolUseId,
+                  result: mcpResult.content,
+                });
+              }
+
               // MCP tool use (tools from external MCP servers)
               if ("type" in block) {
                 const blockType = (block as unknown as { type: string }).type;
