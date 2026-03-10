@@ -928,7 +928,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
               </div>
             </div>
           ) : isLandingState ? (
-            <section className="chat-landing flex h-full flex-col items-center justify-center gap-4 pt-9 px-[30px] pb-[280px] text-center overflow-hidden max-[980px]:justify-end max-[980px]:px-[18px] max-[980px]:pt-6 max-[980px]:pb-[200px] max-[980px]:gap-3.5">
+            <section className="chat-landing flex h-full flex-col items-center justify-center gap-4 pt-9 px-[30px] pb-[280px] text-center overflow-hidden max-[980px]:px-[18px] max-[980px]:pt-0 max-[980px]:pb-[140px] max-[980px]:gap-3">
               {errorMessage ? <div className="max-w-[720px] mx-auto mb-[18px] border border-[rgba(181,103,69,0.3)] rounded-[18px] bg-[rgba(181,103,69,0.12)] text-[#f3c7b4] px-4 py-3.5">{errorMessage}</div> : null}
               <div className="inline-flex items-center justify-center rounded-full bg-[rgba(10,10,10,0.42)] text-[rgba(245,240,232,0.64)] py-2.5 px-4 text-[0.82rem] tracking-[0.12em] uppercase max-[980px]:text-[0.72rem] max-[980px]:py-[7px] max-[980px]:px-3">AI chat</div>
               <div className="flex items-center gap-3.5 max-[980px]:flex-col max-[980px]:gap-2">
