@@ -509,15 +509,19 @@ export async function streamMainAgentRun(input: {
           payload: payload ? { ...payload, source } : { source },
         };
         emitSseEvent(controller, envelope);
-        pendingWrites.push(
-          appendRunEvent({
-            runId: createdRun.id,
-            conversationId: input.conversationId,
-            type,
-            source,
-            payload,
-          }).catch(() => {}),
-        );
+
+        // Skip DB persistence for streaming deltas — they're reconstructable from finalMessageJson
+        if (type !== "assistant.text.delta" && type !== "assistant.thinking.delta" && type !== "tool.call.input.delta") {
+          pendingWrites.push(
+            appendRunEvent({
+              runId: createdRun.id,
+              conversationId: input.conversationId,
+              type,
+              source,
+              payload,
+            }).catch(() => {}),
+          );
+        }
       };
 
       try {
