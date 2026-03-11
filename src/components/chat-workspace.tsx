@@ -220,16 +220,16 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
     syncScrollShadows();
   }, [liveRun]);
 
-  // Instant scroll to bottom when switching conversations
+  // Scroll to bottom when switching conversations or when conversation data loads
   useEffect(() => {
     requestAnimationFrame(() => {
       transcriptRef.current?.scrollTo({
         top: transcriptRef.current.scrollHeight,
-        behavior: "instant",
+        behavior: "smooth",
       });
       syncScrollShadows();
     });
-  }, [activeConversationId]);
+  }, [activeConversationId, activeConversation]);
 
   useEffect(() => {
     setOpenConversationMenuId(null);
