@@ -47,12 +47,12 @@ export async function POST(request: Request) {
   const user = await requireRequestUser(request.headers);
   const body = createSchema.parse(await request.json());
 
-  // Check for duplicate name
+  // Check for duplicate URL
   const existing = await prisma.mcpConnector.findUnique({
-    where: { userId_name: { userId: user.userId, name: body.name } },
+    where: { userId_url: { userId: user.userId, url: body.url } },
   });
   if (existing) {
-    return Response.json({ error: "A connector with this name already exists" }, { status: 409 });
+    return Response.json({ error: "This MCP server is already connected" }, { status: 409 });
   }
 
   // Test the connection
@@ -130,8 +130,16 @@ export async function POST(request: Request) {
     });
   }
 
-  // Test failed but not an auth issue — save anyway since Anthropic's servers
-  // are the ones that actually connect to MCP servers, not us
+  // Server is unreachable (DNS failure, timeout, 404) — reject
+  if (!result.reachable) {
+    return Response.json(
+      { error: result.error ?? "Could not reach MCP server" },
+      { status: 422 },
+    );
+  }
+
+  // Server is reachable but returned a non-success status (405, 406, 500, etc.)
+  // This can be a transport mismatch — save with a warning since Anthropic connects directly
   let tokenData: { encryptedAccessToken: string; accessTokenIv: string } | undefined;
   if (body.authorizationToken && env.MCP_TOKEN_SECRET) {
     const enc = encryptToken(body.authorizationToken);

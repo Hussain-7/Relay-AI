@@ -298,7 +298,7 @@ model McpConnector {
   updatedAt            DateTime            @updatedAt
   user                 UserProfile         @relation(fields: [userId], references: [userId], onDelete: Cascade)
 
-  @@unique([userId, name])
+  @@unique([userId, url])
   @@index([userId, status])
 }
 

@@ -14,6 +14,8 @@ export interface OAuthMetadata {
 export interface TestConnectionResult {
   success: boolean;
   needsAuth: boolean;
+  /** Server responded (even with an error status) — URL is reachable */
+  reachable: boolean;
   error?: string;
   serverName?: string;
   authServerMetadata?: OAuthMetadata;
@@ -51,18 +53,17 @@ export async function testMcpConnection(
         signal: AbortSignal.timeout(10_000),
       });
 
-      if (response.ok || response.status === 200) {
-        // Consume/abort the body so the connection doesn't hang
+      if (response.ok) {
         await response.body?.cancel();
-        return { success: true, needsAuth: false };
+        return { success: true, needsAuth: false, reachable: true };
       }
 
       if (response.status === 401) {
         const metadata = await discoverOAuthMetadata(url);
-        return { success: false, needsAuth: true, authServerMetadata: metadata ?? undefined };
+        return { success: false, needsAuth: true, reachable: true, authServerMetadata: metadata ?? undefined };
       }
 
-      return { success: false, needsAuth: false, error: `Server returned ${response.status}` };
+      return { success: false, needsAuth: false, reachable: true, error: `Server returned ${response.status}` };
     }
 
     // Streamable HTTP / unknown — POST JSON-RPC initialize
@@ -84,33 +85,40 @@ export async function testMcpConnection(
 
     if (response.ok) {
       const contentType = response.headers.get("content-type") ?? "";
-      // Streamable HTTP may respond with SSE stream containing the JSON-RPC result
       if (contentType.includes("text/event-stream")) {
-        // Server is alive and responding with SSE — that's a success
         await response.body?.cancel();
-        return { success: true, needsAuth: false };
+        return { success: true, needsAuth: false, reachable: true };
       }
       const body = await response.json() as { result?: { serverInfo?: { name?: string } } };
       return {
         success: true,
         needsAuth: false,
+        reachable: true,
         serverName: body.result?.serverInfo?.name,
       };
     }
 
     if (response.status === 401) {
       const metadata = await discoverOAuthMetadata(url);
-      return { success: false, needsAuth: true, authServerMetadata: metadata ?? undefined };
+      return { success: false, needsAuth: true, reachable: true, authServerMetadata: metadata ?? undefined };
     }
 
+    // 404/410 → URL doesn't point to a valid MCP endpoint
+    if (response.status === 404 || response.status === 410) {
+      return { success: false, needsAuth: false, reachable: false, error: "No MCP server found at this URL" };
+    }
+
+    // Other HTTP errors (405, 406, 500, etc.) — server is reachable, may be a transport mismatch
     return {
       success: false,
       needsAuth: false,
+      reachable: true,
       error: `Server returned ${response.status}`,
     };
   } catch (err) {
+    // Network-level failure: DNS, timeout, connection refused
     const message = err instanceof Error ? err.message : "Connection failed";
-    return { success: false, needsAuth: false, error: message };
+    return { success: false, needsAuth: false, reachable: false, error: message };
   }
 }
 
