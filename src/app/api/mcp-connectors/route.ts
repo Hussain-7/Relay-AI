@@ -1,0 +1,164 @@
+import { Prisma } from "@prisma/client";
+import { z } from "zod";
+
+import { env } from "@/lib/env";
+import { testMcpConnection, getOAuthCallbackUrl, registerOAuthClient } from "@/lib/mcp-connectors";
+import { encryptToken } from "@/lib/mcp-token-crypto";
+import { prisma } from "@/lib/prisma";
+import { requireRequestUser } from "@/lib/server-auth";
+
+const createSchema = z.object({
+  name: z.string().min(1).max(100),
+  url: z.string().url(),
+  authorizationToken: z.string().optional(),
+});
+
+export async function GET(request: Request) {
+  const user = await requireRequestUser(request.headers);
+
+  const connectors = await prisma.mcpConnector.findMany({
+    where: { userId: user.userId },
+    orderBy: { createdAt: "asc" },
+    select: {
+      id: true,
+      name: true,
+      url: true,
+      encryptedAccessToken: true,
+      status: true,
+      lastError: true,
+      createdAt: true,
+    },
+  });
+
+  return Response.json({
+    connectors: connectors.map((c) => ({
+      id: c.id,
+      name: c.name,
+      url: c.url,
+      hasToken: Boolean(c.encryptedAccessToken),
+      status: c.status,
+      lastError: c.lastError,
+      createdAt: c.createdAt.toISOString(),
+    })),
+  });
+}
+
+export async function POST(request: Request) {
+  const user = await requireRequestUser(request.headers);
+  const body = createSchema.parse(await request.json());
+
+  // Check for duplicate name
+  const existing = await prisma.mcpConnector.findUnique({
+    where: { userId_name: { userId: user.userId, name: body.name } },
+  });
+  if (existing) {
+    return Response.json({ error: "A connector with this name already exists" }, { status: 409 });
+  }
+
+  // Test the connection
+  const result = await testMcpConnection(body.url, body.authorizationToken);
+
+  if (result.success) {
+    // Open server — save as ACTIVE
+    let tokenData: { encryptedAccessToken: string; accessTokenIv: string } | undefined;
+    if (body.authorizationToken && env.MCP_TOKEN_SECRET) {
+      const enc = encryptToken(body.authorizationToken);
+      tokenData = { encryptedAccessToken: enc.encrypted, accessTokenIv: enc.iv };
+    }
+
+    const connector = await prisma.mcpConnector.create({
+      data: {
+        userId: user.userId,
+        name: body.name,
+        url: body.url,
+        status: "ACTIVE",
+        ...tokenData,
+      },
+    });
+
+    return Response.json({
+      connector: {
+        id: connector.id,
+        name: connector.name,
+        url: connector.url,
+        hasToken: Boolean(tokenData),
+        status: connector.status,
+        lastError: null,
+        createdAt: connector.createdAt.toISOString(),
+      },
+    });
+  }
+
+  if (result.needsAuth && result.authServerMetadata) {
+    // OAuth-protected server — save with NEEDS_AUTH + metadata
+    const redirectUri = getOAuthCallbackUrl();
+
+    // Try dynamic client registration
+    let clientId: string | undefined;
+    let clientSecret: string | undefined;
+    if (result.authServerMetadata.registration_endpoint) {
+      const reg = await registerOAuthClient(result.authServerMetadata.registration_endpoint, redirectUri);
+      if (reg) {
+        clientId = reg.clientId;
+        clientSecret = reg.clientSecret;
+      }
+    }
+
+    const connector = await prisma.mcpConnector.create({
+      data: {
+        userId: user.userId,
+        name: body.name,
+        url: body.url,
+        status: "NEEDS_AUTH",
+        oauthServerMetadata: result.authServerMetadata as unknown as Prisma.InputJsonValue,
+        oauthClientId: clientId,
+        oauthClientSecret: clientSecret,
+      },
+    });
+
+    return Response.json({
+      connector: {
+        id: connector.id,
+        name: connector.name,
+        url: connector.url,
+        hasToken: false,
+        status: "NEEDS_AUTH",
+        lastError: null,
+        createdAt: connector.createdAt.toISOString(),
+      },
+      needsAuth: true,
+    });
+  }
+
+  // Test failed but not an auth issue — save anyway since Anthropic's servers
+  // are the ones that actually connect to MCP servers, not us
+  let tokenData: { encryptedAccessToken: string; accessTokenIv: string } | undefined;
+  if (body.authorizationToken && env.MCP_TOKEN_SECRET) {
+    const enc = encryptToken(body.authorizationToken);
+    tokenData = { encryptedAccessToken: enc.encrypted, accessTokenIv: enc.iv };
+  }
+
+  const connector = await prisma.mcpConnector.create({
+    data: {
+      userId: user.userId,
+      name: body.name,
+      url: body.url,
+      status: "ACTIVE",
+      lastError: result.error ?? null,
+      ...tokenData,
+    },
+  });
+
+  return Response.json({
+    connector: {
+      id: connector.id,
+      name: connector.name,
+      url: connector.url,
+      hasToken: Boolean(tokenData),
+      status: connector.status,
+      lastError: connector.lastError,
+      createdAt: connector.createdAt.toISOString(),
+    },
+    warning: result.error,
+  });
+}

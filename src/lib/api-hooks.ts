@@ -16,6 +16,7 @@ export const queryKeys = {
   conversation: (id: string) => ["conversation", id] as const,
   githubStatus: ["github-status"] as const,
   preferences: ["preferences"] as const,
+  mcpConnectors: ["mcp-connectors"] as const,
 };
 
 export interface AuthUser {
@@ -287,6 +288,116 @@ export function useUpdateConversationModel() {
     },
     onSettled: (_data, _err, { id }) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.conversation(id) });
+    },
+  });
+}
+
+// ─── MCP Connectors ────────────────────────────────────────────────────────────
+
+export interface McpConnectorDto {
+  id: string;
+  name: string;
+  url: string;
+  hasToken: boolean;
+  status: "ACTIVE" | "NEEDS_AUTH" | "ERROR" | "DISABLED";
+  lastError: string | null;
+  createdAt: string;
+}
+
+export function useMcpConnectors() {
+  return useQuery({
+    queryKey: queryKeys.mcpConnectors,
+    queryFn: async () => {
+      const data = await fetchJson<{ connectors: McpConnectorDto[] }>("/api/mcp-connectors");
+      return data.connectors;
+    },
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useCreateMcpConnector() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (vars: { name: string; url: string; authorizationToken?: string }) => {
+      const data = await fetchJson<{
+        connector: McpConnectorDto;
+        needsAuth?: boolean;
+      }>("/api/mcp-connectors", {
+        method: "POST",
+        body: JSON.stringify(vars),
+      });
+      return data;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.mcpConnectors });
+    },
+  });
+}
+
+export function useDeleteMcpConnector() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await fetchJson(`/api/mcp-connectors/${id}`, { method: "DELETE" });
+      return id;
+    },
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.mcpConnectors });
+      const previous = queryClient.getQueryData<McpConnectorDto[]>(queryKeys.mcpConnectors);
+      queryClient.setQueryData<McpConnectorDto[]>(
+        queryKeys.mcpConnectors,
+        (old) => (old ?? []).filter((c) => c.id !== id),
+      );
+      return { previous };
+    },
+    onError: (_err, _id, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(queryKeys.mcpConnectors, context.previous);
+      }
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.mcpConnectors });
+    },
+  });
+}
+
+export function useToggleMcpConnector() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, enabled }: { id: string; enabled: boolean }) => {
+      const data = await fetchJson<{ connector: McpConnectorDto }>(
+        `/api/mcp-connectors/${id}`,
+        { method: "PATCH", body: JSON.stringify({ enabled }) },
+      );
+      return data.connector;
+    },
+    onSuccess: (connector) => {
+      queryClient.setQueryData<McpConnectorDto[]>(
+        queryKeys.mcpConnectors,
+        (old) => (old ?? []).map((c) => (c.id === connector.id ? connector : c)),
+      );
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.mcpConnectors });
+    },
+  });
+}
+
+export function useTestMcpConnection() {
+  return useMutation({
+    mutationFn: async (vars: { url: string; authorizationToken?: string }) => {
+      return fetchJson<{
+        success: boolean;
+        needsAuth: boolean;
+        error?: string;
+        serverName?: string;
+      }>("/api/mcp-connectors/test", {
+        method: "POST",
+        body: JSON.stringify(vars),
+      });
     },
   });
 }

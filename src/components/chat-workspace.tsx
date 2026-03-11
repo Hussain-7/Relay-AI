@@ -37,6 +37,8 @@ import {
 } from "@/components/icons";
 import { SidebarMenuPortal } from "@/components/chat/sidebar-menu-portal";
 import { ComposerModelMenuPortal, type AgentPreferences } from "@/components/chat/composer-model-menu";
+import { ComposerPlusMenuPortal } from "@/components/chat/composer-plus-menu";
+import { McpConnectorModal } from "@/components/chat/mcp-connector-modal";
 import { AttachmentChip } from "@/components/chat/attachment-chip";
 import { RunThread } from "@/components/chat/run-thread";
 import { setPendingMessage, peekPendingMessage, consumePendingMessage } from "@/lib/pending-message";
@@ -89,6 +91,9 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   const [isSending, setIsSending] = useState(false);
   const [deletingConversationId, setDeletingConversationId] = useState<string | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [plusMenuOpen, setPlusMenuOpen] = useState(false);
+  const [connectorModalOpen, setConnectorModalOpen] = useState(false);
+  const plusButtonRef = useRef<HTMLButtonElement | null>(null);
   const { preferences: userPreferences, savePreferences } = usePreferences();
   const agentPreferences: AgentPreferences = {
     thinking: userPreferences.agent.thinking,
@@ -1078,11 +1083,27 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
               <button
                 type="button"
                 className="inline-grid h-9 w-9 place-items-center rounded-full border-0 bg-transparent text-[rgba(255,255,255,0.7)] cursor-pointer hover:bg-[rgba(255,255,255,0.05)] hover:text-[rgba(255,255,255,0.92)]"
-                onClick={() => fileInputRef.current?.click()}
-                aria-label="Upload a file"
+                ref={plusButtonRef}
+                onClick={() => setPlusMenuOpen((v) => !v)}
+                title="Add files, connectors, and more"
+                aria-label="Add files, connectors, and more"
               >
                 <IconPlus />
               </button>
+
+              {plusMenuOpen && (
+                <ComposerPlusMenuPortal
+                  anchor={plusButtonRef.current}
+                  onAddFiles={() => {
+                    setPlusMenuOpen(false);
+                    fileInputRef.current?.click();
+                  }}
+                  onAddConnectors={() => {
+                    setPlusMenuOpen(false);
+                    setConnectorModalOpen(true);
+                  }}
+                />
+              )}
 
               <div className="flex items-center gap-2.5 ml-auto">
                 <div className="relative" data-chat-action-menu>
@@ -1134,6 +1155,8 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
         </footer>
         </div>
       </main>
+
+      {connectorModalOpen && <McpConnectorModal onClose={() => setConnectorModalOpen(false)} />}
 
       {searchModalOpen ? (
         <div className="fixed inset-0 z-200 flex items-start justify-center pt-[12vh] bg-[rgba(0,0,0,0.5)] backdrop-blur-[4px]" onClick={() => setSearchModalOpen(false)}>

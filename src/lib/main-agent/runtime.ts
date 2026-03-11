@@ -550,13 +550,16 @@ export async function streamMainAgentRun(input: {
           orderBy: { createdAt: "asc" },
         });
 
+
         const tools = getMainAgentTools({
           userId: input.userId,
           conversationId: input.conversationId,
           runId: createdRun.id,
           emit: async (type, payload) => emit(type, "main_agent", payload),
         });
-        const configuredMcpServers = getConfiguredMcpServers();
+        const configuredMcpServers = await getConfiguredMcpServers(input.userId);
+        console.log("configuredMcpServers", configuredMcpServers);
+
         const activeModel = mainAgentSession.anthropicModel ?? env.ANTHROPIC_MAIN_MODEL;
         const prefs = input.preferences ?? {};
         const thinkingEnabled = prefs.thinking !== false;

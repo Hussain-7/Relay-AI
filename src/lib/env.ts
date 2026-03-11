@@ -14,7 +14,7 @@ const envSchema = z.object({
   ANTHROPIC_MAIN_MODEL: z.string().default("claude-sonnet-4-6"),
   ANTHROPIC_TITLE_MODEL: z.string().default("claude-haiku-4-5-20251001"),
   ANTHROPIC_CODING_MODEL: z.string().default("claude-sonnet-4-6"),
-  ANTHROPIC_MCP_SERVERS_JSON: z.string().optional(),
+  MCP_TOKEN_SECRET: z.string().optional(),
   NEXT_PUBLIC_SUPABASE_URL: z.string().optional(),
   NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),

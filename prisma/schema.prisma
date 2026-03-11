@@ -70,6 +70,7 @@ model UserProfile {
   repoBindings        RepoBinding[]
   workspaceSnapshots  WorkspaceSnapshot[]
   githubInstallations GithubInstallation[]
+  mcpConnectors       McpConnector[]
 }
 
 model Conversation {
@@ -269,6 +270,36 @@ model WorkspaceSnapshot {
 
   @@index([userId, createdAt])
   @@index([repoBindingId, createdAt])
+}
+
+enum McpConnectorStatus {
+  ACTIVE
+  NEEDS_AUTH
+  ERROR
+  DISABLED
+}
+
+model McpConnector {
+  id                   String              @id @default(uuid())
+  userId               String
+  name                 String
+  url                  String
+  encryptedAccessToken String?
+  accessTokenIv        String?
+  encryptedRefreshToken String?
+  refreshTokenIv       String?
+  tokenExpiresAt       DateTime?
+  oauthClientId        String?
+  oauthClientSecret    String?
+  oauthServerMetadata  Json?
+  status               McpConnectorStatus  @default(ACTIVE)
+  lastError            String?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  user                 UserProfile         @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@unique([userId, name])
+  @@index([userId, status])
 }
 
 model GithubInstallation {

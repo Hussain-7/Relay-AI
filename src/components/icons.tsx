@@ -111,6 +111,24 @@ export function IconInfo() {
   );
 }
 
+export function IconPaperclip() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4">
+      <path d="M21.44 11.05l-9.19 9.19a5.64 5.64 0 0 1-7.98-7.98l9.19-9.19a3.76 3.76 0 0 1 5.32 5.32L9.6 17.57a1.88 1.88 0 0 1-2.66-2.66l8.38-8.38" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function IconConnector() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4">
+      <path d="M4 13h4v-2H4v2Zm10 0h6v-2h-6v2Z" fill="currentColor" />
+      <circle cx="11" cy="12" r="3" fill="none" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M11 5v4M11 15v4" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function IconCopy() {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4">
