@@ -35,53 +35,49 @@ async function getInstallationClient(userId: string) {
 
 export async function listGithubRepos(userId: string) {
   const client = await getInstallationClient(userId);
-  if (!client) return [];
+  if (!client) {
+    throw new Error("GitHub App is not installed. Visit the settings to connect your GitHub account.");
+  }
 
-  try {
-    const { data } = await client.request("GET /installation/repositories", {
-      per_page: 100,
-    });
+  const { data } = await client.request("GET /installation/repositories", {
+    per_page: 100,
+  });
 
-    return data.repositories.map((repo: { full_name: string; name: string; default_branch: string; private: boolean; description: string | null }) => ({
+  return data.repositories.map((repo: { full_name: string; name: string; default_branch: string; private: boolean; description: string | null }) => ({
+    fullName: repo.full_name,
+    name: repo.name,
+    defaultBranch: repo.default_branch,
+    isPrivate: repo.private,
+    description: repo.description,
+  }));
+}
+
+export async function searchGithubRepos(userId: string, query: string) {
+  const client = await getInstallationClient(userId);
+  if (!client) {
+    throw new Error("GitHub App is not installed. Visit the settings to connect your GitHub account.");
+  }
+
+  // Search within repos the installation has access to
+  const { data } = await client.request("GET /installation/repositories", {
+    per_page: 100,
+  });
+
+  const lowerQuery = query.toLowerCase();
+  return data.repositories
+    .filter((repo: { full_name: string; name: string; description: string | null }) =>
+      repo.full_name.toLowerCase().includes(lowerQuery) ||
+      repo.name.toLowerCase().includes(lowerQuery) ||
+      (repo.description ?? "").toLowerCase().includes(lowerQuery),
+    )
+    .map((repo: { full_name: string; name: string; default_branch: string; private: boolean; description: string | null; clone_url: string }) => ({
       fullName: repo.full_name,
       name: repo.name,
       defaultBranch: repo.default_branch,
       isPrivate: repo.private,
       description: repo.description,
+      cloneUrl: repo.clone_url,
     }));
-  } catch {
-    return [];
-  }
-}
-
-export async function searchGithubRepos(userId: string, query: string) {
-  const client = await getInstallationClient(userId);
-  if (!client) return [];
-
-  try {
-    // Search within repos the installation has access to
-    const { data } = await client.request("GET /installation/repositories", {
-      per_page: 100,
-    });
-
-    const lowerQuery = query.toLowerCase();
-    return data.repositories
-      .filter((repo: { full_name: string; name: string; description: string | null }) =>
-        repo.full_name.toLowerCase().includes(lowerQuery) ||
-        repo.name.toLowerCase().includes(lowerQuery) ||
-        (repo.description ?? "").toLowerCase().includes(lowerQuery),
-      )
-      .map((repo: { full_name: string; name: string; default_branch: string; private: boolean; description: string | null; clone_url: string }) => ({
-        fullName: repo.full_name,
-        name: repo.name,
-        defaultBranch: repo.default_branch,
-        isPrivate: repo.private,
-        description: repo.description,
-        cloneUrl: repo.clone_url,
-      }));
-  } catch {
-    return [];
-  }
 }
 
 export async function deleteRepoBinding(userId: string, repoBindingId: string) {
