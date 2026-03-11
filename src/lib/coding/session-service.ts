@@ -1,15 +1,17 @@
 import { Sandbox } from "@e2b/code-interpreter";
 import { CodingSessionStatus } from "@prisma/client";
 
-import { createCodingAgentBootstrapSpec } from "@/lib/coding/agent-runner";
 import { appendRunEvent } from "@/lib/run-events";
 import { env, hasE2bConfig, hasGitHubAppConfig } from "@/lib/env";
+import { getGitHubToken } from "@/lib/github/service";
 import { prisma } from "@/lib/prisma";
 
 const DEFAULT_WORKSPACE_ROOT = "/workspace";
+const SANDBOX_TIMEOUT_MS = 1000 * 60 * 60; // 60 minutes
+const TASK_TIMEOUT_MS = 1000 * 60 * 30; // 30 minutes
 
 function getSandboxTemplate() {
-  return env.E2B_TEMPLATE || env.E2B_TEMPLATE_ID || "code-interpreter-v1";
+  return env.E2B_TEMPLATE || env.E2B_TEMPLATE_ID || "claude";
 }
 
 async function connectSandboxOrThrow(sandboxId: string) {
@@ -19,7 +21,7 @@ async function connectSandboxOrThrow(sandboxId: string) {
 
   return Sandbox.connect(sandboxId, {
     apiKey: env.E2B_API_KEY,
-    timeoutMs: 1000 * 60 * 20,
+    timeoutMs: SANDBOX_TIMEOUT_MS,
   });
 }
 
@@ -32,6 +34,17 @@ export async function getLatestCodingSession(conversationId: string) {
     },
   });
 }
+
+const SANDBOX_CLAUDE_MD = `
+You are Relay AI's coding agent working in a sandboxed workspace.
+
+- Inspect the repository and project context before editing.
+- Make small, focused edits and use explicit execution summaries.
+- Use git to commit changes with clear messages.
+- If the task includes pushing, run git push.
+- Output a brief summary of what you did when finished.
+- Summarize changed files, commands run, and open risks.
+`.trim();
 
 export async function startOrResumeCodingSession(input: {
   conversationId: string;
@@ -59,7 +72,7 @@ export async function startOrResumeCodingSession(input: {
 
   if (codingSession?.sandboxId) {
     const sandbox = await connectSandboxOrThrow(codingSession.sandboxId);
-    await sandbox.setTimeout(1000 * 60 * 20);
+    await sandbox.setTimeout(SANDBOX_TIMEOUT_MS);
 
     codingSession = await prisma.codingSession.update({
       where: { id: codingSession.id },
@@ -102,41 +115,21 @@ export async function startOrResumeCodingSession(input: {
   const workspacePath = `${DEFAULT_WORKSPACE_ROOT}/${workspaceSlug}`;
   const sandbox = await Sandbox.create(getSandboxTemplate(), {
     apiKey: env.E2B_API_KEY,
-    timeoutMs: 1000 * 60 * 20,
+    timeoutMs: SANDBOX_TIMEOUT_MS,
     metadata: {
       conversationId: input.conversationId,
       userId: input.userId,
+    },
+    envs: {
+      ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY ?? "",
     },
     allowInternetAccess: true,
   });
 
   await sandbox.files.makeDir(workspacePath);
 
-  if (repoBinding) {
-    await sandbox.files.write(
-      `${workspacePath}/README.relay-ai.md`,
-      [
-        `# ${repoBinding.repoFullName}`,
-        "",
-        "This coding workspace was provisioned by Relay AI.",
-        "",
-        "The full remote Claude Code runner handoff is scaffolded in the app layer.",
-        "Clone and authenticated git operations should be completed by the dedicated runner service.",
-      ].join("\n"),
-    );
-  }
-
-  const bootstrapSpec = createCodingAgentBootstrapSpec({
-    prompt:
-      input.taskBrief ??
-      "Inspect the workspace, summarize the current repo state, and wait for the next delegated coding task.",
-    cwd: workspacePath,
-  });
-
-  await sandbox.files.write(
-    `${workspacePath}/.relay-ai.coding-agent.json`,
-    JSON.stringify(bootstrapSpec, null, 2),
-  );
+  // Write CLAUDE.md for the coding agent (Claude Code reads this automatically)
+  await sandbox.files.write(`${workspacePath}/CLAUDE.md`, SANDBOX_CLAUDE_MD);
 
   codingSession = await prisma.codingSession.create({
     data: {
@@ -186,74 +179,52 @@ export async function startOrResumeCodingSession(input: {
 
 /**
  * Clone the repo into the sandbox and set up git credentials.
+ * If already cloned, refreshes the remote URL with the provided token.
  * Returns the sandbox instance for further commands.
  */
-async function ensureRepoCloned(session: {
-  sandboxId: string;
-  workspacePath: string | null;
-  repoBinding: { repoFullName: string } | null;
-}, userId: string) {
-  const sandbox = await Sandbox.connect(session.sandboxId, {
-    apiKey: env.E2B_API_KEY,
-    timeoutMs: 1000 * 60 * 20,
-  });
+async function ensureRepoCloned(
+  session: {
+    sandboxId: string;
+    workspacePath: string | null;
+    repoBinding: { repoFullName: string } | null;
+  },
+  token: string,
+) {
+  const sandbox = await connectSandboxOrThrow(session.sandboxId);
 
   if (!session.repoBinding || !session.workspacePath) return sandbox;
+
+  const repoFullName = session.repoBinding.repoFullName;
+  const cloneUrl = `https://x-access-token:${token}@github.com/${repoFullName}.git`;
 
   const cloneCheck = await sandbox.commands.run(
     `test -d "${session.workspacePath}/.git" && echo "exists" || echo "missing"`,
   );
 
-  if (cloneCheck.stdout.trim() === "exists") return sandbox;
-
-  const installation = await prisma.githubInstallation.findFirst({
-    where: { userId },
-    orderBy: { updatedAt: "desc" },
-  });
-
-  if (!installation || !hasGitHubAppConfig()) {
-    throw new Error("GitHub App is not installed. Cannot clone the repository.");
+  if (cloneCheck.stdout.trim() === "exists") {
+    // Already cloned — refresh remote URL with fresh token for push access
+    await sandbox.commands.run(
+      `cd "${session.workspacePath}" && git remote set-url origin ${cloneUrl}`,
+    );
+    return sandbox;
   }
 
-  const { Octokit } = await import("octokit");
-  const { createAppAuth } = await import("@octokit/auth-app");
-
-  const appClient = new Octokit({
-    authStrategy: createAppAuth,
-    auth: {
-      appId: env.GITHUB_APP_ID!,
-      privateKey: env.GITHUB_APP_PRIVATE_KEY!,
-      installationId: Number(installation.installationId),
-    },
-  });
-
-  const { data: tokenData } = await appClient.request(
-    "POST /app/installations/{installation_id}/access_tokens",
-    { installation_id: Number(installation.installationId) },
-  );
-
-  const cloneUrl = `https://x-access-token:${tokenData.token}@github.com/${session.repoBinding.repoFullName}.git`;
-
+  // Shallow clone for speed
   await sandbox.commands.run(
-    `git clone ${cloneUrl} "${session.workspacePath}"`,
+    `git clone --depth 1 ${cloneUrl} "${session.workspacePath}"`,
     { timeoutMs: 60000 },
   );
+
   await sandbox.commands.run(
     `cd "${session.workspacePath}" && git config user.email "relay-ai@users.noreply.github.com" && git config user.name "Relay AI"`,
-  );
-
-  // Configure credential helper so pushes work
-  const repoFullName = session.repoBinding.repoFullName;
-  await sandbox.commands.run(
-    `cd "${session.workspacePath}" && git remote set-url origin https://x-access-token:${tokenData.token}@github.com/${repoFullName}.git`,
   );
 
   return sandbox;
 }
 
 /**
- * Clone the repo, run the coding agent CLI inside E2B, and return the result.
- * The coding agent is a pre-built TypeScript CLI that uses the Claude Agent SDK.
+ * Run the Claude Code CLI inside the E2B sandbox and stream results back.
+ * Uses `claude --dangerously-skip-permissions --output-format stream-json`.
  */
 export async function runCodingTask(input: {
   codingSessionId: string;
@@ -271,15 +242,26 @@ export async function runCodingTask(input: {
     throw new Error("Coding session has no sandbox.");
   }
 
-  // Clone repo into sandbox
-  const sandbox = await ensureRepoCloned(
-    {
-      sandboxId: session.sandboxId,
-      workspacePath: session.workspacePath,
-      repoBinding: session.repoBinding,
-    },
-    input.userId,
-  );
+  // Get a fresh GitHub token for clone/push (if repo is bound)
+  let gitToken: string | null = null;
+  if (session.repoBinding && hasGitHubAppConfig()) {
+    gitToken = await getGitHubToken(input.userId);
+    if (!gitToken) {
+      throw new Error("GitHub token unavailable. Ensure the GitHub App is installed.");
+    }
+  }
+
+  // Clone repo into sandbox (or refresh remote URL with fresh token)
+  const sandbox = gitToken
+    ? await ensureRepoCloned(
+        {
+          sandboxId: session.sandboxId,
+          workspacePath: session.workspacePath,
+          repoBinding: session.repoBinding,
+        },
+        gitToken,
+      )
+    : await connectSandboxOrThrow(session.sandboxId);
 
   // Update session to RUNNING
   await prisma.codingSession.update({
@@ -290,98 +272,170 @@ export async function runCodingTask(input: {
   await appendRunEvent({
     runId: input.runId,
     conversationId: input.conversationId,
-    type: "coding.session.ready",
+    type: "coding.agent.running",
     source: "coding_agent",
-    payload: { status: "cloned", workspacePath: session.workspacePath },
+    payload: { codingSessionId: session.id, workspacePath: session.workspacePath },
   });
 
-  // Ensure the coding agent CLI is available in the sandbox
-  const hasAgent = await sandbox.commands.run("command -v relay-agent > /dev/null 2>&1 && echo yes || echo no");
-  if (hasAgent.stdout.trim() !== "yes") {
-    // Upload the built CLI to the sandbox (fallback for non-custom templates)
-    const fs = await import("fs");
-    const path = await import("path");
+  try {
+    const escapedTask = input.taskBrief.replace(/'/g, "'\\''");
+    const sessionFlag = session.claudeSdkSessionId
+      ? ` --session-id ${session.claudeSdkSessionId}`
+      : "";
 
-    const agentPkgDir = path.resolve(process.cwd(), "packages/coding-agent");
-    const cliJs = fs.readFileSync(path.join(agentPkgDir, "dist/cli.js"), "utf-8");
-    const pkgJson = fs.readFileSync(path.join(agentPkgDir, "package.json"), "utf-8");
+    // Collect streaming events
+    const events: Array<Record<string, unknown>> = [];
+    let finalResult = "";
+    let sessionId: string | null = null;
+    let lineBuf = "";
 
-    await sandbox.commands.run("mkdir -p /opt/relay-agent/dist");
-    await sandbox.files.write("/opt/relay-agent/package.json", pkgJson);
-    await sandbox.files.write("/opt/relay-agent/dist/cli.js", `#!/usr/bin/env node\n${cliJs}`);
-    await sandbox.commands.run("cd /opt/relay-agent && npm install --production 2>/dev/null", { timeoutMs: 60000 });
-    await sandbox.commands.run("chmod +x /opt/relay-agent/dist/cli.js && ln -sf /opt/relay-agent/dist/cli.js /usr/local/bin/relay-agent");
-  }
-
-  // Escape the task for shell
-  const escapedTask = input.taskBrief.replace(/'/g, "'\\''");
-  const resumeFlag = session.claudeSdkSessionId
-    ? ` --resume '${session.claudeSdkSessionId}'`
-    : "";
-
-  // Run the coding agent
-  const agentResult = await sandbox.commands.run(
-    `cd "${session.workspacePath}" && ANTHROPIC_API_KEY="${env.ANTHROPIC_API_KEY}" relay-agent --task '${escapedTask}' --cwd '${session.workspacePath}'${resumeFlag}`,
-    { timeoutMs: 1000 * 60 * 10 }, // 10 minute timeout
-  );
-
-  // Parse structured events from stdout
-  const events: Array<Record<string, unknown>> = [];
-  let agentSessionId: string | null = null;
-  let finalResult = "";
-
-  for (const line of agentResult.stdout.split("\n")) {
-    if (!line.trim()) continue;
-    try {
-      const event = JSON.parse(line) as Record<string, unknown>;
-      events.push(event);
-
-      if (event.type === "session.init") {
-        agentSessionId = event.sessionId as string;
-      }
-      if (event.type === "result") {
-        finalResult = typeof event.result === "string"
-          ? event.result
-          : JSON.stringify(event.result);
-      }
-    } catch {
-      // Non-JSON line, skip
+    const cliEnvs: Record<string, string> = {
+      ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY ?? "",
+    };
+    if (gitToken) {
+      cliEnvs.GITHUB_TOKEN = gitToken;
     }
-  }
 
-  // Emit key events to the timeline
-  for (const event of events) {
-    if (event.type === "tool.start" || event.type === "tool.result" || event.type === "agent.error") {
-      await appendRunEvent({
-        runId: input.runId,
-        conversationId: input.conversationId,
-        type: "tool.call.completed",
-        source: "coding_agent",
-        payload: event,
-      });
+    const result = await sandbox.commands.run(
+      `cd "${session.workspacePath}" && claude --dangerously-skip-permissions --output-format stream-json -p '${escapedTask}'${sessionFlag}`,
+      {
+        envs: cliEnvs,
+        timeoutMs: TASK_TIMEOUT_MS,
+        onStdout: (data) => {
+          // Buffer partial lines for correct JSONL parsing
+          lineBuf += data;
+          const lines = lineBuf.split("\n");
+          lineBuf = lines.pop() ?? "";
+
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const event = JSON.parse(line) as Record<string, unknown>;
+              events.push(event);
+
+              // Capture session ID and final result
+              if (event.type === "system" && event.subtype === "init") {
+                sessionId = (event.session_id as string) ?? null;
+              }
+              if (event.type === "result") {
+                finalResult =
+                  typeof event.result === "string"
+                    ? event.result
+                    : JSON.stringify(event.result);
+                sessionId = (event.session_id as string) ?? sessionId;
+              }
+
+              // Emit tool events to timeline in real-time
+              if (event.type === "assistant" && event.message) {
+                const msg = event.message as { content?: Array<Record<string, unknown>> };
+                if (Array.isArray(msg.content)) {
+                  for (const block of msg.content) {
+                    if (block.type === "tool_use") {
+                      appendRunEvent({
+                        runId: input.runId,
+                        conversationId: input.conversationId,
+                        type: "tool.call.started",
+                        source: "coding_agent",
+                        payload: {
+                          toolName: block.name as string,
+                          toolUseId: block.id as string,
+                        },
+                      });
+                    }
+                    if (block.type === "tool_result") {
+                      appendRunEvent({
+                        runId: input.runId,
+                        conversationId: input.conversationId,
+                        type: "tool.call.completed",
+                        source: "coding_agent",
+                        payload: {
+                          toolUseId: block.tool_use_id as string,
+                        },
+                      });
+                    }
+                    if (block.type === "text") {
+                      appendRunEvent({
+                        runId: input.runId,
+                        conversationId: input.conversationId,
+                        type: "assistant.text.delta",
+                        source: "coding_agent",
+                        payload: { delta: block.text as string },
+                      });
+                    }
+                  }
+                }
+              }
+            } catch {
+              /* non-JSON line — skip */
+            }
+          }
+        },
+      },
+    );
+
+    // Process any remaining buffered content
+    if (lineBuf.trim()) {
+      try {
+        const event = JSON.parse(lineBuf) as Record<string, unknown>;
+        events.push(event);
+        if (event.type === "result") {
+          finalResult =
+            typeof event.result === "string"
+              ? event.result
+              : JSON.stringify(event.result);
+          sessionId = (event.session_id as string) ?? sessionId;
+        }
+      } catch {
+        /* non-JSON trailing content */
+      }
     }
+
+    // Update session to READY with session ID for resumption
+    await prisma.codingSession.update({
+      where: { id: session.id },
+      data: {
+        status: CodingSessionStatus.READY,
+        claudeSdkSessionId: sessionId,
+        lastActiveAt: new Date(),
+      },
+    });
+
+    return {
+      result:
+        finalResult ||
+        (result.exitCode !== 0 ? result.stderr.slice(0, 2000) : "") ||
+        "Agent completed with no output.",
+      sessionId,
+      exitCode: result.exitCode,
+      sandboxId: session.sandboxId,
+      workspacePath: session.workspacePath,
+      repoFullName: session.repoBinding?.repoFullName ?? null,
+      branch: session.branch,
+      eventCount: events.length,
+    };
+  } catch (error) {
+    // Error recovery — reset session status so it doesn't stay stuck in RUNNING
+    await prisma.codingSession.update({
+      where: { id: session.id },
+      data: {
+        status: CodingSessionStatus.ERROR,
+        lastActiveAt: new Date(),
+      },
+    });
+
+    await appendRunEvent({
+      runId: input.runId,
+      conversationId: input.conversationId,
+      type: "tool.call.failed",
+      source: "coding_agent",
+      payload: {
+        error: error instanceof Error ? error.message : "Coding task failed",
+        codingSessionId: session.id,
+      },
+    });
+
+    throw error;
   }
-
-  // Update session back to READY with the agent session ID for resumption
-  await prisma.codingSession.update({
-    where: { id: session.id },
-    data: {
-      status: CodingSessionStatus.READY,
-      claudeSdkSessionId: agentSessionId,
-      lastActiveAt: new Date(),
-    },
-  });
-
-  return {
-    result: finalResult || agentResult.stderr.slice(0, 2000) || "Agent completed with no output.",
-    sessionId: agentSessionId,
-    exitCode: agentResult.exitCode,
-    sandboxId: session.sandboxId,
-    workspacePath: session.workspacePath,
-    repoFullName: session.repoBinding?.repoFullName ?? null,
-    branch: session.branch,
-    eventCount: events.length,
-  };
 }
 
 export async function pauseCodingSession(input: {

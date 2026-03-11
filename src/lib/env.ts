@@ -25,6 +25,8 @@ const envSchema = z.object({
   GITHUB_APP_ID: z.string().optional(),
   GITHUB_APP_PRIVATE_KEY: z.string().optional(),
   GITHUB_APP_SLUG: z.string().optional(),
+  GITHUB_APP_CLIENT_ID: z.string().optional(),
+  GITHUB_APP_CLIENT_SECRET: z.string().optional(),
   GITHUB_STATE_SECRET: z.string().optional(),
   RUNNER_EVENT_TOKEN: z.string().optional(),
   ALLOW_INSECURE_USER_HEADER: booleanLike,

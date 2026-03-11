@@ -54,7 +54,13 @@ export function createCodingSessionStartTool(ctx: ToolRuntimeContext) {
           branchStrategy: input.branchStrategy,
         });
 
-        // 2. Clone repo + run the coding agent with the task
+        // 2. Link coding session to agent run
+        await prisma.agentRun.update({
+          where: { id: ctx.runId },
+          data: { codingSessionId: session.id },
+        });
+
+        // 3. Clone repo + run the coding agent with the task
         const taskResult = await runCodingTask({
           codingSessionId: session.id,
           conversationId: ctx.conversationId,

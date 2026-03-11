@@ -303,14 +303,19 @@ model McpConnector {
 }
 
 model GithubInstallation {
-  id              String      @id @default(uuid())
-  userId          String
-  installationId  String
-  accountLogin    String?
-  metadataJson    Json?
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
-  user            UserProfile @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  id                    String      @id @default(uuid())
+  userId                String
+  installationId        String
+  accountLogin          String?
+  metadataJson          Json?
+  encryptedUserToken    String?
+  userTokenIv           String?
+  encryptedRefreshToken String?
+  refreshTokenIv        String?
+  userTokenExpiresAt    DateTime?
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  user                  UserProfile @relation(fields: [userId], references: [userId], onDelete: Cascade)
 
   @@unique([userId, installationId])
   @@index([installationId])

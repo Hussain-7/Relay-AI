@@ -2,21 +2,8 @@ import { Octokit } from "octokit";
 import { createAppAuth } from "@octokit/auth-app";
 
 import { env, hasGitHubAppConfig } from "@/lib/env";
+import { decryptToken, encryptToken } from "@/lib/mcp-token-crypto";
 import { prisma } from "@/lib/prisma";
-
-function createGithubAppClient() {
-  if (!hasGitHubAppConfig()) {
-    return null;
-  }
-
-  return new Octokit({
-    authStrategy: createAppAuth,
-    auth: {
-      appId: env.GITHUB_APP_ID!,
-      privateKey: env.GITHUB_APP_PRIVATE_KEY!,
-    },
-  });
-}
 
 export function getGitHubConfigurationStatus() {
   return {
@@ -286,4 +273,127 @@ export async function createPullRequestForBinding(input: {
     number: response.data.number,
     url: response.data.html_url,
   };
+}
+
+/**
+ * Decrypt and return the user's GitHub OAuth access token.
+ * Auto-refreshes if expired using the stored refresh token.
+ * Returns null if no user token is stored.
+ */
+export async function getGitHubUserToken(userId: string): Promise<string | null> {
+  const installation = await prisma.githubInstallation.findFirst({
+    where: { userId },
+    orderBy: { updatedAt: "desc" },
+  });
+
+  if (!installation?.encryptedUserToken || !installation.userTokenIv) {
+    return null;
+  }
+
+  // Check if token needs refresh
+  if (installation.userTokenExpiresAt && installation.userTokenExpiresAt < new Date()) {
+    if (
+      !installation.encryptedRefreshToken ||
+      !installation.refreshTokenIv ||
+      !env.GITHUB_APP_CLIENT_ID ||
+      !env.GITHUB_APP_CLIENT_SECRET
+    ) {
+      return null;
+    }
+
+    const refreshToken = decryptToken(
+      installation.encryptedRefreshToken,
+      installation.refreshTokenIv,
+    );
+
+    const response = await fetch("https://github.com/login/oauth/access_token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        client_id: env.GITHUB_APP_CLIENT_ID,
+        client_secret: env.GITHUB_APP_CLIENT_SECRET,
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+      }),
+    });
+
+    const data = (await response.json()) as {
+      access_token?: string;
+      refresh_token?: string;
+      expires_in?: number;
+    };
+
+    if (!data.access_token) return null;
+
+    const { encrypted: newEncToken, iv: newTokenIv } = encryptToken(data.access_token);
+    const updateData: {
+      encryptedUserToken: string;
+      userTokenIv: string;
+      userTokenExpiresAt: Date | null;
+      encryptedRefreshToken?: string;
+      refreshTokenIv?: string;
+    } = {
+      encryptedUserToken: newEncToken,
+      userTokenIv: newTokenIv,
+      userTokenExpiresAt: data.expires_in
+        ? new Date(Date.now() + data.expires_in * 1000)
+        : null,
+    };
+
+    if (data.refresh_token) {
+      const { encrypted: newEncRefresh, iv: newRefreshIv } = encryptToken(data.refresh_token);
+      updateData.encryptedRefreshToken = newEncRefresh;
+      updateData.refreshTokenIv = newRefreshIv;
+    }
+
+    await prisma.githubInstallation.update({
+      where: { id: installation.id },
+      data: updateData,
+    });
+
+    return data.access_token;
+  }
+
+  return decryptToken(installation.encryptedUserToken, installation.userTokenIv);
+}
+
+/**
+ * Get a fresh GitHub App installation token for the user.
+ * These tokens expire after 1 hour.
+ */
+export async function getGitHubInstallationToken(userId: string): Promise<string | null> {
+  if (!hasGitHubAppConfig()) return null;
+
+  const installation = await prisma.githubInstallation.findFirst({
+    where: { userId },
+    orderBy: { updatedAt: "desc" },
+  });
+
+  if (!installation) return null;
+
+  const appClient = new Octokit({
+    authStrategy: createAppAuth,
+    auth: {
+      appId: env.GITHUB_APP_ID!,
+      privateKey: env.GITHUB_APP_PRIVATE_KEY!,
+      installationId: Number(installation.installationId),
+    },
+  });
+
+  const { data: tokenData } = await appClient.request(
+    "POST /app/installations/{installation_id}/access_tokens",
+    { installation_id: Number(installation.installationId) },
+  );
+
+  return tokenData.token;
+}
+
+/**
+ * Get the best available GitHub token for a user.
+ * Prefers user access token (from OAuth), falls back to installation token.
+ */
+export async function getGitHubToken(userId: string): Promise<string | null> {
+  const userToken = await getGitHubUserToken(userId);
+  if (userToken) return userToken;
+  return getGitHubInstallationToken(userId);
 }

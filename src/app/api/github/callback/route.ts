@@ -1,6 +1,7 @@
 import crypto from "crypto";
 
 import { env, hasGitHubAppConfig } from "@/lib/env";
+import { encryptToken } from "@/lib/mcp-token-crypto";
 import { prisma } from "@/lib/prisma";
 
 function verifyState(stateParam: string): { userId: string } | null {
@@ -64,6 +65,60 @@ export async function GET(request: Request) {
         installationId,
       },
     });
+
+    // Exchange OAuth code for user access token (if available)
+    // GitHub sends `code` when "Request user authorization during installation" is enabled
+    const code = url.searchParams.get("code");
+
+    if (code && env.GITHUB_APP_CLIENT_ID && env.GITHUB_APP_CLIENT_SECRET) {
+      try {
+        const tokenResponse = await fetch("https://github.com/login/oauth/access_token", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({
+            client_id: env.GITHUB_APP_CLIENT_ID,
+            client_secret: env.GITHUB_APP_CLIENT_SECRET,
+            code,
+          }),
+        });
+
+        const tokenData = (await tokenResponse.json()) as {
+          access_token?: string;
+          refresh_token?: string;
+          expires_in?: number;
+        };
+
+        if (tokenData.access_token) {
+          const { encrypted: encToken, iv: tokenIv } = encryptToken(tokenData.access_token);
+
+          const updateData: Record<string, unknown> = {
+            encryptedUserToken: encToken,
+            userTokenIv: tokenIv,
+            userTokenExpiresAt: tokenData.expires_in
+              ? new Date(Date.now() + tokenData.expires_in * 1000)
+              : null,
+          };
+
+          if (tokenData.refresh_token) {
+            const { encrypted: encRefresh, iv: refreshIv } = encryptToken(tokenData.refresh_token);
+            updateData.encryptedRefreshToken = encRefresh;
+            updateData.refreshTokenIv = refreshIv;
+          }
+
+          await prisma.githubInstallation.update({
+            where: {
+              userId_installationId: {
+                userId: verified.userId,
+                installationId,
+              },
+            },
+            data: updateData,
+          });
+        }
+      } catch {
+        // User token exchange failed — installation still saved, just no user token
+      }
+    }
 
     // Redirect back to the app with success
     return Response.redirect(`${env.APP_URL}/chat/new?github_connected=true`, 302);
