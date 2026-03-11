@@ -127,6 +127,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
       setOpenConversationMenuId(null);
       setHeaderMenuOpen(false);
       setModelMenuOpen(false);
+      setPlusMenuOpen(false);
     }
   });
 
