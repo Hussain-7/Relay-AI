@@ -6,6 +6,7 @@ export type TimelineEventType =
   | "conversation.updated"
   | "run.started"
   | "assistant.text.delta"
+  | "assistant.text.intermediate"
   | "assistant.message.completed"
   | "assistant.thinking.delta"
   | "tool.call.started"

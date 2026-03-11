@@ -103,6 +103,19 @@ export function useGithubStatus() {
   });
 }
 
+export function useDisconnectGithub() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      await fetchJson("/api/github/status", { method: "DELETE" });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.githubStatus });
+    },
+  });
+}
+
 export function useConversations() {
   return useQuery({
     queryKey: queryKeys.conversations,

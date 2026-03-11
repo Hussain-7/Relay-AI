@@ -77,6 +77,7 @@ export function createCodingSessionStartTool(ctx: ToolRuntimeContext) {
           workspacePath: taskResult.workspacePath,
           status: taskResult.exitCode === 0 ? "completed" : "failed",
           eventCount: taskResult.eventCount,
+          resultPreview: taskResult.result.slice(0, 500),
         });
 
         return jsonResult({
@@ -120,6 +121,7 @@ export function createCodingSessionStatusTool(ctx: ToolRuntimeContext) {
           toolName: "coding_session_status",
           toolRuntime: "custom",
           hasSession: Boolean(session),
+          resultPreview: session ? `${session.status} — ${session.workspacePath}` : "No active session",
         });
         return jsonResult(
           session
@@ -163,6 +165,7 @@ export function createCodingSessionPauseTool(ctx: ToolRuntimeContext) {
           toolName: "coding_session_pause",
           toolRuntime: "custom",
           codingSessionId: session.id,
+          resultPreview: `Session ${session.id} paused`,
         });
         return jsonResult({
           codingSessionId: session.id,

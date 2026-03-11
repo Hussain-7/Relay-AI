@@ -26,6 +26,11 @@ export type RenderTimelineEntry =
       kind: "thinking";
       text: string;
     }
+  | {
+      id: string;
+      kind: "intermediate";
+      text: string;
+    }
   | ToolTimelineEntry
   | {
       id: string;
@@ -258,6 +263,17 @@ export function buildTimelineEntries(events: TimelineEventEnvelope[]) {
         }
 
         thinkingEntry.text += typeof event.payload?.delta === "string" ? event.payload.delta : "";
+        break;
+      }
+      case "assistant.text.intermediate": {
+        const intermediateText = typeof event.payload?.text === "string" ? event.payload.text : "";
+        if (intermediateText.trim()) {
+          entries.push({
+            id: `intermediate-${event.id}`,
+            kind: "intermediate",
+            text: intermediateText,
+          });
+        }
         break;
       }
       case "tool.call.started": {

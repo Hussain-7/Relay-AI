@@ -26,6 +26,22 @@ export function ActivityStep({
     );
   }
 
+  if (entry.kind === "intermediate") {
+    return (
+      <li className="activity-step grid grid-cols-[34px_minmax(0,1fr)] gap-3.5">
+        <div className="flex flex-col items-center min-h-full" aria-hidden="true">
+          <span className="inline-grid h-7 w-7 place-items-center border border-[rgba(255,255,255,0.1)] rounded-full bg-[rgba(255,255,255,0.02)] text-[rgba(245,240,232,0.62)]">
+            <IconInfo />
+          </span>
+          {!isLast ? <span className="w-px flex-1 mt-2 bg-[linear-gradient(180deg,rgba(255,255,255,0.1),rgba(255,255,255,0.02))]" /> : null}
+        </div>
+        <div className="min-w-0 pt-px">
+          <div className="text-[rgba(245,240,232,0.68)] text-[0.92rem] leading-[1.55] [overflow-wrap:anywhere] break-words whitespace-pre-wrap">{entry.text}</div>
+        </div>
+      </li>
+    );
+  }
+
   if (entry.kind === "tool") {
     return (
       <li className="activity-step grid grid-cols-[34px_minmax(0,1fr)] gap-3.5">

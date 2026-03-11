@@ -240,6 +240,7 @@ export function createMemorySearchTool(ctx: ToolRuntimeContext) {
           toolName: "memory_search",
           toolRuntime: "custom",
           resultCount: results.length,
+          resultPreview: `${results.length} memory entries found`,
         });
         return jsonResult(results);
       } catch (error) {
@@ -276,6 +277,7 @@ export function createMemoryWriteTool(ctx: ToolRuntimeContext) {
           toolName: "memory_write",
           toolRuntime: "custom",
           memoryEntryId: entry.id,
+          resultPreview: `Saved "${entry.key}"`,
         });
         return `Saved memory entry "${entry.key}".`;
       } catch (error) {

@@ -74,3 +74,44 @@ export async function GET(request: Request) {
     return Response.json({ configured: false, installed: false });
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    const user = await requireRequestUser(request.headers);
+
+    // Find all installations for this user
+    const installations = await prisma.githubInstallation.findMany({
+      where: { userId: user.userId },
+    });
+
+    // Try to uninstall from GitHub
+    if (hasGitHubAppConfig()) {
+      const appClient = new Octokit({
+        authStrategy: createAppAuth,
+        auth: {
+          appId: env.GITHUB_APP_ID!,
+          privateKey: env.GITHUB_APP_PRIVATE_KEY!,
+        },
+      });
+
+      for (const inst of installations) {
+        try {
+          await appClient.request("DELETE /app/installations/{installation_id}", {
+            installation_id: Number(inst.installationId),
+          });
+        } catch {
+          // Installation may already be removed on GitHub side — continue
+        }
+      }
+    }
+
+    // Remove all installation records from DB
+    await prisma.githubInstallation.deleteMany({
+      where: { userId: user.userId },
+    });
+
+    return Response.json({ ok: true });
+  } catch {
+    return Response.json({ error: "Failed to disconnect GitHub" }, { status: 500 });
+  }
+}

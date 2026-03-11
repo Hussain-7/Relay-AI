@@ -131,6 +131,7 @@ export function createSandboxWriteFileTool(ctx: ToolRuntimeContext) {
           toolRuntime: "custom",
           filePath: fullPath,
           bytes: input.content.length,
+          resultPreview: `Wrote ${input.content.length} bytes to ${fullPath}`,
         });
 
         return jsonResult({ written: fullPath, bytes: input.content.length });

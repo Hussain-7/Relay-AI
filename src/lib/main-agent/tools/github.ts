@@ -30,6 +30,7 @@ export function createGithubListReposTool(ctx: ToolRuntimeContext) {
           toolRuntime: "custom",
           connectedCount: connectedRepos.length,
           availableCount: githubRepos.length,
+          resultPreview: `${connectedRepos.length} connected, ${githubRepos.length} available`,
         });
         return jsonResult({
           configuration: getGitHubConfigurationStatus(),
@@ -69,6 +70,7 @@ export function createGithubConnectRepoTool(ctx: ToolRuntimeContext) {
           toolName: "github_connect_repo",
           toolRuntime: "custom",
           repoBindingId: binding.id,
+          resultPreview: `Connected ${binding.repoFullName} (${binding.defaultBranch})`,
         });
         return jsonResult({
           repoBindingId: binding.id,
@@ -110,6 +112,7 @@ export function createGithubCreateRepoTool(ctx: ToolRuntimeContext) {
           toolName: "github_create_repo",
           toolRuntime: "custom",
           repoBindingId: binding.id,
+          resultPreview: `Created ${binding.repoFullName}`,
         });
         return jsonResult({
           repoBindingId: binding.id,
@@ -153,6 +156,7 @@ export function createGithubCreatePrTool(ctx: ToolRuntimeContext) {
           toolName: "coding_session_create_pr",
           toolRuntime: "custom",
           prUrl: pullRequest.url,
+          resultPreview: `PR #${pullRequest.number}: ${pullRequest.url}`,
         });
         return jsonResult(pullRequest);
       } catch (error) {
@@ -181,6 +185,9 @@ export function createGithubSearchReposTool(ctx: ToolRuntimeContext) {
           toolName: "github_search_repos",
           toolRuntime: "custom",
           resultCount: repos.length,
+          resultPreview: repos.length
+            ? repos.map((r: { fullName: string }) => r.fullName).join(", ")
+            : "No repos found",
         });
         return jsonResult(repos);
       } catch (error) {
@@ -209,6 +216,7 @@ export function createGithubDeleteRepoBindingTool(ctx: ToolRuntimeContext) {
           toolName: "github_disconnect_repo",
           toolRuntime: "custom",
           repoBindingId: input.repoBindingId,
+          resultPreview: `Disconnected repo ${input.repoBindingId}`,
         });
         return jsonResult({ deleted: true, repoBindingId: input.repoBindingId });
       } catch (error) {

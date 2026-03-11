@@ -13,6 +13,7 @@ import {
   useDeleteConversation,
   useUpdateConversationModel,
   useGithubStatus,
+  useDisconnectGithub,
   usePreferences,
   useUser,
   queryKeys,
@@ -69,6 +70,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   const { data: catalog } = useModelCatalog();
   const { data: conversations = [], isLoading: isLoadingConversations } = useConversations();
   const { data: githubStatus } = useGithubStatus();
+  const disconnectGithub = useDisconnectGithub();
   const { data: activeConversation, isFetching: isFetchingDetail } = useConversationDetail(
     hasPendingForThis ? null : activeConversationId,
   );
@@ -458,11 +460,29 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                 let status = current.status;
                 let error = current.error;
                 let runId = current.runId;
+                const extraEvents: TimelineEventEnvelope[] = [];
 
                 for (const ev of batch) {
                   runId = ev.runId;
+                  // When a tool call starts and we have accumulated text,
+                  // flush it as an intermediate text timeline entry
+                  if (ev.type === "tool.call.started" && text.trim()) {
+                    extraEvents.push({
+                      id: `intermediate-${ev.id}`,
+                      runId: ev.runId,
+                      conversationId: ev.conversationId,
+                      type: "assistant.text.intermediate",
+                      source: "main_agent",
+                      ts: ev.ts,
+                      payload: { text: text.trim() },
+                    });
+                    text = "";
+                  }
                   if (ev.type === "assistant.text.delta") {
                     text += String(ev.payload?.delta ?? "");
+                  }
+                  if (ev.type === "assistant.message.completed" && typeof ev.payload?.text === "string") {
+                    text = ev.payload.text;
                   }
                   if (ev.type === "run.failed") {
                     status = "failed";
@@ -474,7 +494,10 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                 lastPartialText = text;
 
                 // Only store events needed for timeline rendering (skip text deltas)
-                const timelineEvents = batch.filter((ev) => ev.type !== "assistant.text.delta");
+                const timelineEvents = [
+                  ...extraEvents,
+                  ...batch.filter((ev) => ev.type !== "assistant.text.delta"),
+                ];
 
                 return {
                   ...current,
@@ -499,10 +522,26 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
           let status = current.status;
           let error = current.error;
           let runId = current.runId;
+          const extraEvents: TimelineEventEnvelope[] = [];
           for (const ev of batch) {
             runId = ev.runId;
+            if (ev.type === "tool.call.started" && text.trim()) {
+              extraEvents.push({
+                id: `intermediate-${ev.id}`,
+                runId: ev.runId,
+                conversationId: ev.conversationId,
+                type: "assistant.text.intermediate",
+                source: "main_agent",
+                ts: ev.ts,
+                payload: { text: text.trim() },
+              });
+              text = "";
+            }
             if (ev.type === "assistant.text.delta") {
               text += String(ev.payload?.delta ?? "");
+            }
+            if (ev.type === "assistant.message.completed" && typeof ev.payload?.text === "string") {
+              text = ev.payload.text;
             }
             if (ev.type === "run.failed") {
               status = "failed";
@@ -511,7 +550,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
           }
           lastRunId = runId;
           lastPartialText = text;
-          const timelineEvents = batch.filter((ev) => ev.type !== "assistant.text.delta");
+          const timelineEvents = [...extraEvents, ...batch.filter((ev) => ev.type !== "assistant.text.delta")];
           return { ...current, runId, partialText: text, events: timelineEvents.length > 0 ? [...current.events, ...timelineEvents] : current.events, status, error };
         });
       }
@@ -815,7 +854,17 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                   GitHub
                 </span>
                 {githubStatus?.installed ? (
-                  <span className="text-[rgba(122,168,148,0.9)] font-medium">Connected</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (confirm("Disconnect GitHub and uninstall the app?")) {
+                        disconnectGithub.mutate();
+                      }
+                    }}
+                    className="text-[rgba(122,168,148,0.9)] font-medium hover:text-[rgba(212,112,73,0.9)] transition-colors"
+                  >
+                    {disconnectGithub.isPending ? "Disconnecting…" : "Connected"}
+                  </button>
                 ) : githubStatus?.configured ? (
                   <a
                     href={githubStatus.installUrl ?? "/api/github/install"}

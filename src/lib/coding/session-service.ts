@@ -11,7 +11,7 @@ const SANDBOX_TIMEOUT_MS = 1000 * 60 * 60; // 60 minutes
 const TASK_TIMEOUT_MS = 1000 * 60 * 30; // 30 minutes
 
 function getSandboxTemplate() {
-  return env.E2B_TEMPLATE || env.E2B_TEMPLATE_ID || "claude";
+  return env.E2B_TEMPLATE || "claude";
 }
 
 async function connectSandboxOrThrow(sandboxId: string) {
