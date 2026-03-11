@@ -413,6 +413,98 @@ async function maybeUpdateConversationTitle(input: {
   return nextTitle;
 }
 
+const ERROR_RECOVERY_SYSTEM =
+  "You are a helpful AI assistant. The main AI model encountered an error while processing the user's request. " +
+  "Generate a brief, friendly response acknowledging the issue and suggesting the user try again. " +
+  "Do NOT expose raw error details, API internals, or technical jargon. Keep it to 1-2 sentences. Plain text only.";
+
+const STATIC_FALLBACK = "I ran into an issue processing your request. Please try again in a moment.";
+
+async function generateErrorResponseViaOpenAI(
+  userPrompt: string,
+  errorMessage: string,
+): Promise<string | null> {
+  if (!env.OPENAI_API_KEY) return null;
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      max_tokens: 200,
+      temperature: 0,
+      messages: [
+        { role: "system", content: ERROR_RECOVERY_SYSTEM },
+        {
+          role: "user",
+          content: `User asked: "${userPrompt.slice(0, 200)}"\n\nError encountered: ${errorMessage.slice(0, 300)}\n\nGenerate a user-friendly response.`,
+        },
+      ],
+    }),
+    signal: AbortSignal.timeout(8_000),
+  });
+
+  if (!response.ok) return null;
+
+  const body = await response.json() as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+
+  return body.choices?.[0]?.message?.content?.trim() || null;
+}
+
+async function generateErrorResponseViaAnthropic(
+  anthropic: Anthropic,
+  userPrompt: string,
+  errorMessage: string,
+): Promise<string | null> {
+  const response = await anthropic.messages.create({
+    model: env.ANTHROPIC_TITLE_MODEL,
+    max_tokens: 200,
+    temperature: 0,
+    system: ERROR_RECOVERY_SYSTEM,
+    messages: [
+      {
+        role: "user",
+        content: `User asked: "${userPrompt.slice(0, 200)}"\n\nError encountered: ${errorMessage.slice(0, 300)}\n\nGenerate a user-friendly response.`,
+      },
+    ],
+  });
+
+  const text = response.content
+    .filter((b): b is Extract<(typeof response.content)[number], { type: "text" }> => b.type === "text")
+    .map((b) => b.text)
+    .join("")
+    .trim();
+
+  return text || null;
+}
+
+async function generateErrorResponse(
+  anthropic: Anthropic | null,
+  userPrompt: string,
+  errorMessage: string,
+): Promise<string> {
+  // Try OpenAI first (different provider = likely unaffected by Anthropic outage/rate limit)
+  try {
+    const openaiResult = await generateErrorResponseViaOpenAI(userPrompt, errorMessage);
+    if (openaiResult) return openaiResult;
+  } catch { /* fall through */ }
+
+  // Fallback to Anthropic Haiku
+  if (anthropic) {
+    try {
+      const anthropicResult = await generateErrorResponseViaAnthropic(anthropic, userPrompt, errorMessage);
+      if (anthropicResult) return anthropicResult;
+    } catch { /* fall through */ }
+  }
+
+  return STATIC_FALLBACK;
+}
+
 export async function streamMainAgentRun(input: {
   conversationId: string;
   userId: string;
@@ -1033,12 +1125,39 @@ export async function streamMainAgentRun(input: {
 
         emit("run.failed", "system", { error: message });
 
+        // Generate a user-friendly error response so the user sees
+        // a final assistant message instead of a blank chat.
+        // Uses OpenAI gpt-4o-mini first (different provider, unaffected by Anthropic issues),
+        // falls back to Anthropic Haiku, then a static message.
+        const errorFinalText = await generateErrorResponse(
+          hasAnthropicApiKey() ? getAnthropicClient() : null,
+          input.prompt,
+          message,
+        );
+
+        emit("assistant.message.completed", "main_agent", {
+          text: errorFinalText,
+          stopReason: "error_recovery",
+        });
+
+        // Persist the error recovery message so it shows on reload
+        pendingWrites.push(
+          prisma.message.create({
+            data: {
+              conversationId: input.conversationId,
+              role: "ASSISTANT",
+              contentJson: [{ type: "text", text: errorFinalText }] as unknown as Prisma.InputJsonValue,
+            },
+          }).catch(() => {}),
+        );
+
         try { controller.close(); } catch { /* client may have disconnected */ }
 
         await prisma.agentRun.update({
           where: { id: createdRun.id },
           data: {
             status: RunStatus.FAILED,
+            finalText: errorFinalText,
             metadataJson: {
               error: message,
             } as Prisma.InputJsonValue,
