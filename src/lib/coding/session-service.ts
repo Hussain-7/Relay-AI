@@ -23,6 +23,30 @@ function getSandboxTemplate() {
   return env.E2B_TEMPLATE || "claude";
 }
 
+/**
+ * Safe wrapper around sandbox.commands.run that NEVER throws.
+ * E2B SDK throws CommandExitError on non-zero exit codes.
+ * This wrapper catches those and returns a result object instead.
+ */
+async function safeRun(
+  sandbox: Sandbox,
+  command: string,
+  opts?: { timeoutMs?: number; user?: "root"; envs?: Record<string, string>; onStdout?: (data: string) => void },
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  try {
+    const result = await sandbox.commands.run(command, opts);
+    return { stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode };
+  } catch (error) {
+    // CommandExitError — extract what we can
+    const err = error as { stdout?: string; stderr?: string; exitCode?: number; message?: string };
+    return {
+      stdout: err.stdout ?? "",
+      stderr: err.stderr ?? err.message ?? String(error),
+      exitCode: err.exitCode ?? 1,
+    };
+  }
+}
+
 async function connectSandboxOrThrow(sandboxId: string) {
   if (!hasE2bConfig()) {
     throw new Error("E2B_API_KEY is required for coding sessions.");
@@ -169,7 +193,7 @@ export async function startOrResumeCodingSession(input: {
   log.info("Sandbox created", { sandboxId: sandbox.sandboxId, template });
 
   // Ensure /workspace exists and is writable
-  await sandbox.commands.run(`mkdir -p "${DEFAULT_WORKSPACE_ROOT}" && chmod 777 "${DEFAULT_WORKSPACE_ROOT}"`, { user: "root" });
+  await safeRun(sandbox, `mkdir -p "${DEFAULT_WORKSPACE_ROOT}" && chmod 777 "${DEFAULT_WORKSPACE_ROOT}"`, { user: "root" });
 
   // Only create workspace dir + CLAUDE.md when there's no repo binding.
   // When a repo is bound, ensureRepoCloned handles directory creation via git clone.
@@ -255,36 +279,36 @@ async function ensureRepoCloned(
 
   log.info("Checking if repo already cloned", { repoFullName, workspacePath: session.workspacePath });
 
-  const cloneCheck = await sandbox.commands.run(
+  const cloneCheck = await safeRun(sandbox,
     `test -d "${session.workspacePath}/.git" && echo "exists" || echo "missing"`,
   );
 
   if (cloneCheck.stdout.trim() === "exists") {
     log.info("Repo already cloned — refreshing remote URL", { repoFullName });
-    await sandbox.commands.run(
-      `cd "${session.workspacePath}" && git remote set-url origin ${cloneUrl}`,
-    );
+    // Mark as safe directory (cloned as root, CLI runs as user)
+    await safeRun(sandbox, `git config --global --add safe.directory '${session.workspacePath}'`);
+    await safeRun(sandbox, `cd "${session.workspacePath}" && git remote set-url origin '${cloneUrl}'`);
     return sandbox;
   }
 
   // Clean up any leftover directory from a failed previous clone attempt
-  const dirCheck = await sandbox.commands.run(
+  const dirCheck = await safeRun(sandbox,
     `test -d "${session.workspacePath}" && echo "exists" || echo "missing"`,
   );
   if (dirCheck.stdout.trim() === "exists") {
     log.info("Removing leftover workspace directory before clone", { workspacePath: session.workspacePath });
-    await sandbox.commands.run(`rm -rf "${session.workspacePath}"`, { user: "root" });
+    await safeRun(sandbox, `rm -rf "${session.workspacePath}"`, { user: "root" });
   }
 
   log.info("Cloning repo (shallow)", { repoFullName, workspacePath: session.workspacePath });
 
   // Run as root to avoid permission issues in the sandbox
-  const cloneResult = await sandbox.commands.run(
+  const cloneResult = await safeRun(sandbox,
     `git clone --depth 1 '${cloneUrl}' '${session.workspacePath}' 2>&1; echo "===EXIT:$?"`,
     { timeoutMs: 120000, user: "root" },
   );
 
-  // Parse exit code from output (E2B throws on non-zero, so we wrap it)
+  // Parse exit code from output
   const exitMatch = cloneResult.stdout.match(/===EXIT:(\d+)/);
   const cloneExitCode = exitMatch ? parseInt(exitMatch[1], 10) : cloneResult.exitCode;
   const cloneOutput = cloneResult.stdout.replace(/===EXIT:\d+/, "").trim();
@@ -295,15 +319,18 @@ async function ensureRepoCloned(
     throw new Error(`Git clone failed (exit ${cloneExitCode}): ${cloneOutput.slice(-300)}`);
   }
 
-  log.info("Clone successful — configuring git identity and writing CLAUDE.md");
+  log.info("Clone successful — configuring git and permissions");
 
-  await sandbox.commands.run(
+  // Mark as safe directory (cloned as root, CLI runs as non-root user)
+  await safeRun(sandbox, `git config --global --add safe.directory '${session.workspacePath}'`);
+
+  await safeRun(sandbox,
     `cd "${session.workspacePath}" && git config user.email "relay-ai@users.noreply.github.com" && git config user.name "Relay AI"`,
     { user: "root" },
   );
 
-  // Make workspace owned by the default sandbox user (for Claude Code CLI)
-  await sandbox.commands.run(`chmod -R 777 "${session.workspacePath}"`, { user: "root" });
+  // Make workspace writable by the sandbox user (for Claude Code CLI)
+  await safeRun(sandbox, `chmod -R 777 "${session.workspacePath}"`, { user: "root" });
 
   // Write CLAUDE.md after clone so the coding agent has project context
   await sandbox.files.write(`${session.workspacePath}/CLAUDE.md`, SANDBOX_CLAUDE_MD);
@@ -338,53 +365,57 @@ export async function runCodingTask(input: {
     throw new Error("Coding session has no sandbox.");
   }
 
-  // Get a fresh GitHub token for clone/push (if repo is bound)
-  let gitToken: string | null = null;
-  if (session.repoBinding && hasGitHubAppConfig()) {
-    log.info("Fetching GitHub token for repo", {
-      repoFullName: session.repoBinding.repoFullName,
-    });
-    gitToken = await getGitHubToken(input.userId);
-    if (!gitToken) {
-      throw new Error("GitHub token unavailable. Ensure the GitHub App is installed.");
-    }
-    log.info("GitHub token obtained");
-  }
-
-  // Clone repo into sandbox (or refresh remote URL with fresh token)
-  const sandbox = gitToken
-    ? await ensureRepoCloned(
-        {
-          sandboxId: session.sandboxId,
-          workspacePath: session.workspacePath,
-          repoBinding: session.repoBinding,
-        },
-        gitToken,
-      )
-    : await connectSandboxOrThrow(session.sandboxId);
-
-  // Update session to RUNNING
-  await prisma.codingSession.update({
-    where: { id: session.id },
-    data: { status: CodingSessionStatus.RUNNING, lastActiveAt: new Date() },
-  });
-
-  await appendRunEvent({
-    runId: input.runId,
-    conversationId: input.conversationId,
-    type: "coding.agent.running",
-    source: "coding_agent",
-    payload: { codingSessionId: session.id, workspacePath: session.workspacePath },
-  });
-
   try {
+    // Get a fresh GitHub token for clone/push (if repo is bound)
+    let gitToken: string | null = null;
+    if (session.repoBinding && hasGitHubAppConfig()) {
+      log.info("Fetching GitHub token for repo", {
+        repoFullName: session.repoBinding.repoFullName,
+      });
+      gitToken = await getGitHubToken(input.userId);
+      if (!gitToken) {
+        throw new Error("GitHub token unavailable. Ensure the GitHub App is installed.");
+      }
+      log.info("GitHub token obtained");
+    }
+
+    log.info("About to ensure repo cloned");
+
+    // Clone repo into sandbox (or refresh remote URL with fresh token)
+    const sandbox = gitToken
+      ? await ensureRepoCloned(
+          {
+            sandboxId: session.sandboxId,
+            workspacePath: session.workspacePath,
+            repoBinding: session.repoBinding,
+          },
+          gitToken,
+        )
+      : await connectSandboxOrThrow(session.sandboxId);
+
+    log.info("Repo clone done, updating session to RUNNING");
+
+    // Update session to RUNNING
+    await prisma.codingSession.update({
+      where: { id: session.id },
+      data: { status: CodingSessionStatus.RUNNING, lastActiveAt: new Date() },
+    });
+
+    await appendRunEvent({
+      runId: input.runId,
+      conversationId: input.conversationId,
+      type: "coding.agent.running",
+      source: "coding_agent",
+      payload: { codingSessionId: session.id, workspacePath: session.workspacePath },
+    });
     const escapedTask = input.taskBrief.replace(/'/g, "'\\''");
+    // Resume the previous Claude Code session if one exists (maintains conversation context)
     const sessionFlag = session.claudeSdkSessionId
-      ? ` --session-id ${session.claudeSdkSessionId}`
+      ? ` --resume ${session.claudeSdkSessionId}`
       : "";
 
     // Verify claude CLI is available
-    const claudeCheck = await sandbox.commands.run("which claude && claude --version 2>&1 || echo 'claude not found'");
+    const claudeCheck = await safeRun(sandbox, "which claude && claude --version 2>&1 || echo 'claude not found'");
     log.info("Claude CLI check", { stdout: claudeCheck.stdout.trim(), exitCode: claudeCheck.exitCode });
 
     const modelFlag = ` --model ${env.ANTHROPIC_CODING_MODEL}`;
@@ -415,7 +446,7 @@ export async function runCodingTask(input: {
       cliEnvs.GITHUB_TOKEN = gitToken;
     }
 
-    await sandbox.commands.run(cmd, {
+    await safeRun(sandbox, cmd, {
       envs: cliEnvs,
       timeoutMs: TASK_TIMEOUT_MS,
       onStdout: (data) => {

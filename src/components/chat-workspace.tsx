@@ -1149,6 +1149,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
               {plusMenuOpen && (
                 <ComposerPlusMenuPortal
                   anchor={plusButtonRef.current}
+                  hasLinkedRepo={Boolean(activeConversation?.repoBinding)}
                   onAddFiles={() => {
                     setPlusMenuOpen(false);
                     fileInputRef.current?.click();

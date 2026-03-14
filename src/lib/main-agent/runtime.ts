@@ -264,7 +264,7 @@ export async function streamMainAgentRun(input: {
           const blockTextBuffer = new Map<number, string>();
 
           for await (const rawEvent of assistantIteration as AsyncIterable<BetaRawMessageStreamEvent>) {
-            console.log("rawEvent:", rawEvent);
+            // console.log("rawEvent:", rawEvent);
             if (rawEvent.type === "content_block_start") {
               const block = rawEvent.content_block;
 

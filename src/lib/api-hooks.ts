@@ -431,19 +431,24 @@ export interface RepoBindingListItem {
 export interface GithubRepoSearchResult {
   fullName: string;
   name: string;
+  owner: string;
   defaultBranch: string;
   isPrivate: boolean;
   description: string | null;
+  updatedAt: string;
 }
 
 export function useRepoBindings() {
   return useQuery({
     queryKey: queryKeys.repoBindings,
     queryFn: async () => {
-      const data = await fetchJson<{ bindings: RepoBindingListItem[] }>("/api/repo-bindings");
-      return data.bindings;
+      const data = await fetchJson<{
+        bindings: RepoBindingListItem[];
+        available: GithubRepoSearchResult[];
+      }>("/api/repo-bindings");
+      return data;
     },
-    staleTime: 60 * 1000,
+    staleTime: 5 * 60 * 1000, // 5 min cache — repo list rarely changes
   });
 }
 
@@ -470,7 +475,43 @@ export function useConnectRepo() {
       );
       return data.binding;
     },
-    onSuccess: () => {
+    onMutate: async (repoFullName) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.repoBindings });
+      const previous = queryClient.getQueryData<{ bindings: RepoBindingListItem[]; available: GithubRepoSearchResult[] }>(queryKeys.repoBindings);
+
+      // Optimistic: add to bindings immediately
+      const optimisticBinding: RepoBindingListItem = {
+        id: `temp-${Date.now()}`,
+        repoFullName,
+        defaultBranch: "main",
+        installationId: null,
+        metadataJson: null,
+      };
+      queryClient.setQueryData<{ bindings: RepoBindingListItem[]; available: GithubRepoSearchResult[] }>(
+        queryKeys.repoBindings,
+        (old) => ({
+          bindings: [optimisticBinding, ...(old?.bindings ?? [])],
+          available: old?.available ?? [],
+        }),
+      );
+      return { previous, optimisticId: optimisticBinding.id };
+    },
+    onSuccess: (binding, _vars, context) => {
+      // Replace optimistic with real binding
+      queryClient.setQueryData<{ bindings: RepoBindingListItem[]; available: GithubRepoSearchResult[] }>(
+        queryKeys.repoBindings,
+        (old) => ({
+          bindings: (old?.bindings ?? []).map((b) => b.id === context?.optimisticId ? binding : b),
+          available: old?.available ?? [],
+        }),
+      );
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(queryKeys.repoBindings, context.previous);
+      }
+    },
+    onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.repoBindings });
     },
   });
@@ -486,10 +527,13 @@ export function useDeleteRepoBinding() {
     },
     onMutate: async (id) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.repoBindings });
-      const previous = queryClient.getQueryData<RepoBindingListItem[]>(queryKeys.repoBindings);
-      queryClient.setQueryData<RepoBindingListItem[]>(
+      const previous = queryClient.getQueryData<{ bindings: RepoBindingListItem[]; available: GithubRepoSearchResult[] }>(queryKeys.repoBindings);
+      queryClient.setQueryData<{ bindings: RepoBindingListItem[]; available: GithubRepoSearchResult[] }>(
         queryKeys.repoBindings,
-        (old) => (old ?? []).filter((b) => b.id !== id),
+        (old) => ({
+          bindings: (old?.bindings ?? []).filter((b) => b.id !== id),
+          available: old?.available ?? [],
+        }),
       );
       return { previous };
     },
@@ -515,12 +559,47 @@ export function useLinkRepoToConversation() {
       );
       return data.conversation;
     },
+    // Optimistic: update conversation detail immediately
+    onMutate: async ({ conversationId, repoBindingId }) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.conversation(conversationId) });
+      const previous = queryClient.getQueryData<ConversationDetailDto>(queryKeys.conversation(conversationId));
+
+      if (previous) {
+        const repoData = queryClient.getQueryData<{ bindings: RepoBindingListItem[]; available: GithubRepoSearchResult[] }>(queryKeys.repoBindings);
+        const matchingBinding = repoData?.bindings.find((b) => b.id === repoBindingId);
+
+        queryClient.setQueryData<ConversationDetailDto>(
+          queryKeys.conversation(conversationId),
+          {
+            ...previous,
+            repoBinding: repoBindingId && matchingBinding
+              ? {
+                  id: matchingBinding.id,
+                  provider: "GITHUB",
+                  repoOwner: matchingBinding.repoFullName.split("/")[0],
+                  repoName: matchingBinding.repoFullName.split("/")[1],
+                  repoFullName: matchingBinding.repoFullName,
+                  defaultBranch: matchingBinding.defaultBranch,
+                  installationId: matchingBinding.installationId,
+                  metadataJson: null,
+                }
+              : null,
+          },
+        );
+      }
+      return { previous };
+    },
     onSuccess: (conversation) => {
       queryClient.setQueryData(
         queryKeys.conversation(conversation.id),
         conversation,
       );
       void queryClient.invalidateQueries({ queryKey: queryKeys.conversations });
+    },
+    onError: (_err, { conversationId }, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(queryKeys.conversation(conversationId), context.previous);
+      }
     },
   });
 }

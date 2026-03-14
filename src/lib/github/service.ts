@@ -33,51 +33,127 @@ async function getInstallationClient(userId: string) {
   });
 }
 
-export async function listGithubRepos(userId: string) {
+type RepoListItem = {
+  fullName: string;
+  name: string;
+  owner: string;
+  defaultBranch: string;
+  isPrivate: boolean;
+  description: string | null;
+  updatedAt: string;
+};
+
+/**
+ * Fetch ALL repos accessible to the user (up to 500).
+ * Tries user OAuth token first (sees all user repos), falls back to installation token.
+ * Paginates automatically.
+ */
+export async function listGithubRepos(userId: string): Promise<RepoListItem[]> {
+  const repos: RepoListItem[] = [];
+
+  // Try user OAuth token first — sees ALL repos
+  const userToken = await getGitHubUserToken(userId);
+  if (userToken) {
+    const userClient = new Octokit({ auth: userToken });
+    let page = 1;
+    const perPage = 100;
+    const maxPages = 5; // 500 repos max
+
+    while (page <= maxPages) {
+      const { data } = await userClient.request("GET /user/repos", {
+        per_page: perPage,
+        page,
+        sort: "updated",
+        affiliation: "owner,collaborator,organization_member",
+      });
+
+      for (const repo of data) {
+        repos.push({
+          fullName: repo.full_name,
+          name: repo.name,
+          owner: repo.owner?.login ?? repo.full_name.split("/")[0],
+          defaultBranch: repo.default_branch ?? "main",
+          isPrivate: repo.private,
+          description: repo.description,
+          updatedAt: repo.updated_at ?? new Date().toISOString(),
+        });
+      }
+
+      if (data.length < perPage) break;
+      page++;
+    }
+
+    return repos;
+  }
+
+  // Fallback: installation token (only sees app-installed repos)
   const client = await getInstallationClient(userId);
   if (!client) {
     throw new Error("GitHub App is not installed. Visit the settings to connect your GitHub account.");
   }
 
-  const { data } = await client.request("GET /installation/repositories", {
-    per_page: 100,
-  });
+  let page = 1;
+  const perPage = 100;
+  const maxPages = 5;
 
-  return data.repositories.map((repo: { full_name: string; name: string; default_branch: string; private: boolean; description: string | null }) => ({
-    fullName: repo.full_name,
-    name: repo.name,
-    defaultBranch: repo.default_branch,
-    isPrivate: repo.private,
-    description: repo.description,
-  }));
+  while (page <= maxPages) {
+    const { data } = await client.request("GET /installation/repositories", {
+      per_page: perPage,
+      page,
+    });
+
+    for (const repo of data.repositories) {
+      repos.push({
+        fullName: repo.full_name,
+        name: repo.name,
+        owner: repo.full_name.split("/")[0],
+        defaultBranch: repo.default_branch,
+        isPrivate: repo.private,
+        description: repo.description,
+        updatedAt: (repo as unknown as { updated_at?: string }).updated_at ?? new Date().toISOString(),
+      });
+    }
+
+    if (data.repositories.length < perPage) break;
+    page++;
+  }
+
+  return repos;
 }
 
-export async function searchGithubRepos(userId: string, query: string) {
-  const client = await getInstallationClient(userId);
-  if (!client) {
-    throw new Error("GitHub App is not installed. Visit the settings to connect your GitHub account.");
-  }
-
-  // Search within repos the installation has access to
-  const { data } = await client.request("GET /installation/repositories", {
-    per_page: 100,
-  });
-
-  const lowerQuery = query.toLowerCase();
-  return data.repositories
-    .filter((repo: { full_name: string; name: string; description: string | null }) =>
-      repo.full_name.toLowerCase().includes(lowerQuery) ||
-      repo.name.toLowerCase().includes(lowerQuery) ||
-      (repo.description ?? "").toLowerCase().includes(lowerQuery),
-    )
-    .map((repo: { full_name: string; name: string; default_branch: string; private: boolean; description: string | null; clone_url: string }) => ({
+/**
+ * Search ALL repos the user has access to via GitHub Search API.
+ * Used for the search bar in the repo picker modal.
+ */
+export async function searchGithubRepos(userId: string, query: string): Promise<RepoListItem[]> {
+  const userToken = await getGitHubUserToken(userId);
+  if (userToken) {
+    const userClient = new Octokit({ auth: userToken });
+    const { data } = await userClient.request("GET /search/repositories", {
+      q: `${query} in:name user:@me fork:true`,
+      per_page: 15,
+      sort: "updated",
+    });
+    return data.items.map((repo) => ({
       fullName: repo.full_name,
       name: repo.name,
-      defaultBranch: repo.default_branch,
+      owner: repo.owner?.login ?? repo.full_name.split("/")[0],
+      defaultBranch: repo.default_branch ?? "main",
       isPrivate: repo.private,
       description: repo.description,
-      cloneUrl: repo.clone_url,
+      updatedAt: repo.updated_at ?? new Date().toISOString(),
     }));
+  }
+
+  // Fallback: client-side filter from installation repos
+  const allRepos = await listGithubRepos(userId);
+  const lowerQuery = query.toLowerCase();
+  return allRepos.filter(
+    (r) =>
+      r.fullName.toLowerCase().includes(lowerQuery) ||
+      r.name.toLowerCase().includes(lowerQuery) ||
+      (r.description ?? "").toLowerCase().includes(lowerQuery),
+  );
 }
 
 export async function deleteRepoBinding(userId: string, repoBindingId: string) {

@@ -10,11 +10,13 @@ export function ComposerPlusMenuPortal({
   onAddFiles,
   onAddConnectors,
   onConnectRepo,
+  hasLinkedRepo,
 }: {
   anchor: HTMLElement | null;
   onAddFiles: () => void;
   onAddConnectors: () => void;
   onConnectRepo: () => void;
+  hasLinkedRepo: boolean;
 }) {
   const panelRef = useRef<HTMLDivElement | null>(null);
 
@@ -69,13 +71,14 @@ export function ComposerPlusMenuPortal({
       </button>
       <button
         type="button"
-        className="flex w-full items-center gap-3 border-0 rounded-[12px] bg-transparent text-[rgba(245,240,232,0.86)] cursor-pointer px-3.5 py-2.5 text-left text-[0.88rem] transition-[background,color] duration-[160ms] ease-linear hover:bg-[rgba(255,255,255,0.06)]"
-        onClick={onConnectRepo}
+        className={`flex w-full items-center gap-3 border-0 rounded-[12px] bg-transparent cursor-pointer px-3.5 py-2.5 text-left text-[0.88rem] transition-[background,color] duration-[160ms] ease-linear ${hasLinkedRepo ? "text-[rgba(245,240,232,0.35)] cursor-default" : "text-[rgba(245,240,232,0.86)] hover:bg-[rgba(255,255,255,0.06)]"}`}
+        onClick={hasLinkedRepo ? undefined : onConnectRepo}
+        title={hasLinkedRepo ? "Disconnect the current repo first (click the repo chip)" : undefined}
       >
         <span className="inline-grid shrink-0 place-items-center text-[rgba(245,240,232,0.56)]">
           <IconGithub />
         </span>
-        Connect repo
+        {hasLinkedRepo ? "Repo connected" : "Connect repo"}
       </button>
     </div>,
     document.body,
