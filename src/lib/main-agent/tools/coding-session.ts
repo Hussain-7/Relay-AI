@@ -36,22 +36,18 @@ export const codingSessionCatalog: ToolCatalogEntry[] = [
 export function createCodingSessionStartTool(ctx: ToolRuntimeContext) {
   return betaZodTool({
     name: "coding_session_start_or_continue",
-    description: "Provision or resume the repo-backed coding workspace for this chat.",
+    description: "Provision or resume the repo-backed coding workspace for this chat. The linked repository is automatically used — do not pass a repo ID.",
     inputSchema: z.object({
-      repoBindingId: z.string().optional(),
-      taskBrief: z.string().min(1),
-      branchStrategy: z.string().optional(),
+      taskBrief: z.string().min(1).describe("Clear description of the coding task to perform"),
+      branchStrategy: z.string().optional().describe("Branch naming strategy (defaults to chat/{conversationId})"),
     }),
     async run(input) {
       try {
-        // Auto-resolve repoBindingId from conversation if not explicitly provided
-        let repoBindingId = input.repoBindingId;
-        if (!repoBindingId) {
-          const conv = await prisma.conversation.findUnique({
-            where: { id: ctx.conversationId },
-          });
-          repoBindingId = conv?.repoBindingId ?? undefined;
-        }
+        // Always resolve repoBindingId from the conversation's linked repo
+        const conv = await prisma.conversation.findUnique({
+          where: { id: ctx.conversationId },
+        });
+        const repoBindingId = conv?.repoBindingId ?? undefined;
 
         // 1. Provision or resume the sandbox
         const session = await startOrResumeCodingSession({

@@ -236,7 +236,8 @@ export async function streamMainAgentRun(input: {
             })),
           ),
           tools: [
-            ...MAIN_AGENT_SERVER_TOOLS.map((tool) => tool.tool),
+            // TODO: re-enable server tools after coding session testing
+            // ...MAIN_AGENT_SERVER_TOOLS.map((tool) => tool.tool),
             ...tools,
             ...(prefs.memory ? [
               createMemoryTool({ userId: input.userId, conversationId: input.conversationId, runId: createdRun.id, emit: async (type, payload) => emit(type, "main_agent", payload) }),

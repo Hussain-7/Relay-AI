@@ -67,14 +67,14 @@ export const MAIN_AGENT_SERVER_TOOLS = [
 
 export function getMainAgentTools(ctx: ToolRuntimeContext) {
   return [
-    createChatSearchTool(ctx),
-    // GitHub repo tools removed — now handled via UI (plus menu → Connect repo)
+    // TODO: re-enable after coding session testing
+    // createChatSearchTool(ctx),
+    // createGithubCreatePrTool(ctx),
+    // createSandboxExecTool(ctx),
+    // createSandboxWriteFileTool(ctx),
     createCodingSessionStartTool(ctx),
     createCodingSessionStatusTool(ctx),
     createCodingSessionPauseTool(ctx),
-    createGithubCreatePrTool(ctx),
-    createSandboxExecTool(ctx),
-    createSandboxWriteFileTool(ctx),
   ];
 }
 

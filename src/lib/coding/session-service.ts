@@ -128,12 +128,20 @@ export async function startOrResumeCodingSession(input: {
     throw new Error("E2B_API_KEY is required for coding sessions.");
   }
 
-  const repoBinding =
-    input.repoBindingId == null
-      ? null
-      : await prisma.repoBinding.findUnique({
-          where: { id: input.repoBindingId },
-        });
+  // Look up repo binding — support both UUID and repoFullName for resilience
+  let repoBinding = input.repoBindingId
+    ? await prisma.repoBinding.findUnique({ where: { id: input.repoBindingId } })
+    : null;
+
+  // Fallback: if the ID didn't match (e.g. agent passed a full name), try by full name
+  if (!repoBinding && input.repoBindingId?.includes("/")) {
+    repoBinding = await prisma.repoBinding.findFirst({
+      where: { userId: input.userId, repoFullName: input.repoBindingId },
+    });
+    if (repoBinding) {
+      log.info("Resolved repoBinding by fullName fallback", { repoFullName: input.repoBindingId, bindingId: repoBinding.id });
+    }
+  }
 
   const template = getSandboxTemplate();
   const workspaceSlug = repoBinding?.repoName ?? input.conversationId;
@@ -159,6 +167,9 @@ export async function startOrResumeCodingSession(input: {
   });
 
   log.info("Sandbox created", { sandboxId: sandbox.sandboxId, template });
+
+  // Ensure /workspace exists and is writable
+  await sandbox.commands.run(`mkdir -p "${DEFAULT_WORKSPACE_ROOT}" && chmod 777 "${DEFAULT_WORKSPACE_ROOT}"`, { user: "root" });
 
   // Only create workspace dir + CLAUDE.md when there's no repo binding.
   // When a repo is bound, ensureRepoCloned handles directory creation via git clone.
@@ -256,26 +267,43 @@ async function ensureRepoCloned(
     return sandbox;
   }
 
+  // Clean up any leftover directory from a failed previous clone attempt
+  const dirCheck = await sandbox.commands.run(
+    `test -d "${session.workspacePath}" && echo "exists" || echo "missing"`,
+  );
+  if (dirCheck.stdout.trim() === "exists") {
+    log.info("Removing leftover workspace directory before clone", { workspacePath: session.workspacePath });
+    await sandbox.commands.run(`rm -rf "${session.workspacePath}"`, { user: "root" });
+  }
+
   log.info("Cloning repo (shallow)", { repoFullName, workspacePath: session.workspacePath });
 
+  // Run as root to avoid permission issues in the sandbox
   const cloneResult = await sandbox.commands.run(
-    `git clone --depth 1 ${cloneUrl} "${session.workspacePath}"`,
-    { timeoutMs: 60000 },
+    `git clone --depth 1 '${cloneUrl}' '${session.workspacePath}' 2>&1; echo "===EXIT:$?"`,
+    { timeoutMs: 120000, user: "root" },
   );
 
-  if (cloneResult.exitCode !== 0) {
-    log.error("Git clone failed", {
-      exitCode: cloneResult.exitCode,
-      stderr: cloneResult.stderr.slice(0, 500),
-    });
-    throw new Error(`Git clone failed (exit ${cloneResult.exitCode}): ${cloneResult.stderr.slice(0, 300)}`);
+  // Parse exit code from output (E2B throws on non-zero, so we wrap it)
+  const exitMatch = cloneResult.stdout.match(/===EXIT:(\d+)/);
+  const cloneExitCode = exitMatch ? parseInt(exitMatch[1], 10) : cloneResult.exitCode;
+  const cloneOutput = cloneResult.stdout.replace(/===EXIT:\d+/, "").trim();
+
+  log.info("Git clone result", { cloneExitCode, output: cloneOutput.slice(-300) });
+
+  if (cloneExitCode !== 0) {
+    throw new Error(`Git clone failed (exit ${cloneExitCode}): ${cloneOutput.slice(-300)}`);
   }
 
   log.info("Clone successful — configuring git identity and writing CLAUDE.md");
 
   await sandbox.commands.run(
     `cd "${session.workspacePath}" && git config user.email "relay-ai@users.noreply.github.com" && git config user.name "Relay AI"`,
+    { user: "root" },
   );
+
+  // Make workspace owned by the default sandbox user (for Claude Code CLI)
+  await sandbox.commands.run(`chmod -R 777 "${session.workspacePath}"`, { user: "root" });
 
   // Write CLAUDE.md after clone so the coding agent has project context
   await sandbox.files.write(`${session.workspacePath}/CLAUDE.md`, SANDBOX_CLAUDE_MD);
@@ -355,10 +383,19 @@ export async function runCodingTask(input: {
       ? ` --session-id ${session.claudeSdkSessionId}`
       : "";
 
+    // Verify claude CLI is available
+    const claudeCheck = await sandbox.commands.run("which claude && claude --version 2>&1 || echo 'claude not found'");
+    log.info("Claude CLI check", { stdout: claudeCheck.stdout.trim(), exitCode: claudeCheck.exitCode });
+
     const modelFlag = ` --model ${env.ANTHROPIC_CODING_MODEL}`;
-    const cmd = `cd "${session.workspacePath}" && claude --dangerously-skip-permissions --output-format stream-json${modelFlag} -p '${escapedTask}'${sessionFlag}`;
+    // Wrap in sh -c so the outer command always exits 0 (avoids E2B CommandExitError).
+    // The real exit code is captured via ===CLI_EXIT:$?===.
+    // stderr is merged into stdout so we capture error messages from the CLI.
+    const innerCmd = `cd "${session.workspacePath}" && claude --dangerously-skip-permissions --output-format stream-json --verbose${modelFlag} -p '${escapedTask}'${sessionFlag}`;
+    const cmd = `sh -c '${innerCmd.replace(/'/g, "'\\''")} 2>&1; echo "===CLI_EXIT:$?==="'`;
     log.info("Running Claude Code CLI", {
       workspacePath: session.workspacePath,
+      model: env.ANTHROPIC_CODING_MODEL,
       hasSessionId: Boolean(session.claudeSdkSessionId),
       timeoutMs: TASK_TIMEOUT_MS,
     });
@@ -368,6 +405,8 @@ export async function runCodingTask(input: {
     let finalResult = "";
     let sessionId: string | null = null;
     let lineBuf = "";
+    let cliExitCode = -1;
+    let stderrCapture = "";
 
     const cliEnvs: Record<string, string> = {
       ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY ?? "",
@@ -376,7 +415,7 @@ export async function runCodingTask(input: {
       cliEnvs.GITHUB_TOKEN = gitToken;
     }
 
-    const result = await sandbox.commands.run(cmd, {
+    await sandbox.commands.run(cmd, {
       envs: cliEnvs,
       timeoutMs: TASK_TIMEOUT_MS,
       onStdout: (data) => {
@@ -387,6 +426,14 @@ export async function runCodingTask(input: {
 
         for (const line of lines) {
           if (!line.trim()) continue;
+
+          // Capture the exit code sentinel
+          const exitMatch = line.match(/===CLI_EXIT:(\d+)===/);
+          if (exitMatch) {
+            cliExitCode = parseInt(exitMatch[1], 10);
+            continue;
+          }
+
           try {
             const event = JSON.parse(line) as Record<string, unknown>;
             events.push(event);
@@ -449,34 +496,41 @@ export async function runCodingTask(input: {
               }
             }
           } catch {
-            /* non-JSON line — skip */
+            // Non-JSON line — capture as potential error output
+            stderrCapture += line + "\n";
           }
         }
       },
     });
 
-    log.info("Claude Code CLI finished", {
-      exitCode: result.exitCode,
-      eventCount: events.length,
-      stderrPreview: result.stderr ? result.stderr.slice(0, 200) : "",
-    });
-
-    // Process any remaining buffered content
+    // Check remaining buffer for exit sentinel
     if (lineBuf.trim()) {
-      try {
-        const event = JSON.parse(lineBuf) as Record<string, unknown>;
-        events.push(event);
-        if (event.type === "result") {
-          finalResult =
-            typeof event.result === "string"
-              ? event.result
-              : JSON.stringify(event.result);
-          sessionId = (event.session_id as string) ?? sessionId;
+      const exitMatch = lineBuf.match(/===CLI_EXIT:(\d+)===/);
+      if (exitMatch) {
+        cliExitCode = parseInt(exitMatch[1], 10);
+      } else {
+        try {
+          const event = JSON.parse(lineBuf) as Record<string, unknown>;
+          events.push(event);
+          if (event.type === "result") {
+            finalResult =
+              typeof event.result === "string"
+                ? event.result
+                : JSON.stringify(event.result);
+            sessionId = (event.session_id as string) ?? sessionId;
+          }
+        } catch {
+          stderrCapture += lineBuf;
         }
-      } catch {
-        /* non-JSON trailing content */
       }
     }
+
+    log.info("Claude Code CLI finished", {
+      cliExitCode,
+      eventCount: events.length,
+      hasResult: Boolean(finalResult),
+      stderrPreview: stderrCapture.slice(0, 500),
+    });
 
     // Update session to READY with session ID for resumption
     await prisma.codingSession.update({
@@ -490,7 +544,7 @@ export async function runCodingTask(input: {
 
     log.info("Coding task completed", {
       sessionId,
-      exitCode: result.exitCode,
+      cliExitCode,
       resultPreview: finalResult.slice(0, 100),
       eventCount: events.length,
     });
@@ -498,10 +552,10 @@ export async function runCodingTask(input: {
     return {
       result:
         finalResult ||
-        (result.exitCode !== 0 ? result.stderr.slice(0, 2000) : "") ||
+        stderrCapture.slice(0, 2000) ||
         "Agent completed with no output.",
       sessionId,
-      exitCode: result.exitCode,
+      exitCode: cliExitCode,
       sandboxId: session.sandboxId,
       workspacePath: session.workspacePath,
       repoFullName: session.repoBinding?.repoFullName ?? null,
