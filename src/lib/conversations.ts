@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 
 const conversationDetailInclude = Prisma.validator<Prisma.ConversationInclude>()({
   mainAgentSession: true,
+  repoBinding: true,
   attachments: {
     orderBy: { createdAt: "asc" },
   },
@@ -41,6 +42,7 @@ const conversationDetailInclude = Prisma.validator<Prisma.ConversationInclude>()
 
 type ConversationDetailRecord = Conversation & {
   mainAgentSession: MainAgentSession | null;
+  repoBinding: RepoBinding | null;
   attachments: Attachment[];
   messages: Message[];
   runs: Array<
@@ -242,6 +244,9 @@ export async function listConversationSummaries(userId: string): Promise<Convers
         orderBy: { updatedAt: "desc" },
         take: 1,
       },
+      repoBinding: {
+        select: { repoFullName: true },
+      },
     },
   });
 
@@ -254,6 +259,7 @@ export async function listConversationSummaries(userId: string): Promise<Convers
     latestRunStatus: conversation.runs[0]?.status ?? null,
     latestSnippet: conversation.runs[0]?.finalText ?? conversation.runs[0]?.userPrompt ?? null,
     codingStatus: conversation.codingSessions[0]?.status ?? null,
+    repoFullName: conversation.repoBinding?.repoFullName ?? null,
   }));
 }
 
@@ -283,6 +289,18 @@ export async function getConversationDetail(input: {
     createdAt: detail.createdAt.toISOString(),
     updatedAt: detail.updatedAt.toISOString(),
     mainAgentModel: detail.mainAgentSession?.anthropicModel ?? null,
+    repoBinding: detail.repoBinding
+      ? {
+          id: detail.repoBinding.id,
+          provider: detail.repoBinding.provider,
+          repoOwner: detail.repoBinding.repoOwner,
+          repoName: detail.repoBinding.repoName,
+          repoFullName: detail.repoBinding.repoFullName,
+          defaultBranch: detail.repoBinding.defaultBranch,
+          installationId: detail.repoBinding.installationId,
+          metadataJson: toJsonRecord(detail.repoBinding.metadataJson),
+        }
+      : null,
     attachments: detail.attachments.map(mapAttachment),
     messages: detail.messages.map(mapMessage),
     runs: detail.runs.map((run) => mapRun(detail.id, run)),
@@ -304,6 +322,22 @@ export async function deleteConversationForUser(input: {
   if (!deleted.count) {
     throw new Error("Conversation not found.");
   }
+}
+
+export async function updateConversationRepoBinding(input: {
+  conversationId: string;
+  userId: string;
+  repoBindingId: string | null;
+}) {
+  await prisma.conversation.updateMany({
+    where: {
+      id: input.conversationId,
+      userId: input.userId,
+    },
+    data: {
+      repoBindingId: input.repoBindingId,
+    },
+  });
 }
 
 export async function updateConversationMainModel(input: {

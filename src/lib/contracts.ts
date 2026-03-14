@@ -113,6 +113,7 @@ export interface ConversationSummaryDto {
   latestRunStatus: RunStatus | null;
   latestSnippet: string | null;
   codingStatus: CodingSessionStatus | null;
+  repoFullName: string | null;
 }
 
 export interface ConversationDetailDto {
@@ -122,6 +123,7 @@ export interface ConversationDetailDto {
   createdAt: string;
   updatedAt: string;
   mainAgentModel: string | null;
+  repoBinding: RepoBindingDto | null;
   attachments: AttachmentDto[];
   messages: MessageDto[];
   runs: RunDto[];

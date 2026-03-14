@@ -41,9 +41,14 @@ export async function streamMainAgentRun(input: {
 }) {
   const conversation = await prisma.conversation.findUniqueOrThrow({
     where: { id: input.conversationId },
-    select: {
-      id: true,
-      title: true,
+    include: {
+      repoBinding: {
+        select: {
+          id: true,
+          repoFullName: true,
+          defaultBranch: true,
+        },
+      },
     },
   });
   const mainAgentSession = await ensureMainAgentSession({
@@ -203,6 +208,13 @@ export async function streamMainAgentRun(input: {
               type: "text" as const,
               text: buildMainAgentSystemPrompt({
                 mcpServerNames: configuredMcpServers.map((s) => s.name),
+                linkedRepo: conversation.repoBinding
+                  ? {
+                      repoFullName: conversation.repoBinding.repoFullName,
+                      defaultBranch: conversation.repoBinding.defaultBranch,
+                      repoBindingId: conversation.repoBinding.id,
+                    }
+                  : null,
               }),
               cache_control: { type: "ephemeral" as const },
             },
@@ -251,6 +263,7 @@ export async function streamMainAgentRun(input: {
           const blockTextBuffer = new Map<number, string>();
 
           for await (const rawEvent of assistantIteration as AsyncIterable<BetaRawMessageStreamEvent>) {
+            console.log("rawEvent:", rawEvent);
             if (rawEvent.type === "content_block_start") {
               const block = rawEvent.content_block;
 

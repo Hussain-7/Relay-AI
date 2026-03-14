@@ -16,6 +16,7 @@ import {
   useDisconnectGithub,
   usePreferences,
   useUser,
+  useLinkRepoToConversation,
   queryKeys,
 } from "@/lib/api-hooks";
 import type { LiveRunState } from "@/lib/chat-utils";
@@ -35,11 +36,13 @@ import {
   IconSpark,
   IconChevron,
   IconMore,
+  IconGithub,
 } from "@/components/icons";
 import { SidebarMenuPortal } from "@/components/chat/sidebar-menu-portal";
 import { ComposerModelMenuPortal, type AgentPreferences } from "@/components/chat/composer-model-menu";
 import { ComposerPlusMenuPortal } from "@/components/chat/composer-plus-menu";
 import { McpConnectorModal } from "@/components/chat/mcp-connector-modal";
+import { RepoBindingModal } from "@/components/chat/repo-binding-modal";
 import { AttachmentChip } from "@/components/chat/attachment-chip";
 import { RunThread } from "@/components/chat/run-thread";
 import { setPendingMessage, peekPendingMessage, consumePendingMessage } from "@/lib/pending-message";
@@ -95,6 +98,8 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
   const [connectorModalOpen, setConnectorModalOpen] = useState(false);
+  const [repoModalOpen, setRepoModalOpen] = useState(false);
+  const linkRepoMutation = useLinkRepoToConversation();
   const plusButtonRef = useRef<HTMLButtonElement | null>(null);
   const { preferences: userPreferences, savePreferences } = usePreferences();
   const agentPreferences: AgentPreferences = {
@@ -1152,7 +1157,30 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                     setPlusMenuOpen(false);
                     setConnectorModalOpen(true);
                   }}
+                  onConnectRepo={() => {
+                    setPlusMenuOpen(false);
+                    setRepoModalOpen(true);
+                  }}
                 />
+              )}
+
+              {activeConversation?.repoBinding && (
+                <div className="inline-flex items-center gap-1.5 rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-2.5 py-1 text-[0.78rem] text-[rgba(245,240,232,0.65)]">
+                  <IconGithub />
+                  <span className="max-w-[160px] truncate">{activeConversation.repoBinding.repoFullName}</span>
+                  <button
+                    type="button"
+                    className="inline-grid h-4 w-4 place-items-center border-0 bg-transparent text-[rgba(245,240,232,0.35)] cursor-pointer rounded-full p-0 transition-colors duration-140 hover:text-[rgba(245,240,232,0.7)]"
+                    onClick={() => {
+                      if (activeConversation) {
+                        linkRepoMutation.mutate({ conversationId: activeConversation.id, repoBindingId: null });
+                      }
+                    }}
+                    aria-label="Unlink repository"
+                  >
+                    <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3 w-3"><path d="M4 12L12 4M12 12L4 4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+                  </button>
+                </div>
               )}
 
               <div className="flex items-center gap-2.5 ml-auto">
@@ -1207,6 +1235,19 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
       </main>
 
       {connectorModalOpen && <McpConnectorModal onClose={() => setConnectorModalOpen(false)} />}
+
+      {repoModalOpen && (
+        <RepoBindingModal
+          onClose={() => setRepoModalOpen(false)}
+          currentRepoBindingId={activeConversation?.repoBinding?.id ?? null}
+          onSelect={(binding) => {
+            setRepoModalOpen(false);
+            if (activeConversation) {
+              linkRepoMutation.mutate({ conversationId: activeConversation.id, repoBindingId: binding.id });
+            }
+          }}
+        />
+      )}
 
       {searchModalOpen ? (
         <div className="fixed inset-0 z-200 flex items-start justify-center pt-[12vh] bg-[rgba(0,0,0,0.5)] backdrop-blur-[4px]" onClick={() => setSearchModalOpen(false)}>

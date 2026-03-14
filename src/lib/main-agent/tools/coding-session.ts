@@ -44,12 +44,21 @@ export function createCodingSessionStartTool(ctx: ToolRuntimeContext) {
     }),
     async run(input) {
       try {
+        // Auto-resolve repoBindingId from conversation if not explicitly provided
+        let repoBindingId = input.repoBindingId;
+        if (!repoBindingId) {
+          const conv = await prisma.conversation.findUnique({
+            where: { id: ctx.conversationId },
+          });
+          repoBindingId = conv?.repoBindingId ?? undefined;
+        }
+
         // 1. Provision or resume the sandbox
         const session = await startOrResumeCodingSession({
           conversationId: ctx.conversationId,
           userId: ctx.userId,
           runId: ctx.runId,
-          repoBindingId: input.repoBindingId,
+          repoBindingId,
           taskBrief: input.taskBrief,
           branchStrategy: input.branchStrategy,
         });

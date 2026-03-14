@@ -3,16 +3,18 @@
 import { useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
-import { IconPaperclip, IconConnector } from "@/components/icons";
+import { IconPaperclip, IconConnector, IconGithub } from "@/components/icons";
 
 export function ComposerPlusMenuPortal({
   anchor,
   onAddFiles,
   onAddConnectors,
+  onConnectRepo,
 }: {
   anchor: HTMLElement | null;
   onAddFiles: () => void;
   onAddConnectors: () => void;
+  onConnectRepo: () => void;
 }) {
   const panelRef = useRef<HTMLDivElement | null>(null);
 
@@ -64,6 +66,16 @@ export function ComposerPlusMenuPortal({
           <IconConnector />
         </span>
         Add connectors
+      </button>
+      <button
+        type="button"
+        className="flex w-full items-center gap-3 border-0 rounded-[12px] bg-transparent text-[rgba(245,240,232,0.86)] cursor-pointer px-3.5 py-2.5 text-left text-[0.88rem] transition-[background,color] duration-[160ms] ease-linear hover:bg-[rgba(255,255,255,0.06)]"
+        onClick={onConnectRepo}
+      >
+        <span className="inline-grid shrink-0 place-items-center text-[rgba(245,240,232,0.56)]">
+          <IconGithub />
+        </span>
+        Connect repo
       </button>
     </div>,
     document.body,

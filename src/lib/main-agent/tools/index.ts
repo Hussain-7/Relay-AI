@@ -2,7 +2,7 @@ export type { ToolRuntimeContext, ToolCatalogEntry } from "./context";
 
 import type { ToolRuntimeContext } from "./context";
 import { createChatSearchTool, chatSearchCatalog } from "./chat-search";
-import { createGithubListReposTool, createGithubConnectRepoTool, createGithubCreateRepoTool, createGithubCreatePrTool, createGithubSearchReposTool, createGithubDeleteRepoBindingTool, githubCatalog } from "./github";
+import { createGithubCreatePrTool, githubCatalog } from "./github";
 import { createCodingSessionStartTool, createCodingSessionStatusTool, createCodingSessionPauseTool, codingSessionCatalog } from "./coding-session";
 import { createSandboxExecTool, createSandboxWriteFileTool, sandboxExecCatalog } from "./sandbox-exec";
 import { memoryCatalog } from "./memory";
@@ -68,11 +68,7 @@ export const MAIN_AGENT_SERVER_TOOLS = [
 export function getMainAgentTools(ctx: ToolRuntimeContext) {
   return [
     createChatSearchTool(ctx),
-    createGithubListReposTool(ctx),
-    createGithubConnectRepoTool(ctx),
-    createGithubCreateRepoTool(ctx),
-    createGithubSearchReposTool(ctx),
-    createGithubDeleteRepoBindingTool(ctx),
+    // GitHub repo tools removed — now handled via UI (plus menu → Connect repo)
     createCodingSessionStartTool(ctx),
     createCodingSessionStatusTool(ctx),
     createCodingSessionPauseTool(ctx),

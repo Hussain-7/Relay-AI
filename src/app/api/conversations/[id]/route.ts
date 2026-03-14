@@ -1,11 +1,12 @@
 import { z } from "zod";
 
-import { deleteConversationForUser, getConversationDetail, updateConversationMainModel } from "@/lib/conversations";
+import { deleteConversationForUser, getConversationDetail, updateConversationMainModel, updateConversationRepoBinding } from "@/lib/conversations";
 import { requireRequestUser } from "@/lib/server-auth";
 import { getCached, invalidateCache } from "@/lib/server-cache";
 
 const patchConversationSchema = z.object({
   mainAgentModel: z.string().trim().min(1).optional(),
+  repoBindingId: z.string().nullable().optional(),
 });
 
 export async function GET(
@@ -74,6 +75,14 @@ export async function PATCH(
         conversationId: id,
         userId: user.userId,
         model: body.mainAgentModel,
+      });
+    }
+
+    if (body.repoBindingId !== undefined) {
+      await updateConversationRepoBinding({
+        conversationId: id,
+        userId: user.userId,
+        repoBindingId: body.repoBindingId,
       });
     }
 

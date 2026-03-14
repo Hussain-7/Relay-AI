@@ -17,6 +17,7 @@ export const queryKeys = {
   githubStatus: ["github-status"] as const,
   preferences: ["preferences"] as const,
   mcpConnectors: ["mcp-connectors"] as const,
+  repoBindings: ["repo-bindings"] as const,
 };
 
 export interface AuthUser {
@@ -155,6 +156,7 @@ function toSummary(detail: ConversationDetailDto): ConversationSummaryDto {
     latestRunStatus: latestRun?.status ?? null,
     latestSnippet: latestRun?.finalText ?? latestRun?.userPrompt ?? null,
     codingStatus: detail.codingSession?.status ?? null,
+    repoFullName: detail.repoBinding?.repoFullName ?? null,
   };
 }
 
@@ -186,6 +188,7 @@ export function useCreateConversation() {
         latestRunStatus: null,
         latestSnippet: null,
         codingStatus: null,
+        repoFullName: null,
       };
 
       queryClient.setQueryData<ConversationSummaryDto[]>(
@@ -411,6 +414,113 @@ export function useTestMcpConnection() {
         method: "POST",
         body: JSON.stringify(vars),
       });
+    },
+  });
+}
+
+// ─── Repo Bindings ──────────────────────────────────────────────────────────
+
+export interface RepoBindingListItem {
+  id: string;
+  repoFullName: string;
+  defaultBranch: string | null;
+  installationId: string | null;
+  metadataJson: Record<string, unknown> | null;
+}
+
+export interface GithubRepoSearchResult {
+  fullName: string;
+  name: string;
+  defaultBranch: string;
+  isPrivate: boolean;
+  description: string | null;
+}
+
+export function useRepoBindings() {
+  return useQuery({
+    queryKey: queryKeys.repoBindings,
+    queryFn: async () => {
+      const data = await fetchJson<{ bindings: RepoBindingListItem[] }>("/api/repo-bindings");
+      return data.bindings;
+    },
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useSearchGithubRepos() {
+  return useMutation({
+    mutationFn: async (query: string) => {
+      const data = await fetchJson<{ repos: GithubRepoSearchResult[] }>(
+        "/api/repo-bindings/search",
+        { method: "POST", body: JSON.stringify({ query }) },
+      );
+      return data.repos;
+    },
+  });
+}
+
+export function useConnectRepo() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (repoFullName: string) => {
+      const data = await fetchJson<{ binding: RepoBindingListItem }>(
+        "/api/repo-bindings/connect",
+        { method: "POST", body: JSON.stringify({ repoFullName }) },
+      );
+      return data.binding;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.repoBindings });
+    },
+  });
+}
+
+export function useDeleteRepoBinding() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await fetchJson(`/api/repo-bindings/${id}`, { method: "DELETE" });
+      return id;
+    },
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.repoBindings });
+      const previous = queryClient.getQueryData<RepoBindingListItem[]>(queryKeys.repoBindings);
+      queryClient.setQueryData<RepoBindingListItem[]>(
+        queryKeys.repoBindings,
+        (old) => (old ?? []).filter((b) => b.id !== id),
+      );
+      return { previous };
+    },
+    onError: (_err, _id, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(queryKeys.repoBindings, context.previous);
+      }
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.repoBindings });
+    },
+  });
+}
+
+export function useLinkRepoToConversation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ conversationId, repoBindingId }: { conversationId: string; repoBindingId: string | null }) => {
+      const data = await fetchJson<{ conversation: ConversationDetailDto }>(
+        `/api/conversations/${conversationId}`,
+        { method: "PATCH", body: JSON.stringify({ repoBindingId }) },
+      );
+      return data.conversation;
+    },
+    onSuccess: (conversation) => {
+      queryClient.setQueryData(
+        queryKeys.conversation(conversation.id),
+        conversation,
+      );
+      void queryClient.invalidateQueries({ queryKey: queryKeys.conversations });
     },
   });
 }

@@ -10,6 +10,15 @@ const DEFAULT_WORKSPACE_ROOT = "/workspace";
 const SANDBOX_TIMEOUT_MS = 1000 * 60 * 60; // 60 minutes
 const TASK_TIMEOUT_MS = 1000 * 60 * 30; // 30 minutes
 
+const log = {
+  info: (msg: string, data?: Record<string, unknown>) =>
+    console.log(`[coding-session] ${msg}`, data ? JSON.stringify(data) : ""),
+  warn: (msg: string, data?: Record<string, unknown>) =>
+    console.warn(`[coding-session] ${msg}`, data ? JSON.stringify(data) : ""),
+  error: (msg: string, data?: Record<string, unknown>) =>
+    console.error(`[coding-session] ${msg}`, data ? JSON.stringify(data) : ""),
+};
+
 function getSandboxTemplate() {
   return env.E2B_TEMPLATE || "claude";
 }
@@ -19,10 +28,13 @@ async function connectSandboxOrThrow(sandboxId: string) {
     throw new Error("E2B_API_KEY is required for coding sessions.");
   }
 
-  return Sandbox.connect(sandboxId, {
+  log.info("Connecting to sandbox", { sandboxId });
+  const sandbox = await Sandbox.connect(sandboxId, {
     apiKey: env.E2B_API_KEY,
     timeoutMs: SANDBOX_TIMEOUT_MS,
   });
+  log.info("Connected to sandbox", { sandboxId });
+  return sandbox;
 }
 
 export async function getLatestCodingSession(conversationId: string) {
@@ -54,6 +66,12 @@ export async function startOrResumeCodingSession(input: {
   taskBrief?: string;
   branchStrategy?: string;
 }) {
+  log.info("startOrResumeCodingSession", {
+    conversationId: input.conversationId,
+    userId: input.userId,
+    repoBindingId: input.repoBindingId ?? undefined,
+  });
+
   let codingSession = await prisma.codingSession.findFirst({
     where: {
       conversationId: input.conversationId,
@@ -71,6 +89,12 @@ export async function startOrResumeCodingSession(input: {
   });
 
   if (codingSession?.sandboxId) {
+    log.info("Resuming existing session", {
+      sessionId: codingSession.id,
+      sandboxId: codingSession.sandboxId,
+      status: codingSession.status,
+    });
+
     const sandbox = await connectSandboxOrThrow(codingSession.sandboxId);
     await sandbox.setTimeout(SANDBOX_TIMEOUT_MS);
 
@@ -111,9 +135,17 @@ export async function startOrResumeCodingSession(input: {
           where: { id: input.repoBindingId },
         });
 
+  const template = getSandboxTemplate();
   const workspaceSlug = repoBinding?.repoName ?? input.conversationId;
   const workspacePath = `${DEFAULT_WORKSPACE_ROOT}/${workspaceSlug}`;
-  const sandbox = await Sandbox.create(getSandboxTemplate(), {
+
+  log.info("Creating new sandbox", {
+    template,
+    workspacePath,
+    repoFullName: repoBinding?.repoFullName ?? null,
+  });
+
+  const sandbox = await Sandbox.create(template, {
     apiKey: env.E2B_API_KEY,
     timeoutMs: SANDBOX_TIMEOUT_MS,
     metadata: {
@@ -126,10 +158,14 @@ export async function startOrResumeCodingSession(input: {
     allowInternetAccess: true,
   });
 
-  await sandbox.files.makeDir(workspacePath);
+  log.info("Sandbox created", { sandboxId: sandbox.sandboxId, template });
 
-  // Write CLAUDE.md for the coding agent (Claude Code reads this automatically)
-  await sandbox.files.write(`${workspacePath}/CLAUDE.md`, SANDBOX_CLAUDE_MD);
+  // Only create workspace dir + CLAUDE.md when there's no repo binding.
+  // When a repo is bound, ensureRepoCloned handles directory creation via git clone.
+  if (!repoBinding) {
+    await sandbox.files.makeDir(workspacePath);
+    await sandbox.files.write(`${workspacePath}/CLAUDE.md`, SANDBOX_CLAUDE_MD);
+  }
 
   codingSession = await prisma.codingSession.create({
     data: {
@@ -144,6 +180,12 @@ export async function startOrResumeCodingSession(input: {
       claudeSdkSessionId: null,
     },
     include: { repoBinding: true },
+  });
+
+  log.info("Session created", {
+    sessionId: codingSession.id,
+    sandboxId: sandbox.sandboxId,
+    workspacePath,
   });
 
   if (input.runId) {
@@ -192,32 +234,53 @@ async function ensureRepoCloned(
 ) {
   const sandbox = await connectSandboxOrThrow(session.sandboxId);
 
-  if (!session.repoBinding || !session.workspacePath) return sandbox;
+  if (!session.repoBinding || !session.workspacePath) {
+    log.info("No repo binding — skipping clone");
+    return sandbox;
+  }
 
   const repoFullName = session.repoBinding.repoFullName;
   const cloneUrl = `https://x-access-token:${token}@github.com/${repoFullName}.git`;
+
+  log.info("Checking if repo already cloned", { repoFullName, workspacePath: session.workspacePath });
 
   const cloneCheck = await sandbox.commands.run(
     `test -d "${session.workspacePath}/.git" && echo "exists" || echo "missing"`,
   );
 
   if (cloneCheck.stdout.trim() === "exists") {
-    // Already cloned — refresh remote URL with fresh token for push access
+    log.info("Repo already cloned — refreshing remote URL", { repoFullName });
     await sandbox.commands.run(
       `cd "${session.workspacePath}" && git remote set-url origin ${cloneUrl}`,
     );
     return sandbox;
   }
 
-  // Shallow clone for speed
-  await sandbox.commands.run(
+  log.info("Cloning repo (shallow)", { repoFullName, workspacePath: session.workspacePath });
+
+  const cloneResult = await sandbox.commands.run(
     `git clone --depth 1 ${cloneUrl} "${session.workspacePath}"`,
     { timeoutMs: 60000 },
   );
 
+  if (cloneResult.exitCode !== 0) {
+    log.error("Git clone failed", {
+      exitCode: cloneResult.exitCode,
+      stderr: cloneResult.stderr.slice(0, 500),
+    });
+    throw new Error(`Git clone failed (exit ${cloneResult.exitCode}): ${cloneResult.stderr.slice(0, 300)}`);
+  }
+
+  log.info("Clone successful — configuring git identity and writing CLAUDE.md");
+
   await sandbox.commands.run(
     `cd "${session.workspacePath}" && git config user.email "relay-ai@users.noreply.github.com" && git config user.name "Relay AI"`,
   );
+
+  // Write CLAUDE.md after clone so the coding agent has project context
+  await sandbox.files.write(`${session.workspacePath}/CLAUDE.md`, SANDBOX_CLAUDE_MD);
+
+  log.info("Repo ready", { repoFullName, workspacePath: session.workspacePath });
 
   return sandbox;
 }
@@ -233,6 +296,11 @@ export async function runCodingTask(input: {
   userId: string;
   taskBrief: string;
 }) {
+  log.info("runCodingTask starting", {
+    codingSessionId: input.codingSessionId,
+    taskBrief: input.taskBrief.slice(0, 100),
+  });
+
   const session = await prisma.codingSession.findUnique({
     where: { id: input.codingSessionId },
     include: { repoBinding: true },
@@ -245,10 +313,14 @@ export async function runCodingTask(input: {
   // Get a fresh GitHub token for clone/push (if repo is bound)
   let gitToken: string | null = null;
   if (session.repoBinding && hasGitHubAppConfig()) {
+    log.info("Fetching GitHub token for repo", {
+      repoFullName: session.repoBinding.repoFullName,
+    });
     gitToken = await getGitHubToken(input.userId);
     if (!gitToken) {
       throw new Error("GitHub token unavailable. Ensure the GitHub App is installed.");
     }
+    log.info("GitHub token obtained");
   }
 
   // Clone repo into sandbox (or refresh remote URL with fresh token)
@@ -283,6 +355,14 @@ export async function runCodingTask(input: {
       ? ` --session-id ${session.claudeSdkSessionId}`
       : "";
 
+    const modelFlag = ` --model ${env.ANTHROPIC_CODING_MODEL}`;
+    const cmd = `cd "${session.workspacePath}" && claude --dangerously-skip-permissions --output-format stream-json${modelFlag} -p '${escapedTask}'${sessionFlag}`;
+    log.info("Running Claude Code CLI", {
+      workspacePath: session.workspacePath,
+      hasSessionId: Boolean(session.claudeSdkSessionId),
+      timeoutMs: TASK_TIMEOUT_MS,
+    });
+
     // Collect streaming events
     const events: Array<Record<string, unknown>> = [];
     let finalResult = "";
@@ -296,82 +376,90 @@ export async function runCodingTask(input: {
       cliEnvs.GITHUB_TOKEN = gitToken;
     }
 
-    const result = await sandbox.commands.run(
-      `cd "${session.workspacePath}" && claude --dangerously-skip-permissions --output-format stream-json -p '${escapedTask}'${sessionFlag}`,
-      {
-        envs: cliEnvs,
-        timeoutMs: TASK_TIMEOUT_MS,
-        onStdout: (data) => {
-          // Buffer partial lines for correct JSONL parsing
-          lineBuf += data;
-          const lines = lineBuf.split("\n");
-          lineBuf = lines.pop() ?? "";
+    const result = await sandbox.commands.run(cmd, {
+      envs: cliEnvs,
+      timeoutMs: TASK_TIMEOUT_MS,
+      onStdout: (data) => {
+        // Buffer partial lines for correct JSONL parsing
+        lineBuf += data;
+        const lines = lineBuf.split("\n");
+        lineBuf = lines.pop() ?? "";
 
-          for (const line of lines) {
-            if (!line.trim()) continue;
-            try {
-              const event = JSON.parse(line) as Record<string, unknown>;
-              events.push(event);
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const event = JSON.parse(line) as Record<string, unknown>;
+            events.push(event);
 
-              // Capture session ID and final result
-              if (event.type === "system" && event.subtype === "init") {
-                sessionId = (event.session_id as string) ?? null;
-              }
-              if (event.type === "result") {
-                finalResult =
-                  typeof event.result === "string"
-                    ? event.result
-                    : JSON.stringify(event.result);
-                sessionId = (event.session_id as string) ?? sessionId;
-              }
+            // Capture session ID and final result
+            if (event.type === "system" && event.subtype === "init") {
+              sessionId = (event.session_id as string) ?? null;
+              log.info("Claude Code session initialized", { sessionId });
+            }
+            if (event.type === "result") {
+              finalResult =
+                typeof event.result === "string"
+                  ? event.result
+                  : JSON.stringify(event.result);
+              sessionId = (event.session_id as string) ?? sessionId;
+              log.info("Claude Code result received", {
+                resultLength: finalResult.length,
+                sessionId,
+              });
+            }
 
-              // Emit tool events to timeline in real-time
-              if (event.type === "assistant" && event.message) {
-                const msg = event.message as { content?: Array<Record<string, unknown>> };
-                if (Array.isArray(msg.content)) {
-                  for (const block of msg.content) {
-                    if (block.type === "tool_use") {
-                      appendRunEvent({
-                        runId: input.runId,
-                        conversationId: input.conversationId,
-                        type: "tool.call.started",
-                        source: "coding_agent",
-                        payload: {
-                          toolName: block.name as string,
-                          toolUseId: block.id as string,
-                        },
-                      });
-                    }
-                    if (block.type === "tool_result") {
-                      appendRunEvent({
-                        runId: input.runId,
-                        conversationId: input.conversationId,
-                        type: "tool.call.completed",
-                        source: "coding_agent",
-                        payload: {
-                          toolUseId: block.tool_use_id as string,
-                        },
-                      });
-                    }
-                    if (block.type === "text") {
-                      appendRunEvent({
-                        runId: input.runId,
-                        conversationId: input.conversationId,
-                        type: "assistant.text.delta",
-                        source: "coding_agent",
-                        payload: { delta: block.text as string },
-                      });
-                    }
+            // Emit tool events to timeline in real-time
+            if (event.type === "assistant" && event.message) {
+              const msg = event.message as { content?: Array<Record<string, unknown>> };
+              if (Array.isArray(msg.content)) {
+                for (const block of msg.content) {
+                  if (block.type === "tool_use") {
+                    appendRunEvent({
+                      runId: input.runId,
+                      conversationId: input.conversationId,
+                      type: "tool.call.started",
+                      source: "coding_agent",
+                      payload: {
+                        toolName: block.name as string,
+                        toolUseId: block.id as string,
+                      },
+                    });
+                  }
+                  if (block.type === "tool_result") {
+                    appendRunEvent({
+                      runId: input.runId,
+                      conversationId: input.conversationId,
+                      type: "tool.call.completed",
+                      source: "coding_agent",
+                      payload: {
+                        toolUseId: block.tool_use_id as string,
+                      },
+                    });
+                  }
+                  if (block.type === "text") {
+                    appendRunEvent({
+                      runId: input.runId,
+                      conversationId: input.conversationId,
+                      type: "assistant.text.delta",
+                      source: "coding_agent",
+                      payload: { delta: block.text as string },
+                    });
                   }
                 }
               }
-            } catch {
-              /* non-JSON line — skip */
             }
+          } catch {
+            /* non-JSON line — skip */
           }
-        },
+        }
       },
-    );
+    });
+
+    log.info("Claude Code CLI finished", {
+      exitCode: result.exitCode,
+      eventCount: events.length,
+      stderrPreview: result.stderr ? result.stderr.slice(0, 200) : "",
+    });
 
     // Process any remaining buffered content
     if (lineBuf.trim()) {
@@ -400,6 +488,13 @@ export async function runCodingTask(input: {
       },
     });
 
+    log.info("Coding task completed", {
+      sessionId,
+      exitCode: result.exitCode,
+      resultPreview: finalResult.slice(0, 100),
+      eventCount: events.length,
+    });
+
     return {
       result:
         finalResult ||
@@ -414,6 +509,11 @@ export async function runCodingTask(input: {
       eventCount: events.length,
     };
   } catch (error) {
+    log.error("Coding task failed", {
+      error: error instanceof Error ? error.message : String(error),
+      codingSessionId: session.id,
+    });
+
     // Error recovery — reset session status so it doesn't stay stuck in RUNNING
     await prisma.codingSession.update({
       where: { id: session.id },
@@ -443,6 +543,8 @@ export async function pauseCodingSession(input: {
   conversationId: string;
   runId?: string;
 }) {
+  log.info("Pausing session", { codingSessionId: input.codingSessionId });
+
   const codingSession = await prisma.codingSession.findUnique({
     where: { id: input.codingSessionId },
   });
@@ -461,6 +563,8 @@ export async function pauseCodingSession(input: {
       lastActiveAt: new Date(),
     },
   });
+
+  log.info("Session paused", { codingSessionId: updatedSession.id });
 
   if (input.runId) {
     await appendRunEvent({

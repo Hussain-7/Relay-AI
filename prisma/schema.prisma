@@ -85,6 +85,8 @@ model Conversation {
   messages          Message[]
   runs              AgentRun[]
   codingSessions    CodingSession[]
+  repoBindingId     String?
+  repoBinding       RepoBinding?      @relation(fields: [repoBindingId], references: [id], onDelete: SetNull)
   attachments       Attachment[]
   memoryEntries     MemoryEntry[]
 
@@ -148,6 +150,7 @@ model RepoBinding {
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
   user                UserProfile        @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  conversations       Conversation[]
   codingSessions      CodingSession[]
   workspaceSnapshots  WorkspaceSnapshot[]
 
