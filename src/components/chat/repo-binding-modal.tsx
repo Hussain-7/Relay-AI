@@ -55,8 +55,6 @@ export function RepoBindingModal({
   const availableRepos = repoData?.available ?? [];
   const bindings = repoData?.bindings ?? [];
   const owners = repoData?.owners ?? [];
-  const connectedFullNames = useMemo(() => new Set(bindings.map((b) => b.repoFullName)), [bindings]);
-
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<GithubRepoSearchResult[] | null>(null);
   const [ownerFilter, setOwnerFilter] = useState<string | null>(null);
@@ -277,7 +275,6 @@ export function RepoBindingModal({
               ) : (
                 <div className="border border-[rgba(255,255,255,0.06)] rounded-[12px] overflow-hidden divide-y divide-[rgba(255,255,255,0.06)]">
                   {displayRepos.map((repo) => {
-                    const alreadyConnected = connectedFullNames.has(repo.fullName);
                     return (
                       <div
                         key={repo.fullName}
@@ -291,11 +288,11 @@ export function RepoBindingModal({
                         </div>
                         <button
                           type="button"
-                          className="shrink-0 rounded-[8px] border border-[rgba(255,255,255,0.12)] bg-[rgba(255,255,255,0.04)] text-[rgba(245,240,232,0.8)] text-[0.78rem] font-medium cursor-pointer px-3 py-1 transition-all duration-140 hover:bg-[rgba(255,255,255,0.1)] hover:text-[rgba(245,240,232,0.95)] disabled:opacity-30 disabled:cursor-not-allowed"
+                          className="shrink-0 rounded-[6px] border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.04)] text-sm! font-medium cursor-pointer px-2.5 py-[3px] transition-all duration-140 hover:bg-[rgba(255,255,255,0.1)] hover:text-[rgba(245,240,232,0.95)] disabled:opacity-30 disabled:cursor-not-allowed"
                           onClick={() => void handleConnect(repo)}
                           disabled={connectMutation.isPending}
                         >
-                          {alreadyConnected ? "Use" : "Connect"}
+                          Connect
                         </button>
                       </div>
                     );

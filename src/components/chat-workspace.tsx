@@ -1328,10 +1328,8 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
           isSaving={renameMutation.isPending}
           onClose={() => setRenamingConversation(null)}
           onSave={(title) => {
-            renameMutation.mutate(
-              { id: renamingConversation.id, title },
-              { onSuccess: () => setRenamingConversation(null) },
-            );
+            renameMutation.mutate({ id: renamingConversation.id, title });
+            setRenamingConversation(null);
           }}
         />
       )}

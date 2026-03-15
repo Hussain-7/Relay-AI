@@ -72,7 +72,7 @@ function ConnectorCard({
   const isDisabled = connector.status === "DISABLED";
 
   return (
-    <div className={`group relative rounded-[12px] border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.02)] px-3.5 py-2.5 transition-all duration-150 ${isDisabled ? "opacity-45" : "hover:border-[rgba(255,255,255,0.1)] hover:bg-[rgba(255,255,255,0.03)]"}`}>
+    <div className={`group relative rounded-[12px] border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.02)] px-3.5 py-2.5 transition-all duration-150`}>
       <div className="flex items-start gap-3">
         {/* Toggle */}
         <div className="pt-0.5">
@@ -117,7 +117,7 @@ function ConnectorCard({
               <span className="text-[rgba(245,240,232,0.5)] text-[0.74rem]">Remove?</span>
               <button
                 type="button"
-                className="rounded-[6px] border-0 bg-[rgba(220,80,60,0.18)] text-[rgba(255,150,130,0.95)] text-[0.72rem] font-medium cursor-pointer px-2 py-1 transition-all duration-140 hover:bg-[rgba(220,80,60,0.3)]"
+                className="rounded-[6px] border-0 bg-[rgba(220,80,60,0.18)] text-[rgba(255,150,130,0.95)] text-[0.72rem]! font-medium cursor-pointer px-2 py-1 transition-all duration-140 hover:bg-[rgba(220,80,60,0.3)]"
                 onClick={onRemove}
                 disabled={isRemoving}
               >
@@ -125,7 +125,7 @@ function ConnectorCard({
               </button>
               <button
                 type="button"
-                className="rounded-[6px] border-0 bg-[rgba(255,255,255,0.05)] text-[rgba(245,240,232,0.45)] text-[0.72rem] cursor-pointer px-2 py-1 transition-all duration-140 hover:bg-[rgba(255,255,255,0.09)] hover:text-[rgba(245,240,232,0.7)]"
+                className="rounded-[6px] border-0 bg-[rgba(255,255,255,0.05)] text-[rgba(245,240,232,0.45)] text-[0.72rem]! cursor-pointer px-2 py-1 transition-all duration-140 hover:bg-[rgba(255,255,255,0.09)] hover:text-[rgba(245,240,232,0.7)]"
                 onClick={() => setConfirmRemove(false)}
               >
                 No
@@ -269,7 +269,7 @@ function AddConnectorForm({
           onClick={() => void handleSubmit()}
           disabled={createMutation.isPending || !name.trim() || !url.trim()}
         >
-          {createMutation.isPending ? "Connecting\u2026" : "Connect"}
+          {createMutation.isPending ? "Connecting..." : "Connect"}
         </button>
       </div>
     </div>
