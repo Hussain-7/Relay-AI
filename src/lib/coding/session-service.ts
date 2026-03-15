@@ -266,6 +266,7 @@ async function ensureRepoCloned(
     repoBinding: { repoFullName: string } | null;
   },
   token: string,
+  gitUser: { name: string; email: string },
 ) {
   const sandbox = await connectSandboxOrThrow(session.sandboxId);
 
@@ -325,7 +326,7 @@ async function ensureRepoCloned(
   await safeRun(sandbox, `git config --global --add safe.directory '${session.workspacePath}'`);
 
   await safeRun(sandbox,
-    `cd "${session.workspacePath}" && git config user.email "relay-ai@users.noreply.github.com" && git config user.name "Relay AI"`,
+    `cd "${session.workspacePath}" && git config user.email '${gitUser.email}' && git config user.name '${gitUser.name}'`,
     { user: "root" },
   );
 
@@ -381,6 +382,16 @@ export async function runCodingTask(input: {
 
     log.info("About to ensure repo cloned");
 
+    // Look up user profile for git commit identity
+    const userProfile = await prisma.userProfile.findUnique({
+      where: { userId: input.userId },
+      select: { email: true, fullName: true },
+    });
+    const gitUser = {
+      name: userProfile?.fullName ?? "Relay AI User",
+      email: userProfile?.email ?? `${input.userId}@users.noreply.github.com`,
+    };
+
     // Clone repo into sandbox (or refresh remote URL with fresh token)
     const sandbox = gitToken
       ? await ensureRepoCloned(
@@ -390,6 +401,7 @@ export async function runCodingTask(input: {
             repoBinding: session.repoBinding,
           },
           gitToken,
+          gitUser,
         )
       : await connectSandboxOrThrow(session.sandboxId);
 
