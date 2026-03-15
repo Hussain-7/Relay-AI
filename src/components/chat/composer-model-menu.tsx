@@ -72,11 +72,11 @@ export function ComposerModelMenuPortal({
 
   return createPortal(
     <div
-      className="fixed z-70 grid gap-0.5 border border-[rgba(255,255,255,0.12)] rounded-[22px] bg-[linear-gradient(180deg,rgba(65,63,58,0.98),rgba(53,51,47,0.98)),rgba(24,22,19,0.98)] p-2.5 shadow-[0_22px_60px_rgba(0,0,0,0.36)] backdrop-blur-[22px]"
+      className="fixed z-70 grid gap-0.5 border border-[rgba(255,255,255,0.12)] rounded-[18px] bg-[linear-gradient(180deg,rgba(65,63,58,0.98),rgba(53,51,47,0.98)),rgba(24,22,19,0.98)] p-2 shadow-[0_16px_48px_rgba(0,0,0,0.36)] backdrop-blur-[22px]"
       data-chat-action-menu
       ref={panelRef}
     >
-      <div className="px-3 pt-2 pb-2.5 text-[rgba(245,240,232,0.46)] text-[0.68rem] font-semibold tracking-[0.18em] uppercase">Choose model</div>
+      <div className="px-3 pt-1.5 pb-2 text-[rgba(245,240,232,0.4)] text-[0.66rem] font-semibold tracking-[0.16em] uppercase">Choose model</div>
       {models.map((model) => {
         const isSelected = selectedModelId === model.id;
 
@@ -84,13 +84,13 @@ export function ComposerModelMenuPortal({
           <button
             key={model.id}
             type="button"
-            className={`flex w-full items-center justify-between gap-3 border-0 rounded-[18px] bg-transparent text-[rgba(245,240,232,0.86)] cursor-pointer px-4 py-3.5 text-left transition-[background,color] duration-[180ms] ease-linear hover:not-disabled:bg-[rgba(255,255,255,0.05)] disabled:opacity-60 disabled:cursor-not-allowed ${isSelected ? "bg-[rgba(255,255,255,0.05)]" : ""}`}
+            className={`flex w-full items-center justify-between gap-3 border-0 rounded-[12px] bg-transparent text-[rgba(245,240,232,0.86)] cursor-pointer px-3 py-2.5 text-left transition-[background,color] duration-[180ms] ease-linear hover:not-disabled:bg-[rgba(255,255,255,0.05)] disabled:opacity-60 disabled:cursor-not-allowed ${isSelected ? "bg-[rgba(255,255,255,0.05)]" : ""}`}
             onClick={() => onSelect(model.id)}
             disabled={isUpdating}
           >
             <span className="flex min-w-0 flex-auto flex-col gap-[3px]">
-              <span className="text-[rgba(245,240,232,0.94)] text-[0.98rem] font-medium">{model.label}</span>
-              <span className="text-[rgba(245,240,232,0.54)] text-[0.8rem] leading-[1.48] text-pretty">{model.description}</span>
+              <span className="text-[rgba(245,240,232,0.94)] text-[0.88rem] font-medium">{model.label}</span>
+              <span className="text-[rgba(245,240,232,0.48)] text-[0.76rem] leading-[1.4] text-pretty">{model.description}</span>
             </span>
             {isSelected ? (
               <span className="inline-grid shrink-0 place-items-center text-[rgba(190,222,209,0.9)]" aria-hidden="true">
@@ -101,10 +101,10 @@ export function ComposerModelMenuPortal({
         );
       })}
 
-      <div className="mt-1 pt-2 border-t border-[rgba(255,255,255,0.06)] px-4 pb-1 flex flex-col gap-2.5">
+      <div className="mt-1 pt-2 border-t border-[rgba(255,255,255,0.06)] px-3 pb-1 flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <div className="flex flex-col">
-            <span className="text-[rgba(245,240,232,0.86)] text-[0.84rem] font-medium">Extended Thinking</span>
+            <span className="text-[rgba(245,240,232,0.86)] text-[0.8rem] font-medium">Extended Thinking</span>
             <span className="text-[rgba(245,240,232,0.4)] text-[0.72rem]">Adaptive reasoning depth</span>
           </div>
           <ToggleSwitch enabled={preferences.thinking} onChange={(v) => onPreferencesChange({ ...preferences, thinking: v })} />
@@ -112,7 +112,7 @@ export function ComposerModelMenuPortal({
 
         <div className="flex items-center justify-between">
           <div className="flex flex-col">
-            <span className="text-[rgba(245,240,232,0.86)] text-[0.84rem] font-medium">Effort</span>
+            <span className="text-[rgba(245,240,232,0.86)] text-[0.8rem] font-medium">Effort</span>
             <span className="text-[rgba(245,240,232,0.4)] text-[0.72rem]">Response thoroughness</span>
           </div>
           <div className="flex gap-1">
@@ -135,7 +135,7 @@ export function ComposerModelMenuPortal({
 
         <div className="flex items-center justify-between">
           <div className="flex flex-col">
-            <span className="text-[rgba(245,240,232,0.86)] text-[0.84rem] font-medium">Memory</span>
+            <span className="text-[rgba(245,240,232,0.86)] text-[0.8rem] font-medium">Memory</span>
             <span className="text-[rgba(245,240,232,0.4)] text-[0.72rem]">Persist workspace context</span>
           </div>
           <ToggleSwitch enabled={preferences.memory} onChange={(v) => onPreferencesChange({ ...preferences, memory: v })} />

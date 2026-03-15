@@ -17,6 +17,8 @@ import {
   usePreferences,
   useUser,
   useLinkRepoToConversation,
+  useRenameConversation,
+  useToggleConversationStar,
   queryKeys,
 } from "@/lib/api-hooks";
 import type { LiveRunState } from "@/lib/chat-utils";
@@ -39,6 +41,7 @@ import {
   IconGithub,
 } from "@/components/icons";
 import { SidebarMenuPortal } from "@/components/chat/sidebar-menu-portal";
+import { RenameModal } from "@/components/chat/rename-modal";
 import { ComposerModelMenuPortal, type AgentPreferences } from "@/components/chat/composer-model-menu";
 import { ComposerPlusMenuPortal } from "@/components/chat/composer-plus-menu";
 import { McpConnectorModal } from "@/components/chat/mcp-connector-modal";
@@ -95,6 +98,9 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [deletingConversationId, setDeletingConversationId] = useState<string | null>(null);
+  const [renamingConversation, setRenamingConversation] = useState<{ id: string; title: string } | null>(null);
+  const renameMutation = useRenameConversation();
+  const starMutation = useToggleConversationStar();
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
   const [connectorModalOpen, setConnectorModalOpen] = useState(false);
@@ -259,6 +265,15 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
       );
     });
   }, [conversations, deferredSidebarQuery]);
+
+  const starredConversations = useMemo(
+    () => filteredConversations.filter((c) => c.isStarred),
+    [filteredConversations],
+  );
+  const recentConversations = useMemo(
+    () => filteredConversations.filter((c) => !c.isStarred),
+    [filteredConversations],
+  );
 
   function handleCreateConversation() {
     setLiveRun(null);
@@ -766,7 +781,6 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
           <span>Search</span>
         </button>
 
-        <div className="text-[0.68rem] uppercase tracking-[0.1em] text-[rgba(236,230,219,0.38)] pt-3.5 px-2.5 pb-1.5">Chats</div>
         <div className="sidebar-conversation-list flex flex-1 min-h-0 flex-col gap-px overflow-y-auto overflow-x-hidden -mx-1 px-1">
           {isLoadingConversations ? (
             Array.from({ length: 6 }).map((_, i) => (
@@ -774,7 +788,11 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                 <div className="h-[18px] rounded-[6px] bg-[rgba(255,255,255,0.06)] animate-pulse" style={{ width: `${50 + (i % 3) * 20}%` }} />
               </div>
             ))
-          ) : filteredConversations.map((conversation) => {
+          ) : (<>
+          {starredConversations.length > 0 && (
+            <>
+              <div className="text-[0.68rem] uppercase tracking-[0.1em] text-[rgba(236,230,219,0.38)] pt-3 px-2.5 pb-1">Starred</div>
+              {starredConversations.map((conversation) => {
             const isActive = conversation.id === activeConversationId;
             const isMenuOpen = openConversationMenuId === conversation.id;
             const isDeleting = deletingConversationId === conversation.id;
@@ -810,6 +828,15 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                   {isMenuOpen ? (
                     <SidebarMenuPortal
                       triggerSelector={`[data-conversation-menu="${conversation.id}"]`}
+                      isStarred={conversation.isStarred}
+                      onToggleStar={() => {
+                        setOpenConversationMenuId(null);
+                        starMutation.mutate({ id: conversation.id, isStarred: !conversation.isStarred });
+                      }}
+                      onRename={() => {
+                        setOpenConversationMenuId(null);
+                        setRenamingConversation({ id: conversation.id, title: conversation.title });
+                      }}
                       onDelete={(event) => {
                         event.stopPropagation();
                         void handleDeleteConversation(conversation.id);
@@ -821,6 +848,66 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
               </div>
             );
           })}
+            </>
+          )}
+          <div className="text-[0.68rem] uppercase tracking-[0.1em] text-[rgba(236,230,219,0.38)] pt-3 px-2.5 pb-1">{starredConversations.length > 0 ? "Recents" : "Chats"}</div>
+          {recentConversations.map((conversation) => {
+            const isActive = conversation.id === activeConversationId;
+            const isMenuOpen = openConversationMenuId === conversation.id;
+            const isDeleting = deletingConversationId === conversation.id;
+            return (
+              <div
+                key={conversation.id}
+                className={`group/row relative ${isActive || isMenuOpen ? "z-[2]" : ""}`}
+              >
+                <button
+                  type="button"
+                  className={`flex w-full items-center border-0 rounded-[10px] bg-transparent text-inherit cursor-pointer py-[9px] pr-[34px] pl-2.5 text-left transition-[background] duration-[140ms] ease-linear hover:bg-[rgba(255,255,255,0.05)] ${isActive ? "bg-[rgba(255,255,255,0.06)]" : ""}`}
+                  onClick={() => handleSelectConversation(conversation.id)}
+                >
+                  <div className={`text-[0.88rem] font-[420] text-[rgba(242,237,229,0.82)] whitespace-nowrap overflow-hidden text-ellipsis ${isActive ? "text-[rgba(247,242,233,0.96)]" : "group-hover/row:text-[rgba(247,242,233,0.96)]"}`}>{conversation.title}</div>
+                </button>
+
+                <div className="absolute top-1/2 right-1 -translate-y-1/2" data-chat-action-menu>
+                  <button
+                    type="button"
+                    className={`inline-grid h-[26px] w-[26px] place-items-center border-0 bg-transparent rounded-[6px] text-[rgba(245,240,232,0.46)] cursor-pointer transition-[opacity,color,background] duration-[140ms] ease-linear hover:text-[rgba(245,240,232,0.88)] hover:bg-[rgba(255,255,255,0.08)] ${isMenuOpen || isActive ? "opacity-100" : "opacity-0 group-hover/row:opacity-100"}`}
+                    aria-label={`Open menu for ${conversation.title}`}
+                    aria-expanded={isMenuOpen}
+                    data-conversation-menu={conversation.id}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setHeaderMenuOpen(false);
+                      setOpenConversationMenuId((current) => (current === conversation.id ? null : conversation.id));
+                    }}
+                  >
+                    <IconMore />
+                  </button>
+
+                  {isMenuOpen ? (
+                    <SidebarMenuPortal
+                      triggerSelector={`[data-conversation-menu="${conversation.id}"]`}
+                      isStarred={conversation.isStarred}
+                      onToggleStar={() => {
+                        setOpenConversationMenuId(null);
+                        starMutation.mutate({ id: conversation.id, isStarred: !conversation.isStarred });
+                      }}
+                      onRename={() => {
+                        setOpenConversationMenuId(null);
+                        setRenamingConversation({ id: conversation.id, title: conversation.title });
+                      }}
+                      onDelete={(event) => {
+                        event.stopPropagation();
+                        void handleDeleteConversation(conversation.id);
+                      }}
+                      isDeleting={isDeleting}
+                    />
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+          </>)}
         </div>
 
         <div className="relative mt-auto pt-2 border-t border-[rgba(255,255,255,0.06)]" ref={profileRef}>
@@ -992,7 +1079,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
               {errorMessage ? <div className="max-w-[720px] mx-auto mb-[18px] border border-[rgba(181,103,69,0.3)] rounded-[18px] bg-[rgba(181,103,69,0.12)] text-[#f3c7b4] px-4 py-3.5">{errorMessage}</div> : null}
               <div className="inline-flex items-center justify-center rounded-full bg-[rgba(10,10,10,0.42)] text-[rgba(245,240,232,0.64)] py-2.5 px-4 text-[0.82rem] tracking-[0.12em] uppercase max-[980px]:text-[0.72rem] max-[980px]:py-[7px] max-[980px]:px-3">AI chat</div>
               <div className="flex items-center gap-3.5 max-[980px]:flex-col max-[980px]:gap-2">
-                <span className="inline-grid h-[42px] w-[42px] place-items-center text-[#cf6d43] max-[980px]:h-7 max-[980px]:w-7">
+                <span className="inline-grid h-8 w-8 place-items-center text-[#cf6d43] max-[980px]:h-6 max-[980px]:w-6">
                   <IconSpark />
                 </span>
                 <h1 className="m-0 font-serif text-[clamp(2rem,4vw,4.2rem)] leading-[0.94] tracking-[-0.04em]">What shall we think through?</h1>
@@ -1005,7 +1092,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                   <button
                     key={suggestion}
                     type="button"
-                    className="border border-[rgba(255,255,255,0.08)] rounded-full bg-[rgba(255,255,255,0.03)] text-[rgba(245,240,232,0.7)] py-2.5 px-3.5 text-[0.86rem] cursor-pointer transition-[background,border-color,color,transform] duration-[180ms] ease-linear hover:bg-[rgba(255,255,255,0.06)] hover:border-[rgba(255,255,255,0.14)] hover:text-[rgba(245,240,232,0.94)] hover:-translate-y-px max-[980px]:text-[0.78rem] max-[980px]:py-2 max-[980px]:px-3"
+                    className="border border-[rgba(255,255,255,0.08)] rounded-full bg-[rgba(255,255,255,0.03)] text-[rgba(245,240,232,0.65)] py-2 px-3 text-[0.82rem] cursor-pointer transition-[background,border-color,color,transform] duration-[180ms] ease-linear hover:bg-[rgba(255,255,255,0.06)] hover:border-[rgba(255,255,255,0.14)] hover:text-[rgba(245,240,232,0.9)] hover:-translate-y-px max-[980px]:text-[0.76rem] max-[980px]:py-1.5 max-[980px]:px-2.5"
                     onClick={() => {
                       setComposerValue(suggestion);
                       window.requestAnimationFrame(() => {
@@ -1020,7 +1107,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
               </div>
             </section>
           ) : (
-            <div className="h-full overflow-y-auto overflow-x-hidden overscroll-contain pt-2 px-[30px] pb-[236px] min-w-0 max-[980px]:px-[18px] max-[980px]:w-full max-[980px]:max-w-full max-[980px]:pb-[180px]" ref={transcriptRef} onScroll={syncScrollShadows}>
+            <div className="chat-stage-inner h-full overflow-y-auto overflow-x-hidden overscroll-contain pt-2 px-[30px] pb-[236px] min-w-0 max-[980px]:px-[18px] max-[980px]:w-full max-[980px]:max-w-full max-[980px]:pb-[180px]" ref={transcriptRef} onScroll={syncScrollShadows}>
               <div className="chat-transcript-inner min-h-0 min-w-0">
                 {errorMessage ? <div className="max-w-[860px] mx-auto mb-[18px] border border-[rgba(181,103,69,0.3)] rounded-[18px] bg-[rgba(181,103,69,0.12)] text-[#f3c7b4] px-4 py-3.5">{errorMessage}</div> : null}
 
@@ -1060,7 +1147,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
           ].join(" ")}
         >
           <div
-            className={`composer-shell flex max-w-[980px] w-full min-w-0 min-h-[120px] flex-col gap-3.5 mx-auto border rounded-[26px] bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.02)),rgba(54,52,47,0.84)] pt-[18px] px-[22px] pb-4 shadow-[0_4px_16px_rgba(0,0,0,0.12)] max-[980px]:w-full max-[980px]:max-w-full max-[980px]:m-0 max-[980px]:min-h-0 max-[980px]:gap-2.5 max-[980px]:pt-3.5 max-[980px]:px-4 max-[980px]:pb-3 max-[980px]:rounded-[20px] transition-[border-color] duration-150 ${isDraggingOver ? "border-[rgba(212,112,73,0.6)]" : "border-[rgba(255,255,255,0.08)]"}`}
+            className={`composer-shell flex max-w-[980px] w-full min-w-0 min-h-[96px] flex-col gap-3 mx-auto border rounded-[22px] bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.02)),rgba(54,52,47,0.84)] pt-[14px] px-[18px] pb-3.5 shadow-[0_4px_16px_rgba(0,0,0,0.12)] max-[980px]:w-full max-[980px]:max-w-full max-[980px]:m-0 max-[980px]:min-h-0 max-[980px]:gap-2.5 max-[980px]:pt-3 max-[980px]:px-3.5 max-[980px]:pb-2.5 max-[980px]:rounded-[18px] transition-[border-color] duration-150 ${isDraggingOver ? "border-[rgba(212,112,73,0.6)]" : "border-[rgba(255,255,255,0.08)]"}`}
             onDragOver={(e) => {
               e.preventDefault();
               setIsDraggingOver(true);
@@ -1137,7 +1224,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
 
               <button
                 type="button"
-                className="inline-grid h-9 w-9 place-items-center rounded-full border-0 bg-transparent text-[rgba(255,255,255,0.7)] cursor-pointer hover:bg-[rgba(255,255,255,0.05)] hover:text-[rgba(255,255,255,0.92)]"
+                className="inline-grid h-8 w-8 place-items-center rounded-full border-0 bg-transparent text-[rgba(255,255,255,0.6)] cursor-pointer hover:bg-[rgba(255,255,255,0.05)] hover:text-[rgba(255,255,255,0.88)]"
                 ref={plusButtonRef}
                 onClick={() => setPlusMenuOpen((v) => !v)}
                 title="Add files, connectors, and more"
@@ -1217,7 +1304,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
 
                 <button
                   type="button"
-                  className="inline-grid h-[54px] w-[54px] place-items-center rounded-[16px] border-0 bg-[#d47049] text-[#fff8f0] cursor-pointer shadow-[0_10px_24px_rgba(207,109,67,0.3)] transition-[transform,background,opacity] duration-[180ms] ease-linear hover:not-disabled:-translate-y-px hover:not-disabled:bg-[#dd7851] disabled:opacity-50 disabled:cursor-not-allowed max-[980px]:h-[42px] max-[980px]:w-[42px] max-[980px]:rounded-[12px]"
+                  className="inline-grid h-[40px] w-[40px] place-items-center rounded-[12px] border-0 bg-[#d47049] text-[#fff8f0] cursor-pointer shadow-[0_6px_16px_rgba(207,109,67,0.25)] transition-[transform,background,opacity] duration-[180ms] ease-linear hover:not-disabled:-translate-y-px hover:not-disabled:bg-[#dd7851] disabled:opacity-50 disabled:cursor-not-allowed max-[980px]:h-[36px] max-[980px]:w-[36px] max-[980px]:rounded-[10px]"
                   onClick={() => {
                     void handleSend();
                   }}
@@ -1230,10 +1317,24 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
             </div>
           </div>
 
-          <div className="mt-2.5 text-center text-[rgba(255,255,255,0.46)] text-[0.78rem]">AI can make mistakes. Please double-check responses.</div>
+          <div className="mt-2 text-center text-[rgba(255,255,255,0.36)] text-[0.72rem]">AI can make mistakes. Please double-check responses.</div>
         </footer>
         </div>
       </main>
+
+      {renamingConversation && (
+        <RenameModal
+          currentTitle={renamingConversation.title}
+          isSaving={renameMutation.isPending}
+          onClose={() => setRenamingConversation(null)}
+          onSave={(title) => {
+            renameMutation.mutate(
+              { id: renamingConversation.id, title },
+              { onSuccess: () => setRenamingConversation(null) },
+            );
+          }}
+        />
+      )}
 
       {connectorModalOpen && <McpConnectorModal onClose={() => setConnectorModalOpen(false)} />}
 

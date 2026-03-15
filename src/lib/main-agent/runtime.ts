@@ -252,7 +252,6 @@ export async function streamMainAgentRun(input: {
           ],
           ...(configuredMcpServers.length ? { mcp_servers: configuredMcpServers } : {}),
         } as Parameters<typeof anthropic.beta.messages.toolRunner>[0]);
-
         for await (const assistantIteration of runner) {
           const toolInputSnapshots = new Map<number, string>();
           const indexToToolUseId = new Map<number, string>();
@@ -264,7 +263,7 @@ export async function streamMainAgentRun(input: {
           const blockTextBuffer = new Map<number, string>();
 
           for await (const rawEvent of assistantIteration as AsyncIterable<BetaRawMessageStreamEvent>) {
-            // console.log("rawEvent:", rawEvent);
+            console.log("rawEvent:", );
             if (rawEvent.type === "content_block_start") {
               const block = rawEvent.content_block;
 

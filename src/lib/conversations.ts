@@ -254,6 +254,7 @@ export async function listConversationSummaries(userId: string): Promise<Convers
     id: conversation.id,
     title: conversation.title,
     defaultMode: conversation.defaultMode,
+    isStarred: conversation.isStarred,
     createdAt: conversation.createdAt.toISOString(),
     updatedAt: conversation.updatedAt.toISOString(),
     latestRunStatus: conversation.runs[0]?.status ?? null,
@@ -286,6 +287,7 @@ export async function getConversationDetail(input: {
     id: detail.id,
     title: detail.title,
     defaultMode: detail.defaultMode,
+    isStarred: detail.isStarred,
     createdAt: detail.createdAt.toISOString(),
     updatedAt: detail.updatedAt.toISOString(),
     mainAgentModel: detail.mainAgentSession?.anthropicModel ?? null,
@@ -322,6 +324,28 @@ export async function deleteConversationForUser(input: {
   if (!deleted.count) {
     throw new Error("Conversation not found.");
   }
+}
+
+export async function toggleConversationStar(input: {
+  conversationId: string;
+  userId: string;
+  isStarred: boolean;
+}) {
+  await prisma.conversation.updateMany({
+    where: { id: input.conversationId, userId: input.userId },
+    data: { isStarred: input.isStarred },
+  });
+}
+
+export async function updateConversationTitle(input: {
+  conversationId: string;
+  userId: string;
+  title: string;
+}) {
+  await prisma.conversation.updateMany({
+    where: { id: input.conversationId, userId: input.userId },
+    data: { title: input.title },
+  });
 }
 
 export async function updateConversationRepoBinding(input: {

@@ -72,7 +72,7 @@ function ConnectorCard({
   const isDisabled = connector.status === "DISABLED";
 
   return (
-    <div className={`group relative rounded-[14px] border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.02)] px-4 py-3.5 transition-all duration-150 ${isDisabled ? "opacity-45" : "hover:border-[rgba(255,255,255,0.1)] hover:bg-[rgba(255,255,255,0.03)]"}`}>
+    <div className={`group relative rounded-[12px] border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.02)] px-3.5 py-2.5 transition-all duration-150 ${isDisabled ? "opacity-45" : "hover:border-[rgba(255,255,255,0.1)] hover:bg-[rgba(255,255,255,0.03)]"}`}>
       <div className="flex items-start gap-3">
         {/* Toggle */}
         <div className="pt-0.5">

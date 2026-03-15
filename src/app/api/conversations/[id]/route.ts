@@ -1,10 +1,12 @@
 import { z } from "zod";
 
-import { deleteConversationForUser, getConversationDetail, updateConversationMainModel, updateConversationRepoBinding } from "@/lib/conversations";
+import { deleteConversationForUser, getConversationDetail, toggleConversationStar, updateConversationMainModel, updateConversationRepoBinding, updateConversationTitle } from "@/lib/conversations";
 import { requireRequestUser } from "@/lib/server-auth";
 import { getCached, invalidateCache } from "@/lib/server-cache";
 
 const patchConversationSchema = z.object({
+  title: z.string().trim().min(1).max(200).optional(),
+  isStarred: z.boolean().optional(),
   mainAgentModel: z.string().trim().min(1).optional(),
   repoBindingId: z.string().nullable().optional(),
 });
@@ -69,6 +71,22 @@ export async function PATCH(
     const user = await requireRequestUser(request.headers);
     const { id } = await params;
     const body = patchConversationSchema.parse(await request.json());
+
+    if (body.title) {
+      await updateConversationTitle({
+        conversationId: id,
+        userId: user.userId,
+        title: body.title,
+      });
+    }
+
+    if (body.isStarred !== undefined) {
+      await toggleConversationStar({
+        conversationId: id,
+        userId: user.userId,
+        isStarred: body.isStarred,
+      });
+    }
 
     if (body.mainAgentModel) {
       await updateConversationMainModel({

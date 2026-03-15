@@ -116,38 +116,51 @@ textarea {
   opacity: 1;
 }
 
-/* ── Scrollbar styling ── */
+/* ── Scrollbar styling (Claude-style: invisible until hover, ultra-thin) ── */
 
-.sidebar-conversation-list::-webkit-scrollbar {
+.sidebar-conversation-list,
+.repo-scroll,
+.chat-stage-inner {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.sidebar-conversation-list:hover,
+.repo-scroll:hover,
+.chat-stage-inner:hover {
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
+.sidebar-conversation-list::-webkit-scrollbar,
+.repo-scroll::-webkit-scrollbar,
+.chat-stage-inner::-webkit-scrollbar {
   width: 4px;
 }
-.sidebar-conversation-list::-webkit-scrollbar-track {
+
+.sidebar-conversation-list::-webkit-scrollbar-track,
+.repo-scroll::-webkit-scrollbar-track,
+.chat-stage-inner::-webkit-scrollbar-track {
   background: transparent;
-}
-.sidebar-conversation-list::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 4px;
-}
-.sidebar-conversation-list::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.16);
 }
 
-.repo-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
-}
-.repo-scroll::-webkit-scrollbar {
-  width: 5px;
-}
-.repo-scroll::-webkit-scrollbar-track {
+.sidebar-conversation-list::-webkit-scrollbar-thumb,
+.repo-scroll::-webkit-scrollbar-thumb,
+.chat-stage-inner::-webkit-scrollbar-thumb {
   background: transparent;
+  border-radius: 4px;
+  transition: background 0.2s;
 }
-.repo-scroll::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 3px;
+
+.sidebar-conversation-list:hover::-webkit-scrollbar-thumb,
+.repo-scroll:hover::-webkit-scrollbar-thumb,
+.chat-stage-inner:hover::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
 }
-.repo-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.15);
+
+.sidebar-conversation-list::-webkit-scrollbar-thumb:hover,
+.repo-scroll::-webkit-scrollbar-thumb:hover,
+.chat-stage-inner::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.18);
 }
 
 /* ── Sibling selectors ── */

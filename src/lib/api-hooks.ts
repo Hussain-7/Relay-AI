@@ -152,6 +152,7 @@ function toSummary(detail: ConversationDetailDto): ConversationSummaryDto {
     id: detail.id,
     title: detail.title,
     defaultMode: detail.defaultMode,
+    isStarred: detail.isStarred,
     createdAt: detail.createdAt,
     updatedAt: detail.updatedAt,
     latestRunStatus: latestRun?.status ?? null,
@@ -184,6 +185,7 @@ export function useCreateConversation() {
         id: optimisticId,
         title: "New chat",
         defaultMode: "AGENT",
+        isStarred: false,
         createdAt: now,
         updatedAt: now,
         latestRunStatus: null,
@@ -254,6 +256,83 @@ export function useDeleteConversation() {
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.conversations });
+    },
+  });
+}
+
+export function useToggleConversationStar() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, isStarred }: { id: string; isStarred: boolean }) => {
+      const data = await fetchJson<{ conversation: ConversationDetailDto }>(
+        `/api/conversations/${id}`,
+        { method: "PATCH", body: JSON.stringify({ isStarred }) },
+      );
+      return data.conversation;
+    },
+    onMutate: async ({ id, isStarred }) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.conversations });
+      const previousList = queryClient.getQueryData<ConversationSummaryDto[]>(queryKeys.conversations);
+
+      queryClient.setQueryData<ConversationSummaryDto[]>(
+        queryKeys.conversations,
+        (old) => (old ?? []).map((c) => (c.id === id ? { ...c, isStarred } : c)),
+      );
+      return { previousList };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previousList) {
+        queryClient.setQueryData(queryKeys.conversations, context.previousList);
+      }
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.conversations });
+    },
+  });
+}
+
+export function useRenameConversation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, title }: { id: string; title: string }) => {
+      const data = await fetchJson<{ conversation: ConversationDetailDto }>(
+        `/api/conversations/${id}`,
+        { method: "PATCH", body: JSON.stringify({ title }) },
+      );
+      return data.conversation;
+    },
+    onMutate: async ({ id, title }) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.conversations });
+      const previousList = queryClient.getQueryData<ConversationSummaryDto[]>(queryKeys.conversations);
+      const previousDetail = queryClient.getQueryData<ConversationDetailDto>(queryKeys.conversation(id));
+
+      // Optimistic update in list
+      queryClient.setQueryData<ConversationSummaryDto[]>(
+        queryKeys.conversations,
+        (old) => (old ?? []).map((c) => (c.id === id ? { ...c, title } : c)),
+      );
+      // Optimistic update in detail
+      if (previousDetail) {
+        queryClient.setQueryData<ConversationDetailDto>(
+          queryKeys.conversation(id),
+          { ...previousDetail, title },
+        );
+      }
+      return { previousList, previousDetail };
+    },
+    onError: (_err, { id }, context) => {
+      if (context?.previousList) {
+        queryClient.setQueryData(queryKeys.conversations, context.previousList);
+      }
+      if (context?.previousDetail) {
+        queryClient.setQueryData(queryKeys.conversation(id), context.previousDetail);
+      }
+    },
+    onSettled: (_data, _err, { id }) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.conversations });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.conversation(id) });
     },
   });
 }

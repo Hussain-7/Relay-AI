@@ -32,11 +32,11 @@ export default function LoginPage() {
           </div>
 
           {/* Headline */}
-          <h1 className="font-serif text-[2.8rem] leading-[1.1] tracking-[-0.03em] text-[rgba(245,240,232,0.95)] max-[480px]:text-[2.2rem]">
+          <h1 className="font-serif text-[2.4rem] leading-[1.1] tracking-[-0.03em] text-[rgba(245,240,232,0.95)] max-[480px]:text-[1.9rem]">
             Think fast,<br />
             build faster
           </h1>
-          <p className="mt-4 text-[1.05rem] leading-[1.5] text-[rgba(245,240,232,0.55)] max-w-[340px]">
+          <p className="mt-3 text-[0.95rem] leading-[1.5] text-[rgba(245,240,232,0.5)] max-w-[340px]">
             Your AI workspace for chat, research, and coding — powered by Claude.
           </p>
 
@@ -46,7 +46,7 @@ export default function LoginPage() {
               type="button"
               onClick={handleGoogleSignIn}
               disabled={isLoading}
-              className="flex w-full items-center justify-center gap-3 rounded-xl border border-[rgba(255,255,255,0.12)] bg-[rgba(255,255,255,0.06)] px-5 py-3.5 text-[0.95rem] font-medium text-[rgba(245,240,232,0.92)] transition-all duration-150 hover:bg-[rgba(255,255,255,0.1)] hover:border-[rgba(255,255,255,0.18)] active:scale-[0.985] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-[rgba(255,255,255,0.12)] bg-[rgba(255,255,255,0.06)] px-5 py-2.5 text-[0.88rem] font-medium text-[rgba(245,240,232,0.92)] transition-all duration-150 hover:bg-[rgba(255,255,255,0.1)] hover:border-[rgba(255,255,255,0.18)] active:scale-[0.985] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
               <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
                 <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4" />

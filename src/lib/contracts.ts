@@ -108,6 +108,7 @@ export interface ConversationSummaryDto {
   id: string;
   title: string;
   defaultMode: ConversationMode;
+  isStarred: boolean;
   createdAt: string;
   updatedAt: string;
   latestRunStatus: RunStatus | null;
@@ -120,6 +121,7 @@ export interface ConversationDetailDto {
   id: string;
   title: string;
   defaultMode: ConversationMode;
+  isStarred: boolean;
   createdAt: string;
   updatedAt: string;
   mainAgentModel: string | null;
