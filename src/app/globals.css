@@ -1,5 +1,5 @@
+@import "streamdown/styles.css" layer(streamdown);
 @import "tailwindcss";
-@import "streamdown/styles.css";
 @source "../../node_modules/streamdown/dist/*.js";
 
 :root {
@@ -26,44 +26,46 @@
   --font-mono: var(--font-primary-mono);
 }
 
-* {
-  box-sizing: border-box;
-}
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
 
-html,
-body {
-  height: 100%;
-  min-height: 100%;
-  overflow: hidden;
-}
+  html,
+  body {
+    height: 100%;
+    min-height: 100%;
+    overflow: hidden;
+  }
 
-body {
-  margin: 0;
-  color: var(--foreground);
-  background:
-    radial-gradient(1200px 680px at 0% 8%, rgba(110, 76, 52, 0.18), transparent 52%),
-    radial-gradient(1100px 460px at 100% 0%, rgba(92, 98, 83, 0.12), transparent 58%),
-    linear-gradient(180deg, #2a2925 0%, #1f1f1d 28%, #181816 100%);
-  font-family: var(--font-primary-sans), "Segoe UI", sans-serif;
-}
+  body {
+    margin: 0;
+    color: var(--foreground);
+    background:
+      radial-gradient(1200px 680px at 0% 8%, rgba(110, 76, 52, 0.18), transparent 52%),
+      radial-gradient(1100px 460px at 100% 0%, rgba(92, 98, 83, 0.12), transparent 58%),
+      linear-gradient(180deg, #2a2925 0%, #1f1f1d 28%, #181816 100%);
+    font-family: var(--font-primary-sans), "Segoe UI", sans-serif;
+  }
 
-pre,
-code {
-  font-family: var(--font-primary-mono), "SFMono-Regular", Menlo, monospace;
-}
+  pre,
+  code {
+    font-family: var(--font-primary-mono), "SFMono-Regular", Menlo, monospace;
+  }
 
-a {
-  color: inherit;
-}
+  a {
+    color: inherit;
+  }
 
-button,
-input,
-textarea {
-  font: inherit;
-}
+  button,
+  input,
+  textarea {
+    font: inherit;
+  }
 
-*::selection {
-  background: rgba(232, 210, 162, 0.22);
+  *::selection {
+    background: rgba(232, 210, 162, 0.22);
+  }
 }
 
 /* ── App shell grid (custom easing/transitions) ── */

@@ -1021,6 +1021,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                   className={`inline-flex items-center gap-1.5 w-auto max-w-[min(100%,42rem)] min-w-0 border-0 rounded-[10px] bg-transparent text-[rgba(235,230,220,0.82)] cursor-pointer py-1.5 px-2.5 overflow-hidden transition-[color,background] duration-[140ms] ease-linear hover:bg-[rgba(255,255,255,0.065)] hover:text-[rgba(245,240,232,0.96)] max-[980px]:max-w-full max-[980px]:border-0 max-[980px]:rounded-none max-[980px]:bg-transparent max-[980px]:p-0`}
                   aria-label={`Open menu for ${activeConversation.title}`}
                   aria-expanded={headerMenuOpen}
+                  data-header-menu-trigger
                   onClick={() => {
                     setOpenConversationMenuId(null);
                     setHeaderMenuOpen((current) => !current);
@@ -1034,18 +1035,23 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                 </button>
 
                 {headerMenuOpen ? (
-                  <div className="absolute top-[calc(100%+6px)] left-0 min-w-[180px] z-10 border border-[rgba(255,255,255,0.1)] rounded-[12px] bg-[rgba(42,40,36,0.98)] p-1 shadow-[0_8px_30px_rgba(0,0,0,0.4)] backdrop-blur-[18px]">
-                    <button
-                      type="button"
-                      className="chat-action-menu-item chat-action-menu-item-danger flex w-full items-center justify-start border-0 rounded-[8px] bg-transparent text-[#f2c4b2] cursor-pointer px-3 py-2 text-left text-[0.88rem] leading-[1.2] transition-[background,color] duration-[140ms] ease-linear"
-                      onClick={() => {
-                        void handleDeleteConversation(activeConversation.id);
-                      }}
-                      disabled={deletingConversationId === activeConversation.id}
-                    >
-                      {deletingConversationId === activeConversation.id ? "Deleting\u2026" : "Delete chat"}
-                    </button>
-                  </div>
+                  <SidebarMenuPortal
+                    triggerSelector={`[data-header-menu-trigger]`}
+                    isStarred={activeConversation.isStarred}
+                    onToggleStar={() => {
+                      setHeaderMenuOpen(false);
+                      starMutation.mutate({ id: activeConversation.id, isStarred: !activeConversation.isStarred });
+                    }}
+                    onRename={() => {
+                      setHeaderMenuOpen(false);
+                      setRenamingConversation({ id: activeConversation.id, title: activeConversation.title });
+                    }}
+                    onDelete={(event) => {
+                      event.stopPropagation();
+                      void handleDeleteConversation(activeConversation.id);
+                    }}
+                    isDeleting={deletingConversationId === activeConversation.id}
+                  />
                 ) : null}
               </div>
             ) : (
