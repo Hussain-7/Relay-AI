@@ -2,6 +2,7 @@ import { Octokit } from "octokit";
 import { createAppAuth } from "@octokit/auth-app";
 
 import { env, hasGitHubAppConfig } from "@/lib/env";
+import { invalidateGithubRepoCache } from "@/lib/github/service";
 import { prisma } from "@/lib/prisma";
 import { requireRequestUser } from "@/lib/server-auth";
 
@@ -109,6 +110,9 @@ export async function DELETE(request: Request) {
     await prisma.githubInstallation.deleteMany({
       where: { userId: user.userId },
     });
+
+    // Clear cached repo list
+    await invalidateGithubRepoCache(user.userId);
 
     return Response.json({ ok: true });
   } catch {

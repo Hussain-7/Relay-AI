@@ -1,6 +1,7 @@
 import crypto from "crypto";
 
 import { env, hasGitHubAppConfig } from "@/lib/env";
+import { warmGithubRepoCache } from "@/lib/github/service";
 import { encryptToken } from "@/lib/mcp-token-crypto";
 import { prisma } from "@/lib/prisma";
 
@@ -38,8 +39,9 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const installationId = url.searchParams.get("installation_id");
   const state = url.searchParams.get("state");
+  const code = url.searchParams.get("code");
 
-  if (!installationId || !state) {
+  if (!state) {
     return Response.redirect(`${env.APP_URL}/chat/new?github_error=missing_params`, 302);
   }
 
@@ -49,27 +51,28 @@ export async function GET(request: Request) {
   }
 
   try {
-    // Store the installation for this user
-    await prisma.githubInstallation.upsert({
-      where: {
-        userId_installationId: {
+    // If installation_id is present, this is a fresh app install
+    if (installationId) {
+      await prisma.githubInstallation.upsert({
+        where: {
+          userId_installationId: {
+            userId: verified.userId,
+            installationId,
+          },
+        },
+        update: {
+          updatedAt: new Date(),
+        },
+        create: {
           userId: verified.userId,
           installationId,
         },
-      },
-      update: {
-        updatedAt: new Date(),
-      },
-      create: {
-        userId: verified.userId,
-        installationId,
-      },
-    });
+      });
+    }
 
-    // Exchange OAuth code for user access token (if available)
-    // GitHub sends `code` when "Request user authorization during installation" is enabled
-    const code = url.searchParams.get("code");
-
+    // Exchange OAuth code for user access token
+    // Sent during app install (if "Request user authorization" is enabled)
+    // OR during standalone OAuth authorize flow (/api/github/authorize)
     if (code && env.GITHUB_APP_CLIENT_ID && env.GITHUB_APP_CLIENT_SECRET) {
       try {
         const tokenResponse = await fetch("https://github.com/login/oauth/access_token", {
@@ -86,7 +89,17 @@ export async function GET(request: Request) {
           access_token?: string;
           refresh_token?: string;
           expires_in?: number;
+          error?: string;
+          error_description?: string;
         };
+
+        console.log(`[github] Token exchange response:`, {
+          hasAccessToken: !!tokenData.access_token,
+          hasRefreshToken: !!tokenData.refresh_token,
+          expiresIn: tokenData.expires_in,
+          error: tokenData.error,
+          errorDescription: tokenData.error_description,
+        });
 
         if (tokenData.access_token) {
           const { encrypted: encToken, iv: tokenIv } = encryptToken(tokenData.access_token);
@@ -105,20 +118,33 @@ export async function GET(request: Request) {
             updateData.refreshTokenIv = refreshIv;
           }
 
-          await prisma.githubInstallation.update({
-            where: {
-              userId_installationId: {
-                userId: verified.userId,
-                installationId,
+          // Find the installation to update — use provided installationId or look up existing
+          const targetInstallationId = installationId
+            ?? (await prisma.githubInstallation.findFirst({
+                where: { userId: verified.userId },
+                orderBy: { updatedAt: "desc" },
+              }))?.installationId;
+
+          if (targetInstallationId) {
+            await prisma.githubInstallation.update({
+              where: {
+                userId_installationId: {
+                  userId: verified.userId,
+                  installationId: targetInstallationId,
+                },
               },
-            },
-            data: updateData,
-          });
+              data: updateData,
+            });
+            console.log(`[github] User OAuth token stored for userId=${verified.userId}`);
+          }
         }
-      } catch {
-        // User token exchange failed — installation still saved, just no user token
+      } catch (err) {
+        console.error(`[github] User token exchange failed:`, err);
       }
     }
+
+    // Pre-populate repo cache (owners + repos per owner) while user is redirected
+    void warmGithubRepoCache(verified.userId).catch(() => {});
 
     // Redirect back to the app with success
     return Response.redirect(`${env.APP_URL}/chat/new?github_connected=true`, 302);

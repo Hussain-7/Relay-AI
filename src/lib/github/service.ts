@@ -4,6 +4,7 @@ import { createAppAuth } from "@octokit/auth-app";
 import { env, hasGitHubAppConfig } from "@/lib/env";
 import { decryptToken, encryptToken } from "@/lib/mcp-token-crypto";
 import { prisma } from "@/lib/prisma";
+import { getCached, invalidateCache } from "@/lib/server-cache";
 
 export function getGitHubConfigurationStatus() {
   return {
@@ -33,7 +34,7 @@ async function getInstallationClient(userId: string) {
   });
 }
 
-type RepoListItem = {
+export type RepoListItem = {
   fullName: string;
   name: string;
   owner: string;
@@ -122,15 +123,211 @@ export async function listGithubRepos(userId: string): Promise<RepoListItem[]> {
 }
 
 /**
- * Search ALL repos the user has access to via GitHub Search API.
- * Used for the search bar in the repo picker modal.
+ * Fetch the authenticated user's login + all org logins they belong to.
+ * Returns [personalLogin, ...orgLogins].
  */
-export async function searchGithubRepos(userId: string, query: string): Promise<RepoListItem[]> {
+export async function listGithubOwners(userId: string): Promise<string[]> {
+  const userToken = await getGitHubUserToken(userId);
+  if (userToken) {
+    const client = new Octokit({ auth: userToken });
+    const [{ data: user }, { data: orgs }] = await Promise.all([
+      client.request("GET /user"),
+      client.request("GET /user/orgs", { per_page: 25 }),
+    ]);
+    return [user.login, ...orgs.map((o) => o.login)];
+  }
+
+  // Installation fallback: get account logins from all installations for this user
+  if (!hasGitHubAppConfig()) return [];
+
+  const installations = await prisma.githubInstallation.findMany({
+    where: { userId },
+    orderBy: { updatedAt: "desc" },
+  });
+  if (installations.length === 0) return [];
+
+  // Each installation's accountLogin is an owner (user or org)
+  const owners: string[] = [];
+  const seen = new Set<string>();
+  for (const inst of installations) {
+    if (inst.accountLogin && !seen.has(inst.accountLogin)) {
+      seen.add(inst.accountLogin);
+      owners.push(inst.accountLogin);
+    }
+  }
+
+  // If no accountLogins stored, fall back to extracting from repos
+  if (owners.length === 0) {
+    const client = await getInstallationClient(userId);
+    if (!client) return [];
+    let page = 1;
+    while (page <= 5) {
+      const { data } = await client.request("GET /installation/repositories", { per_page: 100, page });
+      for (const repo of data.repositories) {
+        const owner = repo.full_name.split("/")[0];
+        if (!seen.has(owner)) {
+          seen.add(owner);
+          owners.push(owner);
+        }
+      }
+      if (data.repositories.length < 100) break;
+      page++;
+    }
+  }
+
+  return owners;
+}
+
+function pushRepo(repos: RepoListItem[], repo: { full_name: string; name: string; owner?: { login: string } | null; default_branch?: string; private: boolean; description?: string | null; updated_at?: string | null }) {
+  repos.push({
+    fullName: repo.full_name,
+    name: repo.name,
+    owner: repo.owner?.login ?? repo.full_name.split("/")[0],
+    defaultBranch: repo.default_branch ?? "main",
+    isPrivate: repo.private,
+    description: repo.description ?? null,
+    updatedAt: repo.updated_at ?? new Date().toISOString(),
+  });
+}
+
+/**
+ * Fetch repos for a specific owner.
+ * - Personal: ALL repos paginated (up to 500), sorted by updated.
+ * - Org: 50 most recently updated repos (1 page).
+ */
+export async function listGithubReposByOwner(
+  userId: string,
+  owner: string,
+): Promise<RepoListItem[]> {
+  const repos: RepoListItem[] = [];
+  const userToken = await getGitHubUserToken(userId);
+
+  if (userToken) {
+    const client = new Octokit({ auth: userToken });
+    const { data: authedUser } = await client.request("GET /user");
+
+    if (authedUser.login === owner) {
+      // Personal repos — paginate ALL (up to 500)
+      let page = 1;
+      const perPage = 100;
+      const maxPages = 5;
+      while (page <= maxPages) {
+        const { data } = await client.request("GET /user/repos", {
+          per_page: perPage,
+          page,
+          sort: "updated",
+          affiliation: "owner,collaborator,organization_member",
+        });
+        console.log(`[github] listGithubReposByOwner page=${page} returned=${data.length} total=${repos.length + data.length}`);
+        for (const repo of data) pushRepo(repos, repo);
+        if (data.length < perPage) break;
+        page++;
+      }
+      console.log(`[github] listGithubReposByOwner DONE owner=${owner} total=${repos.length}`);
+    } else {
+      // Org repos — 50 most recently updated
+      const { data } = await client.request("GET /orgs/{org}/repos", {
+        org: owner,
+        per_page: 50,
+        sort: "updated",
+        type: "all",
+      });
+      for (const repo of data) pushRepo(repos, repo);
+    }
+    return repos;
+  }
+
+  // Installation fallback (no user OAuth token) — paginate all
+  const client = await getInstallationClient(userId);
+  if (!client) return [];
+  let page = 1;
+  const perPage = 100;
+  const maxPages = 5;
+  while (page <= maxPages) {
+    const { data } = await client.request("GET /installation/repositories", {
+      per_page: perPage,
+      page,
+    });
+    for (const repo of data.repositories) {
+      if (repo.full_name.split("/")[0] === owner) {
+        pushRepo(repos, repo as unknown as Parameters<typeof pushRepo>[1]);
+      }
+    }
+    if (data.repositories.length < perPage) break;
+    page++;
+  }
+  console.log(`[github] listGithubReposByOwner installation fallback owner=${owner} total=${repos.length}`);
+  return repos;
+}
+
+const GITHUB_REPOS_CACHE_TTL = 86400; // 24 hours
+
+/**
+ * Cached owners list (user login + org logins). 24h TTL.
+ */
+export async function listGithubOwnersCached(
+  userId: string,
+  forceRefresh?: boolean,
+): Promise<string[]> {
+  const cacheKey = `github-owners:${userId}`;
+  if (forceRefresh) {
+    await invalidateCache(cacheKey);
+  }
+  return getCached(cacheKey, GITHUB_REPOS_CACHE_TTL, () => listGithubOwners(userId));
+}
+
+/**
+ * Cached repos for a specific owner. 24h TTL.
+ */
+export async function listGithubReposByOwnerCached(
+  userId: string,
+  owner: string,
+  forceRefresh?: boolean,
+): Promise<RepoListItem[]> {
+  const cacheKey = `github-repos:${userId}:${owner}`;
+  if (forceRefresh) {
+    await invalidateCache(cacheKey);
+  }
+  return getCached(cacheKey, GITHUB_REPOS_CACHE_TTL, () => listGithubReposByOwner(userId, owner));
+}
+
+/**
+ * Clear all GitHub caches for a user (repos, owners, per-owner).
+ */
+export async function invalidateGithubRepoCache(userId: string): Promise<void> {
+  await invalidateCache(`github-owners:${userId}`);
+  // Per-owner caches use dynamic keys — clear owner keys we know about
+  const owners = await listGithubOwnersCached(userId).catch(() => []);
+  const ownerKeys = owners.map((o) => `github-repos:${userId}:${o}`);
+  if (ownerKeys.length > 0) {
+    await invalidateCache(...ownerKeys);
+  }
+}
+
+/**
+ * Pre-populate caches for a user: owners list + repos per owner.
+ * Called fire-and-forget after GitHub App install.
+ */
+export async function warmGithubRepoCache(userId: string): Promise<void> {
+  const owners = await listGithubOwnersCached(userId, true);
+  // Cache all owners' repos in parallel
+  await Promise.all(
+    owners.map((owner) => listGithubReposByOwnerCached(userId, owner, true)),
+  );
+}
+
+/**
+ * Search repos via GitHub Search API.
+ */
+export async function searchGithubRepos(
+  userId: string,
+  query: string,
+): Promise<RepoListItem[]> {
   const userToken = await getGitHubUserToken(userId);
   if (userToken) {
     const userClient = new Octokit({ auth: userToken });
     const { data } = await userClient.request("GET /search/repositories", {
-      q: `${query} in:name user:@me fork:true`,
+      q: `${query} in:name fork:true`,
       per_page: 15,
       sort: "updated",
     });
@@ -145,15 +342,8 @@ export async function searchGithubRepos(userId: string, query: string): Promise<
     }));
   }
 
-  // Fallback: client-side filter from installation repos
-  const allRepos = await listGithubRepos(userId);
-  const lowerQuery = query.toLowerCase();
-  return allRepos.filter(
-    (r) =>
-      r.fullName.toLowerCase().includes(lowerQuery) ||
-      r.name.toLowerCase().includes(lowerQuery) ||
-      (r.description ?? "").toLowerCase().includes(lowerQuery),
-  );
+  // Fallback: filter from cached repos for current owner
+  return [];
 }
 
 export async function deleteRepoBinding(userId: string, repoBindingId: string) {

@@ -113,6 +113,7 @@ export function useDisconnectGithub() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.githubStatus });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.repoBindings });
     },
   });
 }
@@ -438,17 +439,50 @@ export interface GithubRepoSearchResult {
   updatedAt: string;
 }
 
+export interface RepoBindingsData {
+  bindings: RepoBindingListItem[];
+  available: GithubRepoSearchResult[];
+  owners: string[];
+}
+
 export function useRepoBindings() {
   return useQuery({
     queryKey: queryKeys.repoBindings,
     queryFn: async () => {
-      const data = await fetchJson<{
-        bindings: RepoBindingListItem[];
-        available: GithubRepoSearchResult[];
-      }>("/api/repo-bindings");
+      const data = await fetchJson<RepoBindingsData>("/api/repo-bindings");
       return data;
     },
-    staleTime: 5 * 60 * 1000, // 5 min cache — repo list rarely changes
+    staleTime: 30 * 60 * 1000, // 30 min — backed by server-side Redis cache
+  });
+}
+
+export function useRefreshRepoBindings() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      const data = await fetchJson<RepoBindingsData>("/api/repo-bindings?refresh=true");
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(queryKeys.repoBindings, data);
+      // Invalidate all per-owner caches so they re-fetch
+      void queryClient.invalidateQueries({ queryKey: ["repo-bindings", "owner"] });
+    },
+  });
+}
+
+export function useOwnerRepos(owner: string | null) {
+  return useQuery({
+    queryKey: ["repo-bindings", "owner", owner] as const,
+    queryFn: async () => {
+      const data = await fetchJson<{ repos: GithubRepoSearchResult[] }>(
+        `/api/repo-bindings?owner=${encodeURIComponent(owner!)}`,
+      );
+      return data.repos;
+    },
+    enabled: owner !== null,
+    staleTime: 30 * 60 * 1000,
   });
 }
 
@@ -477,7 +511,7 @@ export function useConnectRepo() {
     },
     onMutate: async (repoFullName) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.repoBindings });
-      const previous = queryClient.getQueryData<{ bindings: RepoBindingListItem[]; available: GithubRepoSearchResult[] }>(queryKeys.repoBindings);
+      const previous = queryClient.getQueryData<RepoBindingsData>(queryKeys.repoBindings);
 
       // Optimistic: add to bindings immediately
       const optimisticBinding: RepoBindingListItem = {
@@ -487,22 +521,24 @@ export function useConnectRepo() {
         installationId: null,
         metadataJson: null,
       };
-      queryClient.setQueryData<{ bindings: RepoBindingListItem[]; available: GithubRepoSearchResult[] }>(
+      queryClient.setQueryData<RepoBindingsData>(
         queryKeys.repoBindings,
         (old) => ({
           bindings: [optimisticBinding, ...(old?.bindings ?? [])],
           available: old?.available ?? [],
+          owners: old?.owners ?? [],
         }),
       );
       return { previous, optimisticId: optimisticBinding.id };
     },
     onSuccess: (binding, _vars, context) => {
       // Replace optimistic with real binding
-      queryClient.setQueryData<{ bindings: RepoBindingListItem[]; available: GithubRepoSearchResult[] }>(
+      queryClient.setQueryData<RepoBindingsData>(
         queryKeys.repoBindings,
         (old) => ({
           bindings: (old?.bindings ?? []).map((b) => b.id === context?.optimisticId ? binding : b),
           available: old?.available ?? [],
+          owners: old?.owners ?? [],
         }),
       );
     },
@@ -527,12 +563,13 @@ export function useDeleteRepoBinding() {
     },
     onMutate: async (id) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.repoBindings });
-      const previous = queryClient.getQueryData<{ bindings: RepoBindingListItem[]; available: GithubRepoSearchResult[] }>(queryKeys.repoBindings);
-      queryClient.setQueryData<{ bindings: RepoBindingListItem[]; available: GithubRepoSearchResult[] }>(
+      const previous = queryClient.getQueryData<RepoBindingsData>(queryKeys.repoBindings);
+      queryClient.setQueryData<RepoBindingsData>(
         queryKeys.repoBindings,
         (old) => ({
           bindings: (old?.bindings ?? []).filter((b) => b.id !== id),
           available: old?.available ?? [],
+          owners: old?.owners ?? [],
         }),
       );
       return { previous };
@@ -565,7 +602,7 @@ export function useLinkRepoToConversation() {
       const previous = queryClient.getQueryData<ConversationDetailDto>(queryKeys.conversation(conversationId));
 
       if (previous) {
-        const repoData = queryClient.getQueryData<{ bindings: RepoBindingListItem[]; available: GithubRepoSearchResult[] }>(queryKeys.repoBindings);
+        const repoData = queryClient.getQueryData<RepoBindingsData>(queryKeys.repoBindings);
         const matchingBinding = repoData?.bindings.find((b) => b.id === repoBindingId);
 
         queryClient.setQueryData<ConversationDetailDto>(

@@ -137,6 +137,15 @@ export function IconGithub() {
   );
 }
 
+export function IconRefresh({ spinning }: { spinning?: boolean } = {}) {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" className={`h-4 w-4${spinning ? " animate-spin" : ""}`}>
+      <path d="M21 12a9 9 0 1 1-2.63-6.36" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M21 3v6h-6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export function IconCopy() {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4">
