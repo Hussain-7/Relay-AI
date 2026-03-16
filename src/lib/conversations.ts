@@ -122,6 +122,16 @@ function mapEvents(conversationId: string, runId: string, events: RunEvent[]): T
 }
 
 function mapRun(conversationId: string, run: ConversationDetailRecord["runs"][number]): RunDto {
+  const inputAttachments = run.attachments.filter(
+    (a) => {
+      const meta = a.metadataJson as Record<string, unknown> | null;
+      return !meta?.source || meta.source === "user_upload";
+    },
+  );
+  const outputAttachments = run.attachments.filter(
+    (a) => (a.metadataJson as Record<string, unknown> | null)?.source === "skill_output",
+  );
+
   return {
     id: run.id,
     status: run.status,
@@ -132,7 +142,8 @@ function mapRun(conversationId: string, run: ConversationDetailRecord["runs"][nu
     updatedAt: run.updatedAt.toISOString(),
     completedAt: run.completedAt?.toISOString() ?? null,
     cancelledAt: run.cancelledAt?.toISOString() ?? null,
-    attachments: run.attachments.map(mapAttachment),
+    attachments: inputAttachments.map(mapAttachment),
+    outputAttachments: outputAttachments.map(mapAttachment),
     approvals: run.approvals.map((approval) => ({
       id: approval.id,
       kind: approval.kind,

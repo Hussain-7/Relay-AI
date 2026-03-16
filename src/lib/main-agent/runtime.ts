@@ -3,9 +3,9 @@ import type {
   BetaMessage,
   BetaRawMessageStreamEvent,
 } from "@anthropic-ai/sdk/resources/beta/messages/messages";
-import { Prisma, RunStatus } from "@prisma/client";
+import { type AttachmentKind, Prisma, RunStatus } from "@prisma/client";
 
-import { type TimelineEventEnvelope } from "@/lib/contracts";
+import { type AttachmentDto, type TimelineEventEnvelope } from "@/lib/contracts";
 import { env, hasAnthropicApiKey } from "@/lib/env";
 import { getConfiguredMcpServers } from "@/lib/main-agent/mcp";
 import { buildMainAgentSystemPrompt } from "@/lib/main-agent/system-prompt";
@@ -195,9 +195,14 @@ export async function streamMainAgentRun(input: {
         const betas: string[] = [
           "compact-2026-01-12",
           "context-management-2025-06-27",
-          ...(attachments.length ? ["files-api-2025-04-14"] : []),
+          "files-api-2025-04-14",
+          "code-execution-2025-08-25",
+          "skills-2025-10-02",
           ...(configuredMcpServers.length ? ["mcp-client-2025-11-20"] : []),
         ];
+
+        // Resolve persisted container ID for cross-turn session continuity
+        const existingContainerId = (mainAgentSession.metadataJson as Record<string, unknown> | null)?.containerId as string | undefined;
 
         // Start API call immediately — don't wait for DB writes yet
         const runner = anthropic.beta.messages.toolRunner({
@@ -206,6 +211,15 @@ export async function streamMainAgentRun(input: {
           max_iterations: 20,
           stream: true,
           betas,
+          container: {
+            ...(existingContainerId ? { id: existingContainerId } : {}),
+            skills: [
+              { type: "anthropic" as const, skill_id: "xlsx", version: "latest" },
+              { type: "anthropic" as const, skill_id: "pptx", version: "latest" },
+              { type: "anthropic" as const, skill_id: "docx", version: "latest" },
+              { type: "anthropic" as const, skill_id: "pdf", version: "latest" },
+            ],
+          },
           metadata: {
             user_id: input.userId,
           },
@@ -641,10 +655,60 @@ export async function streamMainAgentRun(input: {
           }
         }
 
+        // Persist container ID for cross-turn reuse
+        const containerId = (finalMessage as unknown as { container?: { id: string } }).container?.id;
+        if (containerId) {
+          const existingMeta = (mainAgentSession.metadataJson as Record<string, unknown> | null) ?? {};
+          pendingWrites.push(
+            prisma.mainAgentSession.update({
+              where: { id: mainAgentSession.id },
+              data: { metadataJson: { ...existingMeta, containerId } as Prisma.InputJsonValue },
+            }).catch(() => {}),
+          );
+        }
+
+        // Extract file IDs from skill-generated outputs (xlsx, pptx, docx, pdf)
+        const skillFileIds = extractSkillFileIds(finalMessage);
+        const outputAttachments: AttachmentDto[] = [];
+
+        if (skillFileIds.length > 0) {
+          for (const fileId of skillFileIds) {
+            try {
+              const meta = await anthropic.beta.files.retrieveMetadata(fileId, {
+                betas: ["files-api-2025-04-14"],
+              });
+              const attachment = await prisma.attachment.create({
+                data: {
+                  conversationId: input.conversationId,
+                  runId,
+                  kind: inferOutputAttachmentKind(meta.filename),
+                  filename: meta.filename,
+                  mediaType: meta.mime_type ?? "application/octet-stream",
+                  sizeBytes: meta.size_bytes ?? null,
+                  anthropicFileId: fileId,
+                  metadataJson: { source: "skill_output", downloadable: true },
+                },
+              });
+              outputAttachments.push({
+                id: attachment.id,
+                kind: attachment.kind,
+                filename: attachment.filename,
+                mediaType: attachment.mediaType,
+                sizeBytes: attachment.sizeBytes,
+                anthropicFileId: attachment.anthropicFileId,
+                createdAt: attachment.createdAt.toISOString(),
+                metadataJson: attachment.metadataJson as Record<string, unknown> | null,
+              });
+            } catch (err) {
+              console.warn(`Failed to process skill file ${fileId}:`, err);
+            }
+          }
+        }
+
         // Only include text that appears after the last tool-related block.
         // Pre-tool text (e.g. "Sure! Let me look that up") is shown in the
         // timeline as intermediate text, not in the final response bubble.
-        const toolBlockTypes = new Set(["tool_use", "tool_result", "server_tool_use", "mcp_tool_use", "mcp_tool_result", "web_search_tool_result", "web_fetch_tool_result", "code_execution_tool_result", "tool_search_tool_result"]);
+        const toolBlockTypes = new Set(["tool_use", "tool_result", "server_tool_use", "mcp_tool_use", "mcp_tool_result", "web_search_tool_result", "web_fetch_tool_result", "code_execution_tool_result", "bash_code_execution_tool_result", "text_editor_code_execution_tool_result", "tool_search_tool_result"]);
         let lastToolIndex = -1;
         for (let i = finalMessage.content.length - 1; i >= 0; i--) {
           const blockType = (finalMessage.content[i] as unknown as { type: string }).type;
@@ -679,6 +743,7 @@ export async function streamMainAgentRun(input: {
           text: finalText,
           model: finalMessage.model,
           stopReason: finalMessage.stop_reason,
+          ...(outputAttachments.length > 0 ? { outputAttachments } : {}),
           usage: {
             inputTokens,
             outputTokens,
@@ -799,4 +864,42 @@ export async function streamMainAgentRun(input: {
     runId,
     stream,
   };
+}
+
+/** Scan final message content blocks for file_id references from Skills. */
+function extractSkillFileIds(message: BetaMessage): string[] {
+  const fileIds: string[] = [];
+  for (const block of message.content) {
+    const blockAny = block as unknown as Record<string, unknown>;
+    const blockType = blockAny.type as string;
+    if (
+      blockType === "bash_code_execution_tool_result" ||
+      blockType === "code_execution_tool_result"
+    ) {
+      collectFileIds(blockAny.content, fileIds);
+    }
+  }
+  return fileIds;
+}
+
+function collectFileIds(value: unknown, out: string[]) {
+  if (!value || typeof value !== "object") return;
+  if (Array.isArray(value)) {
+    for (const item of value) collectFileIds(item, out);
+    return;
+  }
+  const obj = value as Record<string, unknown>;
+  if ("file_id" in obj && typeof obj.file_id === "string") {
+    out.push(obj.file_id);
+  }
+  // Recurse into known container fields
+  if ("content" in obj) collectFileIds(obj.content, out);
+}
+
+function inferOutputAttachmentKind(filename: string): AttachmentKind {
+  const ext = filename.split(".").pop()?.toLowerCase();
+  if (ext === "pdf") return "PDF";
+  if (ext === "png" || ext === "jpg" || ext === "jpeg" || ext === "gif" || ext === "webp") return "IMAGE";
+  if (ext === "xlsx" || ext === "docx" || ext === "pptx" || ext === "csv" || ext === "txt" || ext === "md" || ext === "json") return "DOCUMENT";
+  return "OTHER";
 }

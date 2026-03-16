@@ -4,7 +4,7 @@ import { useDeferredValue, useEffect, useEffectEvent, useLayoutEffect, useMemo, 
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 
-import type { AttachmentDto, ConversationDetailDto, ConversationSummaryDto, TimelineEventEnvelope } from "@/lib/contracts";
+import type { AttachmentDto, ConversationDetailDto, ConversationSummaryDto, RunDto, TimelineEventEnvelope } from "@/lib/contracts";
 import {
   useModelCatalog,
   useConversations,
@@ -452,6 +452,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
       runId: null,
       userPrompt: prompt,
       attachments,
+      outputAttachments: [],
       events: [],
       partialText: "",
       status: "running",
@@ -533,6 +534,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                 let status = current.status;
                 let error = current.error;
                 let runId = current.runId;
+                let newOutputAttachments: AttachmentDto[] | null = null;
                 const extraEvents: TimelineEventEnvelope[] = [];
 
                 for (const ev of batch) {
@@ -556,6 +558,9 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                   }
                   if (ev.type === "assistant.message.completed" && typeof ev.payload?.text === "string") {
                     text = ev.payload.text;
+                    if (Array.isArray(ev.payload.outputAttachments)) {
+                      newOutputAttachments = ev.payload.outputAttachments as AttachmentDto[];
+                    }
                   }
                   if (ev.type === "run.failed") {
                     status = "failed";
@@ -580,6 +585,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                   runId,
                   partialText: text,
                   events: timelineEvents.length > 0 ? [...current.events, ...timelineEvents] : current.events,
+                  ...(newOutputAttachments ? { outputAttachments: newOutputAttachments } : {}),
                   status,
                   error,
                 };
@@ -598,6 +604,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
           let status = current.status;
           let error = current.error;
           let runId = current.runId;
+          let newOutputAttachments: AttachmentDto[] | null = null;
           const extraEvents: TimelineEventEnvelope[] = [];
           for (const ev of batch) {
             runId = ev.runId;
@@ -618,6 +625,9 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
             }
             if (ev.type === "assistant.message.completed" && typeof ev.payload?.text === "string") {
               text = ev.payload.text;
+              if (Array.isArray(ev.payload.outputAttachments)) {
+                newOutputAttachments = ev.payload.outputAttachments as AttachmentDto[];
+              }
             }
             if (ev.type === "run.failed") {
               status = "failed";
@@ -630,7 +640,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
           lastRunId = runId;
           lastPartialText = text;
           const timelineEvents = [...extraEvents, ...batch.filter((ev) => ev.type !== "assistant.text.delta")];
-          return { ...current, runId, partialText: text, events: timelineEvents.length > 0 ? [...current.events, ...timelineEvents] : current.events, status, error };
+          return { ...current, runId, partialText: text, events: timelineEvents.length > 0 ? [...current.events, ...timelineEvents] : current.events, ...(newOutputAttachments ? { outputAttachments: newOutputAttachments } : {}), status, error };
         });
       }
 
@@ -653,7 +663,13 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
           (old) => {
             if (!old) return old;
 
-            const newRun = {
+            // Extract output attachments from the completed event payload
+            const completedMsgEvent = allEvents.find((e) => e.type === "assistant.message.completed");
+            const patchOutputAttachments = Array.isArray(completedMsgEvent?.payload?.outputAttachments)
+              ? (completedMsgEvent.payload.outputAttachments as AttachmentDto[])
+              : [];
+
+            const newRun: RunDto = {
               id: lastRunId!,
               status: runStatus,
               userPrompt: prompt,
@@ -664,6 +680,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
               completedAt: completedEvent || cancelledEvent ? now : null,
               cancelledAt: cancelledEvent ? now : null,
               attachments: attachments,
+              outputAttachments: patchOutputAttachments,
               approvals: [],
               events: allEvents.filter((e) => e.runId === lastRunId),
               codingSession: null,
@@ -1206,6 +1223,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                           <RunThread
                             userPrompt={run.userPrompt}
                             attachments={run.attachments}
+                            outputAttachments={run.outputAttachments}
                             events={run.events}
                             finalText={run.finalText}
                             createdAt={run.createdAt}
@@ -1221,6 +1239,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                         key={run.id}
                         userPrompt={run.userPrompt}
                         attachments={run.attachments}
+                        outputAttachments={run.outputAttachments}
                         events={run.events}
                         finalText={run.finalText}
                         createdAt={run.createdAt}
@@ -1235,6 +1254,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                     <RunThread
                       userPrompt={liveRun.userPrompt}
                       attachments={liveRun.attachments}
+                      outputAttachments={liveRun.outputAttachments}
                       events={liveRun.events}
                       finalText={liveRun.partialText || null}
                       createdAt={new Date().toISOString()}

@@ -93,6 +93,7 @@ export interface RunDto {
   completedAt: string | null;
   cancelledAt: string | null;
   attachments: AttachmentDto[];
+  outputAttachments: AttachmentDto[];
   approvals: ApprovalDto[];
   events: TimelineEventEnvelope[];
   codingSession: Pick<CodingSessionDto, "id" | "status" | "workspacePath" | "branch"> | null;

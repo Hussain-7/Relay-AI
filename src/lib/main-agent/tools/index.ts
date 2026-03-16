@@ -41,7 +41,7 @@ export const MAIN_AGENT_SERVER_TOOLS = [
     runtime: "main_agent" as const,
     kind: "anthropic_server" as const,
     enabled: true,
-    description: "Short-lived code execution for analysis, parsing, and data work.",
+    description: "Short-lived code execution for analysis, parsing, data work, and document generation (xlsx, pptx, docx, pdf).",
     tool: {
       name: "code_execution" as const,
       type: "code_execution_20260120" as const,

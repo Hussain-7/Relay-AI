@@ -4,6 +4,7 @@ export type LiveRunState = {
   runId: string | null;
   userPrompt: string;
   attachments: AttachmentDto[];
+  outputAttachments: AttachmentDto[];
   events: TimelineEventEnvelope[];
   partialText: string;
   status: "running" | "failed" | "interrupted";

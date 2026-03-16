@@ -10,9 +10,23 @@ import { AttachmentChip } from "@/components/chat/attachment-chip";
 import { CopyButton } from "@/components/chat/copy-button";
 import { RunActivityAccordion } from "@/components/chat/activity-accordion";
 
+function getFileTypeBadge(filename: string): string {
+  const ext = filename.split(".").pop()?.toLowerCase();
+  switch (ext) {
+    case "xlsx": return "Excel";
+    case "pptx": return "PowerPoint";
+    case "docx": return "Word";
+    case "pdf": return "PDF";
+    case "csv": return "CSV";
+    case "png": case "jpg": case "jpeg": case "gif": case "webp": return "Image";
+    default: return ext?.toUpperCase() ?? "File";
+  }
+}
+
 export function RunThread({
   userPrompt,
   attachments,
+  outputAttachments = [],
   events,
   finalText,
   createdAt,
@@ -23,6 +37,7 @@ export function RunThread({
 }: {
   userPrompt: string;
   attachments: AttachmentDto[];
+  outputAttachments?: AttachmentDto[];
   events: TimelineEventEnvelope[];
   finalText: string | null;
   createdAt: string;
@@ -132,6 +147,26 @@ export function RunThread({
                   {finalText}
                 </Streamdown>
               </div>
+              {outputAttachments.length > 0 ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {outputAttachments.map((file) => (
+                    <a
+                      key={file.id}
+                      href={`/api/attachments/${file.id}/download`}
+                      download={file.filename}
+                      className="group/dl flex items-center gap-2 min-w-[120px] max-w-[240px] border border-[rgba(255,255,255,0.1)] rounded-[12px] bg-[rgba(255,255,255,0.04)] px-3 py-2.5 no-underline transition-[border-color,background] duration-[140ms] ease-linear hover:border-[rgba(181,103,69,0.4)] hover:bg-[rgba(181,103,69,0.06)]"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-[rgba(245,240,232,0.5)] group-hover/dl:text-[rgba(212,112,73,0.8)]">
+                        <path d="M8 2v9m0 0-3-3m3 3 3-3M3 13h10" />
+                      </svg>
+                      <div className="flex flex-col min-w-0 flex-1">
+                        <span className="text-[0.8rem] leading-[1.3] text-[rgba(245,240,232,0.86)] overflow-hidden text-ellipsis whitespace-nowrap">{file.filename}</span>
+                        <span className="text-[0.65rem] text-[rgba(245,240,232,0.5)] uppercase tracking-[0.04em]">{getFileTypeBadge(file.filename)}</span>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              ) : null}
               {isLive && !isInterrupted ? <div className="mt-2.5 text-muted text-[0.76rem]">Streaming</div> : null}
               {isInterrupted ? (
                 <div className="mt-3 flex items-center justify-between gap-3 rounded-[12px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-3.5 py-2.5">
