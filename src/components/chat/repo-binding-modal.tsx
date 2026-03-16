@@ -40,11 +40,10 @@ function LockIcon() {
 export function RepoBindingModal({
   onClose,
   onSelect,
-  currentRepoBindingId,
 }: {
   onClose: () => void;
   onSelect: (binding: RepoBindingListItem) => void;
-  currentRepoBindingId: string | null;
+  currentRepoBindingId?: string | null;
 }) {
   const { data: githubStatus } = useGithubStatus();
   const { data: repoData, isLoading } = useRepoBindings();
@@ -52,9 +51,9 @@ export function RepoBindingModal({
   const connectMutation = useConnectRepo();
   const refreshMutation = useRefreshRepoBindings();
 
-  const availableRepos = repoData?.available ?? [];
-  const bindings = repoData?.bindings ?? [];
-  const owners = repoData?.owners ?? [];
+  const availableRepos = useMemo(() => repoData?.available ?? [], [repoData?.available]);
+  const bindings = useMemo(() => repoData?.bindings ?? [], [repoData?.bindings]);
+  const owners = useMemo(() => repoData?.owners ?? [], [repoData?.owners]);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<GithubRepoSearchResult[] | null>(null);
   const [ownerFilter, setOwnerFilter] = useState<string | null>(null);

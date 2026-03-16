@@ -134,7 +134,8 @@ export function getAssistantHistoryContent(content: unknown): BetaContentBlockPa
       // become invalid in subsequent turns and cause API errors
       const anyBlock = block as unknown as Record<string, unknown>;
       if (anyBlock.citations) {
-        const { citations: _, ...rest } = anyBlock;
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { citations, ...rest } = anyBlock;
         return rest as unknown as BetaContentBlockParam;
       }
       return block;

@@ -1,6 +1,7 @@
 "use client";
 
 import { useDeferredValue, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -181,7 +182,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
     };
   }, []);
 
-  const runs = activeConversation?.runs ?? [];
+  const runs = useMemo(() => activeConversation?.runs ?? [], [activeConversation?.runs]);
   const isNewChat = !activeConversationId;
   const hasLiveContent = Boolean(liveRun);
   const isLandingState = !hasLiveContent && (isNewChat || (!isLoadingDetail && runs.length === 0));
@@ -223,12 +224,16 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   }, [isLandingState, isNewChat]);
 
   // Auto-send pending message when navigating to a new chat page
+  const handlePendingMessage = useEffectEvent((convId: string) => {
+    const pending = consumePendingMessage();
+    if (pending && pending.conversationId === convId) {
+      void startStream(convId, pending.prompt, pending.attachments, true);
+    }
+  });
+
   useEffect(() => {
     if (!conversationId) return;
-    const pending = consumePendingMessage();
-    if (pending && pending.conversationId === conversationId) {
-      void startStream(conversationId, pending.prompt, pending.attachments, true);
-    }
+    handlePendingMessage(conversationId);
   }, [conversationId]);
 
   function syncScrollShadows() {
@@ -1006,7 +1011,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
             onClick={() => setProfileMenuOpen((current) => !current)}
           >
             {authUser?.avatarUrl ? (
-              <img src={authUser.avatarUrl} alt="" className="h-9 w-9 rounded-full object-cover" referrerPolicy="no-referrer" />
+              <Image src={authUser.avatarUrl} alt="" width={36} height={36} className="h-9 w-9 rounded-full object-cover" referrerPolicy="no-referrer" unoptimized />
             ) : (
               <div className="grid h-9 w-9 place-items-center rounded-full bg-[rgba(237,233,225,0.12)] text-[0.72rem] font-semibold">
                 {(authUser?.fullName?.[0] ?? authUser?.email?.[0] ?? "U").toUpperCase()}

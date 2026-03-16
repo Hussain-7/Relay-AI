@@ -69,7 +69,6 @@ function ConnectorCard({
   isRemoving: boolean;
 }) {
   const [confirmRemove, setConfirmRemove] = useState(false);
-  const isDisabled = connector.status === "DISABLED";
 
   return (
     <div className={`group relative rounded-[12px] border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.02)] px-3.5 py-2.5 transition-all duration-150`}>

@@ -473,7 +473,7 @@ export async function createRemoteRepo(input: {
       repoFullName: response.data.full_name,
       defaultBranch: response.data.default_branch,
     });
-  } catch (orgError) {
+  } catch {
     // If org endpoint fails (personal account), try the user repos endpoint
     // This requires the installation to have repo creation permissions
     try {
