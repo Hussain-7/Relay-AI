@@ -288,6 +288,12 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
     });
   }, [activeConversationId]);
 
+  // Recalculate scroll button visibility when content changes (e.g. after page refresh, data load)
+  // Double rAF ensures DOM has painted the new content before measuring
+  useEffect(() => {
+    requestAnimationFrame(() => requestAnimationFrame(() => syncScrollShadows()));
+  }, [runs, liveRun, activeConversationId]);
+
   useEffect(() => {
     setOpenConversationMenuId(null);
     setHeaderMenuOpen(false);
