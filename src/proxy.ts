@@ -7,7 +7,7 @@ const ALLOWED_EMAILS = new Set([
   "hussain2000.rizvi@gmail.com",
 ]);
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Skip auth check for public routes and API routes (API routes handle their own auth)
