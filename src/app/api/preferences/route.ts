@@ -24,7 +24,7 @@ export async function GET(request: Request) {
 
     return Response.json({
       preferences: profile?.preferencesJson ?? {
-        agent: { model: "claude-sonnet-4-6", thinking: true, effort: "high", memory: false },
+        agent: { model: "claude-sonnet-4-6", thinking: false, effort: "low", memory: false },
       },
     });
   } catch (error) {

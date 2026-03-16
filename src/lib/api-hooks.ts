@@ -57,7 +57,7 @@ export interface UserPreferences {
 }
 
 const defaultPreferences: UserPreferences = {
-  agent: { model: "claude-sonnet-4-6", thinking: true, effort: "high", memory: false },
+  agent: { model: "claude-sonnet-4-6", thinking: false, effort: "low", memory: false },
 };
 
 export function usePreferences() {

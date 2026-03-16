@@ -10,8 +10,8 @@ const createMessageSchema = z.object({
   prompt: z.string().trim().min(1),
   attachmentIds: z.array(z.string()).default([]),
   preferences: z.object({
-    thinking: z.boolean().default(true),
-    effort: z.enum(["low", "medium", "high"]).default("high"),
+    thinking: z.boolean().default(false),
+    effort: z.enum(["low", "medium", "high"]).default("low"),
     memory: z.boolean().default(false),
   }).optional(),
 });
