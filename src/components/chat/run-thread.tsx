@@ -77,7 +77,7 @@ export function RunThread({
     <article className="run-thread w-full mx-auto mb-[34px] max-w-[860px] min-w-0 [content-visibility:auto]">
       <div className="message-row flex w-full min-w-0 justify-end">
         <div className="group/msg flex flex-col max-w-[min(66%,40rem)] min-w-0 items-end max-[980px]:max-w-[min(84%,32rem)]">
-          <div className="inline-flex min-w-0 flex-col items-start rounded-[20px] px-4 py-3 bg-[linear-gradient(180deg,rgba(19,18,16,0.94),rgba(14,13,12,0.96))] border border-[rgba(255,255,255,0.06)] shadow-[0_2px_8px_rgba(0,0,0,0.12)]" aria-label="User message">
+          <div className="inline-flex min-w-0 flex-col items-start rounded-[.75rem] px-4 py-3 bg-[linear-gradient(180deg,rgba(19,18,16,0.94),rgba(14,13,12,0.96))] border border-[rgba(255,255,255,0.06)] shadow-[0_2px_8px_rgba(0,0,0,0.12)]" aria-label="User message">
             <div className="text-[0.98rem] leading-[1.52] [overflow-wrap:anywhere] break-words text-[rgba(245,240,232,0.96)] whitespace-pre-wrap">{userPrompt}</div>
             {attachments.length ? (
               <div className="mt-3 flex flex-wrap gap-2">

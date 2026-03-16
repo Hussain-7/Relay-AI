@@ -1,6 +1,6 @@
 "use client";
 
-import { useDeferredValue, useEffect, useEffectEvent, useMemo, useRef, useState, useCallback } from "react";
+import { useDeferredValue, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -119,6 +119,10 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   const profileRef = useRef<HTMLDivElement | null>(null);
   const transcriptRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
+  const [showScrollDown, setShowScrollDown] = useState(false);
+  const latestRunRef = useRef<HTMLDivElement | null>(null);
+  const footerRef = useRef<HTMLElement | null>(null);
+  const savedScrollRef = useRef<number | null>(null);
   const modelButtonRef = useRef<HTMLButtonElement | null>(null);
   const wasLandingRef = useRef(true);
   const [animateComposerDock, setAnimateComposerDock] = useState(false);
@@ -182,9 +186,21 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   // Safety net: clear liveRun if the fetched runs already include it (e.g. after refetch)
   useEffect(() => {
     if (liveRun?.runId && runs.some((r) => r.id === liveRun.runId)) {
+      savedScrollRef.current = transcriptRef.current?.scrollTop ?? null;
       setLiveRun(null);
     }
   }, [runs, liveRun]);
+
+  // Restore scroll position synchronously before browser paints
+  // Prevents jump when the min-height live run wrapper is removed
+  useLayoutEffect(() => {
+    if (!liveRun && savedScrollRef.current !== null) {
+      if (transcriptRef.current) {
+        transcriptRef.current.scrollTop = savedScrollRef.current;
+      }
+      savedScrollRef.current = null;
+    }
+  }, [liveRun]);
 
   // Only animate the composer dock when going from the /chat/new landing to a conversation
   // (first message sent). Don't animate when switching between existing chats.
@@ -221,28 +237,56 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
     const scrollBottom = el.scrollHeight - el.clientHeight - scrollTop;
     stage.dataset.scrollTop = scrollTop > 8 ? "true" : "false";
     stage.dataset.scrollBottom = scrollBottom > 8 ? "true" : "false";
+    // Show scroll-down only when actual message content extends below the footer
+    if (footerRef.current && el) {
+      const lastThread = el.querySelector(".run-thread:last-of-type");
+      if (lastThread) {
+        const contentBottom = lastThread.getBoundingClientRect().bottom;
+        const footerTop = footerRef.current.getBoundingClientRect().top;
+        setShowScrollDown(contentBottom > footerTop);
+      } else {
+        setShowScrollDown(false);
+      }
+    }
   }
 
-  // Scroll to bottom when live content updates (streaming)
+  // On new message send: scroll the latest user message to the top of the viewport
+  // No auto-scroll during streaming — user controls their own scroll pace
+  const scrollRafRef = useRef(0);
   useEffect(() => {
     if (!liveRun) return;
-    transcriptRef.current?.scrollTo({
-      top: transcriptRef.current.scrollHeight,
-      behavior: "smooth",
+    setShowScrollDown(false);
+    // Cancel any pending scroll from a previous run
+    cancelAnimationFrame(scrollRafRef.current);
+    const raf1 = requestAnimationFrame(() => {
+      const raf2 = requestAnimationFrame(() => {
+        if (latestRunRef.current && transcriptRef.current) {
+          const container = transcriptRef.current;
+          const el = latestRunRef.current;
+          const containerRect = container.getBoundingClientRect();
+          const elRect = el.getBoundingClientRect();
+          const scrollTarget = elRect.top - containerRect.top + container.scrollTop - 16;
+          container.scrollTo({ top: scrollTarget, behavior: "smooth" });
+        }
+        syncScrollShadows();
+      });
+      scrollRafRef.current = raf2;
     });
-    syncScrollShadows();
-  }, [liveRun]);
+    scrollRafRef.current = raf1;
+    // Only scroll when a new run starts (runId changes), not on every streaming update
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveRun?.runId]);
 
-  // Scroll to bottom when switching conversations or when conversation data loads
+  // Scroll to bottom only when switching to a different conversation
   useEffect(() => {
     requestAnimationFrame(() => {
       transcriptRef.current?.scrollTo({
         top: transcriptRef.current.scrollHeight,
-        behavior: "smooth",
+        behavior: "instant",
       });
       syncScrollShadows();
     });
-  }, [activeConversationId, activeConversation]);
+  }, [activeConversationId]);
 
   useEffect(() => {
     setOpenConversationMenuId(null);
@@ -627,7 +671,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
             ),
         );
 
-        // Clear liveRun immediately — the cache patch above ensures no DOM gap
+        savedScrollRef.current = transcriptRef.current?.scrollTop ?? null;
         setLiveRun(null);
 
         // Background refetch for eventual server truth (don't refetch immediately
@@ -734,21 +778,21 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
 
       <aside
         className={[
-          "sidebar-panel relative flex min-h-0 flex-col border-r border-[rgba(255,255,255,0.08)] bg-[linear-gradient(180deg,rgba(37,35,31,0.96),rgba(28,27,24,0.96)),radial-gradient(circle_at_24%_8%,rgba(255,255,255,0.035),transparent_42%)] backdrop-blur-[24px] overflow-hidden transition-[padding] duration-[260ms] [transition-timing-function:cubic-bezier(0.2,0.9,0.2,1)] z-20",
-          showCollapsedSidebar ? "py-3.5 px-0 items-center gap-1" : "pt-4 px-3 pb-3",
+          "sidebar-panel relative flex min-h-0 flex-col border-r border-[rgba(255,255,255,0.08)] bg-[#232321] overflow-hidden transition-[padding] duration-[260ms] [transition-timing-function:cubic-bezier(0.2,0.9,0.2,1)] z-20",
+          showCollapsedSidebar ? "py-3.5 px-0 items-center gap-1" : "pt-4 px-2 pb-3",
           isMobileViewport && mobileSidebarOpen ? "sidebar-panel-mobile-open" : "",
         ].join(" ")}
       >
         {showCollapsedSidebar ? (
           <>
             <div className="flex flex-1 flex-col items-center gap-1">
-              <button type="button" className="inline-grid h-10 w-10 place-items-center border-0 bg-transparent text-[rgba(236,230,219,0.56)] cursor-pointer rounded-[10px] transition-[background,color] duration-[140ms] ease-linear hover:bg-[rgba(255,255,255,0.065)] hover:text-[rgba(247,242,233,0.92)] mb-3" aria-label="Expand sidebar" onClick={() => setSidebarCollapsed(false)}>
+              <button type="button" className="inline-grid h-10 w-10 place-items-center border-0 bg-transparent text-[rgba(236,230,219,0.56)] cursor-pointer rounded-[10px] transition-[background,color] duration-[140ms] ease-linear hover:bg-[#2f2f2d] hover:text-[rgba(247,242,233,0.92)] mb-3" aria-label="Expand sidebar" onClick={() => setSidebarCollapsed(false)}>
                 <IconSidebarToggle />
               </button>
-              <button type="button" className="inline-grid h-10 w-10 place-items-center border-0 bg-transparent text-[rgba(236,230,219,0.56)] cursor-pointer rounded-[10px] transition-[background,color] duration-[140ms] ease-linear hover:bg-[rgba(255,255,255,0.065)] hover:text-[rgba(247,242,233,0.92)]" aria-label="New chat" onClick={handleCreateConversation}>
+              <button type="button" className="inline-grid h-10 w-10 place-items-center border-0 bg-transparent text-[rgba(236,230,219,0.56)] cursor-pointer rounded-[10px] transition-[background,color] duration-[140ms] ease-linear hover:bg-[#2f2f2d] hover:text-[rgba(247,242,233,0.92)]" aria-label="New chat" onClick={handleCreateConversation}>
                 <IconPlus />
               </button>
-              <button type="button" className="inline-grid h-10 w-10 place-items-center border-0 bg-transparent text-[rgba(236,230,219,0.56)] cursor-pointer rounded-[10px] transition-[background,color] duration-[140ms] ease-linear hover:bg-[rgba(255,255,255,0.065)] hover:text-[rgba(247,242,233,0.92)]" aria-label="Search chats" onClick={() => setSearchModalOpen(true)}>
+              <button type="button" className="inline-grid h-10 w-10 place-items-center border-0 bg-transparent text-[rgba(236,230,219,0.56)] cursor-pointer rounded-[10px] transition-[background,color] duration-[140ms] ease-linear hover:bg-[#2f2f2d] hover:text-[rgba(247,242,233,0.92)]" aria-label="Search chats" onClick={() => setSearchModalOpen(true)}>
                 <IconSearch />
               </button>
             </div>
@@ -761,22 +805,22 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
         <div className="flex items-center justify-between px-1 pt-0.5 mb-4">
           <div className="font-serif text-[1.35rem] font-bold leading-none tracking-[-0.03em] text-[rgba(247,242,233,0.96)]">Relay AI</div>
           {isMobileViewport ? (
-            <button type="button" className="inline-grid h-[34px] w-[34px] place-items-center border-0 bg-transparent text-[rgba(236,230,219,0.56)] cursor-pointer rounded-[8px] transition-[background,color] duration-[140ms] ease-linear hover:bg-[rgba(255,255,255,0.065)] hover:text-[rgba(247,242,233,0.92)]" aria-label="Close sidebar" onClick={() => setMobileSidebarOpen(false)}>
+            <button type="button" className="inline-grid h-[34px] w-[34px] place-items-center border-0 bg-transparent text-[rgba(236,230,219,0.56)] cursor-pointer rounded-[8px] transition-[background,color] duration-[140ms] ease-linear hover:bg-[#2f2f2d] hover:text-[rgba(247,242,233,0.92)]" aria-label="Close sidebar" onClick={() => setMobileSidebarOpen(false)}>
               <IconClose />
             </button>
           ) : (
-            <button type="button" className="inline-grid h-[34px] w-[34px] place-items-center border-0 bg-transparent text-[rgba(236,230,219,0.56)] cursor-pointer rounded-[8px] transition-[background,color] duration-[140ms] ease-linear hover:bg-[rgba(255,255,255,0.065)] hover:text-[rgba(247,242,233,0.92)]" aria-label="Collapse sidebar" onClick={() => setSidebarCollapsed(true)}>
+            <button type="button" className="inline-grid h-[34px] w-[34px] place-items-center border-0 bg-transparent text-[rgba(236,230,219,0.56)] cursor-pointer rounded-[8px] transition-[background,color] duration-[140ms] ease-linear hover:bg-[#2f2f2d] hover:text-[rgba(247,242,233,0.92)]" aria-label="Collapse sidebar" onClick={() => setSidebarCollapsed(true)}>
               <IconSidebarToggle />
             </button>
           )}
         </div>
 
-        <button type="button" className="group flex items-center gap-3 w-full border-0 rounded-[10px] bg-transparent text-[rgba(236,230,219,0.82)] cursor-pointer py-[9px] px-2.5 text-left text-[0.9rem] leading-[1.25] transition-[background,color] duration-[140ms] ease-linear hover:bg-[rgba(255,255,255,0.065)] hover:text-[rgba(247,242,233,0.96)]" onClick={handleCreateConversation}>
+        <button type="button" className="group flex items-center gap-3 w-full border-0 rounded-[10px] bg-transparent text-[rgba(236,230,219,0.82)] cursor-pointer py-[9px] px-2.5 text-left text-[0.9rem] leading-[1.25] transition-[background,color] duration-[140ms] ease-linear hover:bg-[#2f2f2d] hover:text-[rgba(247,242,233,0.96)]" onClick={handleCreateConversation}>
           <span className="inline-grid shrink-0 w-5 h-5 place-items-center text-[rgba(236,230,219,0.72)] group-hover:text-[rgba(247,242,233,0.92)]"><IconPlus /></span>
           <span>New chat</span>
         </button>
 
-        <button type="button" className="group flex items-center gap-3 w-full border-0 rounded-[10px] bg-transparent text-[rgba(236,230,219,0.82)] cursor-pointer py-[9px] px-2.5 text-left text-[0.9rem] leading-[1.25] transition-[background,color] duration-[140ms] ease-linear hover:bg-[rgba(255,255,255,0.065)] hover:text-[rgba(247,242,233,0.96)]" onClick={() => setSearchModalOpen(true)}>
+        <button type="button" className="group flex items-center gap-3 w-full border-0 rounded-[10px] bg-transparent text-[rgba(236,230,219,0.82)] cursor-pointer py-[9px] px-2.5 text-left text-[0.9rem] leading-[1.25] transition-[background,color] duration-[140ms] ease-linear hover:bg-[#2f2f2d] hover:text-[rgba(247,242,233,0.96)]" onClick={() => setSearchModalOpen(true)}>
           <span className="inline-grid shrink-0 w-5 h-5 place-items-center text-[rgba(236,230,219,0.72)] group-hover:text-[rgba(247,242,233,0.92)]"><IconSearch /></span>
           <span>Search</span>
         </button>
@@ -803,7 +847,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
               >
                 <button
                   type="button"
-                  className={`flex w-full items-center border-0 rounded-[10px] bg-transparent text-inherit cursor-pointer py-[9px] pr-[34px] pl-2.5 text-left transition-[background] duration-[140ms] ease-linear hover:bg-[rgba(255,255,255,0.05)] ${isActive ? "bg-[rgba(255,255,255,0.06)]" : ""}`}
+                  className={`flex w-full items-center border-0 rounded-[10px] text-inherit cursor-pointer py-[9px] pr-[34px] pl-2.5 text-left transition-[background] duration-[140ms] ease-linear hover:bg-[#2f2f2d] ${isActive ? "bg-[#2f2f2d]" : "bg-transparent"}`}
                   onClick={() => handleSelectConversation(conversation.id)}
                 >
                   <div className={`text-[0.88rem] font-[420] text-[rgba(242,237,229,0.82)] whitespace-nowrap overflow-hidden text-ellipsis ${isActive ? "text-[rgba(247,242,233,0.96)]" : "group-hover/row:text-[rgba(247,242,233,0.96)]"}`}>{conversation.title}</div>
@@ -812,7 +856,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                 <div className="absolute top-1/2 right-1 -translate-y-1/2" data-chat-action-menu>
                   <button
                     type="button"
-                    className={`inline-grid h-[26px] w-[26px] place-items-center border-0 bg-transparent rounded-[6px] text-[rgba(245,240,232,0.46)] cursor-pointer transition-[opacity,color,background] duration-[140ms] ease-linear hover:text-[rgba(245,240,232,0.88)] hover:bg-[rgba(255,255,255,0.08)] ${isMenuOpen || isActive ? "opacity-100" : "opacity-0 group-hover/row:opacity-100"}`}
+                    className={`inline-grid h-[26px] w-[26px] place-items-center border-0 bg-transparent rounded-[6px] text-[rgba(245,240,232,0.46)] cursor-pointer transition-[opacity,color,background] duration-[140ms] ease-linear hover:text-[rgba(245,240,232,0.88)] hover:bg-[#2f2f2d] ${isMenuOpen || isActive ? "opacity-100" : "opacity-0 group-hover/row:opacity-100"}`}
                     aria-label={`Open menu for ${conversation.title}`}
                     aria-expanded={isMenuOpen}
                     data-conversation-menu={conversation.id}
@@ -862,7 +906,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
               >
                 <button
                   type="button"
-                  className={`flex w-full items-center border-0 rounded-[10px] bg-transparent text-inherit cursor-pointer py-[9px] pr-[34px] pl-2.5 text-left transition-[background] duration-[140ms] ease-linear hover:bg-[rgba(255,255,255,0.05)] ${isActive ? "bg-[rgba(255,255,255,0.06)]" : ""}`}
+                  className={`flex w-full items-center border-0 rounded-[10px] text-inherit cursor-pointer py-[9px] pr-[34px] pl-2.5 text-left transition-[background] duration-[140ms] ease-linear hover:bg-[#2f2f2d] ${isActive ? "bg-[#2f2f2d]" : "bg-transparent"}`}
                   onClick={() => handleSelectConversation(conversation.id)}
                 >
                   <div className={`text-[0.88rem] font-[420] text-[rgba(242,237,229,0.82)] whitespace-nowrap overflow-hidden text-ellipsis ${isActive ? "text-[rgba(247,242,233,0.96)]" : "group-hover/row:text-[rgba(247,242,233,0.96)]"}`}>{conversation.title}</div>
@@ -871,7 +915,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                 <div className="absolute top-1/2 right-1 -translate-y-1/2" data-chat-action-menu>
                   <button
                     type="button"
-                    className={`inline-grid h-[26px] w-[26px] place-items-center border-0 bg-transparent rounded-[6px] text-[rgba(245,240,232,0.46)] cursor-pointer transition-[opacity,color,background] duration-[140ms] ease-linear hover:text-[rgba(245,240,232,0.88)] hover:bg-[rgba(255,255,255,0.08)] ${isMenuOpen || isActive ? "opacity-100" : "opacity-0 group-hover/row:opacity-100"}`}
+                    className={`inline-grid h-[26px] w-[26px] place-items-center border-0 bg-transparent rounded-[6px] text-[rgba(245,240,232,0.46)] cursor-pointer transition-[opacity,color,background] duration-[140ms] ease-linear hover:text-[rgba(245,240,232,0.88)] hover:bg-[#2f2f2d] ${isMenuOpen || isActive ? "opacity-100" : "opacity-0 group-hover/row:opacity-100"}`}
                     aria-label={`Open menu for ${conversation.title}`}
                     aria-expanded={isMenuOpen}
                     data-conversation-menu={conversation.id}
@@ -913,7 +957,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
         <div className="relative mt-auto pt-2 border-t border-[rgba(255,255,255,0.06)]" ref={profileRef}>
           <button
             type="button"
-            className="grid w-full grid-cols-[36px_1fr_16px] items-center gap-2.5 border-0 rounded-[10px] bg-transparent text-inherit cursor-pointer py-2.5 px-2 text-left transition-[background] duration-[140ms] ease-linear hover:bg-[rgba(255,255,255,0.065)]"
+            className="grid w-full grid-cols-[36px_1fr_16px] items-center gap-2.5 border-0 rounded-[10px] bg-transparent text-inherit cursor-pointer py-2.5 px-2 text-left transition-[background] duration-[140ms] ease-linear hover:bg-[#2f2f2d]"
             onClick={() => setProfileMenuOpen((current) => !current)}
           >
             {authUser?.avatarUrl ? (
@@ -1000,12 +1044,12 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
       </aside>
 
       <main className="grid min-h-0 h-dvh grid-rows-[auto_minmax(0,1fr)] overflow-hidden min-w-0 max-[980px]:h-dvh max-[980px]:min-h-dvh max-[980px]:w-full max-[980px]:max-w-full">
-        <header className="flex items-center justify-start gap-[18px] pt-3.5 px-[30px] pb-2 max-[980px]:gap-2 max-[980px]:pt-3 max-[980px]:pb-1 max-[980px]:px-[18px]">
+        <header className="flex items-center justify-start gap-[18px] p-3 max-[980px]:gap-2 max-[980px]:pt-3 max-[980px]:pb-1 max-[980px]:px-[18px]">
           <div className="flex min-w-0 w-full items-center gap-0 max-[980px]:w-full max-[980px]:gap-2">
             {isMobileViewport ? (
               <button
                 type="button"
-                className="hidden max-[980px]:inline-grid h-10 w-10 place-items-center border-0 bg-transparent text-[rgba(236,230,219,0.56)] cursor-pointer rounded-[10px] transition-[background,color] duration-140 ease-linear hover:bg-[rgba(255,255,255,0.065)] hover:text-[rgba(247,242,233,0.92)] shrink-0"
+                className="hidden max-[980px]:inline-grid h-10 w-10 place-items-center border-0 bg-transparent text-[rgba(236,230,219,0.56)] cursor-pointer rounded-[10px] transition-[background,color] duration-140 ease-linear hover:bg-[#2f2f2d] hover:text-[rgba(247,242,233,0.92)] shrink-0"
                 aria-label={mobileSidebarOpen ? "Close navigation" : "Open navigation"}
                 aria-expanded={mobileSidebarOpen}
                 onClick={() => setMobileSidebarOpen((current) => !current)}
@@ -1018,7 +1062,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
               <div className="relative min-w-0 max-w-full max-[980px]:flex-auto max-[980px]:min-w-0 max-[980px]:max-w-[calc(100%-48px)]" data-chat-action-menu>
                 <button
                   type="button"
-                  className={`inline-flex items-center gap-1.5 w-auto max-w-[min(100%,42rem)] min-w-0 border-0 rounded-[10px] bg-transparent text-[rgba(235,230,220,0.82)] cursor-pointer py-1.5 px-2.5 overflow-hidden transition-[color,background] duration-[140ms] ease-linear hover:bg-[rgba(255,255,255,0.065)] hover:text-[rgba(245,240,232,0.96)] max-[980px]:max-w-full max-[980px]:border-0 max-[980px]:rounded-none max-[980px]:bg-transparent max-[980px]:p-0`}
+                  className={`inline-flex items-center gap-1.5 w-auto max-w-[min(100%,42rem)] min-w-0 border-0 rounded-[10px] bg-transparent text-[rgba(235,230,220,0.82)] cursor-pointer py-1.5 px-2.5 overflow-hidden transition-[color,background] duration-[140ms] ease-linear hover:bg-[#2f2f2d] hover:text-[rgba(245,240,232,0.96)] max-[980px]:max-w-full max-[980px]:border-0 max-[980px]:rounded-none max-[980px]:bg-transparent max-[980px]:p-0`}
                   aria-label={`Open menu for ${activeConversation.title}`}
                   aria-expanded={headerMenuOpen}
                   data-header-menu-trigger
@@ -1113,47 +1157,93 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
               </div>
             </section>
           ) : (
-            <div className="chat-stage-inner h-full overflow-y-auto overflow-x-hidden overscroll-contain pt-2 px-[30px] pb-[236px] min-w-0 max-[980px]:px-[18px] max-[980px]:w-full max-[980px]:max-w-full max-[980px]:pb-[180px]" ref={transcriptRef} onScroll={syncScrollShadows}>
-              <div className="chat-transcript-inner min-h-0 min-w-0">
+            <div className="chat-stage-inner h-full overflow-y-auto overflow-x-hidden overscroll-contain [overflow-anchor:none] pt-6 px-[30px] pb-[236px] min-w-0 max-[980px]:px-[18px] max-[980px]:w-full max-[980px]:max-w-full max-[980px]:pb-[180px]" ref={transcriptRef} onScroll={syncScrollShadows}>
+              <div className="chat-transcript-inner min-h-0 min-w-0 max-w-3xl! mx-auto px-5">
                 {errorMessage ? <div className="max-w-[860px] mx-auto mb-[18px] border border-[rgba(181,103,69,0.3)] rounded-[18px] bg-[rgba(181,103,69,0.12)] text-[#f3c7b4] px-4 py-3.5">{errorMessage}</div> : null}
 
-                {runs.map((run, index) => (
-                  <RunThread
-                    key={run.id}
-                    userPrompt={run.userPrompt}
-                    attachments={run.attachments}
-                    events={run.events}
-                    finalText={run.finalText}
-                    createdAt={run.createdAt}
-                    isLast={index === runs.length - 1 && !liveRun}
-                  />
-                ))}
+                {(() => {
+                  const isLiveRunSeparate = liveRun && !runs.some((r) => r.id === liveRun.runId);
+                  const lastRunIndex = runs.length - 1;
+
+                  return runs.map((run, index) => {
+                    const isLastCompleted = index === lastRunIndex && !isLiveRunSeparate;
+
+                    if (isLastCompleted) {
+                      return (
+                        <div key={run.id} ref={latestRunRef} style={{ minHeight: "calc(100vh - 140px)" }}>
+                          <RunThread
+                            userPrompt={run.userPrompt}
+                            attachments={run.attachments}
+                            events={run.events}
+                            finalText={run.finalText}
+                            createdAt={run.createdAt}
+                            isLast
+                          />
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <RunThread
+                        key={run.id}
+                        userPrompt={run.userPrompt}
+                        attachments={run.attachments}
+                        events={run.events}
+                        finalText={run.finalText}
+                        createdAt={run.createdAt}
+                      />
+                    );
+                  });
+                })()}
 
                 {liveRun && !runs.some((r) => r.id === liveRun.runId) ? (
-                  <RunThread
-                    userPrompt={liveRun.userPrompt}
-                    attachments={liveRun.attachments}
-                    events={liveRun.events}
-                    finalText={liveRun.partialText || null}
-                    createdAt={new Date().toISOString()}
-                    isLive
-                  />
+                  <div ref={latestRunRef} style={{ minHeight: "calc(100vh - 180px)" }}>
+                    <RunThread
+                      userPrompt={liveRun.userPrompt}
+                      attachments={liveRun.attachments}
+                      events={liveRun.events}
+                      finalText={liveRun.partialText || null}
+                      createdAt={new Date().toISOString()}
+                      isLive
+                    />
+                  </div>
                 ) : null}
               </div>
             </div>
           )}
 
+        {/* Scroll-to-bottom button */}
+        {showScrollDown && !isLandingState && (
+          <button
+            type="button"
+            aria-label="Scroll to bottom"
+            className="absolute z-4 left-1/2 -translate-x-1/2 bottom-[158px] max-[980px]:bottom-[128px] h-8 w-8 rounded-full border border-[rgba(255,255,255,0.1)] bg-[#30302e] shadow-[0_2px_8px_rgba(0,0,0,0.2)] flex items-center justify-center text-[rgba(236,230,219,0.5)] hover:text-[rgba(236,230,219,0.8)] hover:border-[rgba(255,255,255,0.18)] transition-all duration-150 cursor-pointer"
+            onClick={() => {
+              setShowScrollDown(false);
+              transcriptRef.current?.scrollTo({
+                top: transcriptRef.current.scrollHeight,
+                behavior: "smooth",
+              });
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 3v10M3 8.5l5 5 5-5" />
+            </svg>
+          </button>
+        )}
+
         <footer
+          ref={footerRef}
           className={[
-            "absolute left-0 right-0 z-3 bg-[linear-gradient(180deg,rgba(26,25,23,0)_0%,rgba(26,25,23,0.74)_22%,rgba(26,25,23,0.97)_100%)] backdrop-blur-[16px] transition-[transform,opacity] duration-[420ms] [transition-timing-function:cubic-bezier(0.2,0.9,0.2,1)]",
+            "absolute left-0 right-0 z-3 pb-1 transition-[transform,opacity] duration-[420ms] [transition-timing-function:cubic-bezier(0.2,0.9,0.2,1)]",
             isLandingState && isNewChat
-              ? "bottom-1/2 px-[30px] translate-y-[182px] bg-none backdrop-blur-none max-[980px]:bottom-0 max-[980px]:pb-3 max-[980px]:translate-y-0 max-[980px]:px-[18px]"
-              : "bottom-0 px-[30px] pb-[26px] max-[980px]:px-[18px] max-[980px]:pb-3",
+              ? "bottom-1/2 px-[30px] translate-y-[182px] max-[980px]:bottom-0  max-[980px]:translate-y-0 max-[980px]:px-[18px]"
+              : "bottom-0 px-[30px]  bg-background max-[980px]:px-[18px] ",
             animateComposerDock ? "composer-panel-animate-dock" : "",
           ].join(" ")}
         >
           <div
-            className={`composer-shell flex max-w-[980px] w-full min-w-0 min-h-[96px] flex-col gap-3 mx-auto border rounded-[22px] bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.02)),rgba(54,52,47,0.84)] pt-[14px] px-[18px] pb-3.5 shadow-[0_4px_16px_rgba(0,0,0,0.12)] max-[980px]:w-full max-[980px]:max-w-full max-[980px]:m-0 max-[980px]:min-h-0 max-[980px]:gap-2.5 max-[980px]:pt-3 max-[980px]:px-3.5 max-[980px]:pb-2.5 max-[980px]:rounded-[18px] transition-[border-color] duration-150 ${isDraggingOver ? "border-[rgba(212,112,73,0.6)]" : "border-[rgba(255,255,255,0.08)]"}`}
+            className={`composer-shell flex max-w-3xl w-full min-w-0 min-h-[96px] flex-col gap-3 mx-auto border rounded-[22px] bg-[#30302e] pt-[14px] px-[18px] pb-3.5 shadow-[0_4px_16px_rgba(0,0,0,0.12)] max-[980px]:w-full max-[980px]:max-w-full max-[980px]:m-0 max-[980px]:min-h-0 max-[980px]:gap-2.5 max-[980px]:pt-3 max-[980px]:px-3.5 max-[980px]:pb-2.5 max-[980px]:rounded-[18px] transition-[border-color] duration-150 ${isDraggingOver ? "border-[rgba(212,112,73,0.6)]" : "border-[rgba(255,255,255,0.08)]"}`}
             onDragOver={(e) => {
               e.preventDefault();
               setIsDraggingOver(true);
@@ -1230,7 +1320,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
 
               <button
                 type="button"
-                className="inline-grid h-8 w-8 place-items-center rounded-full border-0 bg-transparent text-[rgba(255,255,255,0.6)] cursor-pointer hover:bg-[rgba(255,255,255,0.05)] hover:text-[rgba(255,255,255,0.88)]"
+                className="inline-grid h-8 w-8 place-items-center rounded-full border-0 bg-transparent text-[rgba(255,255,255,0.6)] cursor-pointer hover:bg-[#2f2f2d] hover:text-[rgba(255,255,255,0.88)]"
                 ref={plusButtonRef}
                 onClick={() => setPlusMenuOpen((v) => !v)}
                 title="Add files, connectors, and more"
@@ -1368,7 +1458,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                 value={sidebarQuery}
                 onChange={(e) => setSidebarQuery(e.target.value)}
               />
-              <button type="button" className="inline-grid h-8 w-8 shrink-0 place-items-center border-0 bg-transparent text-[rgba(236,230,219,0.56)] cursor-pointer rounded-[10px] transition-[background,color] duration-[140ms] ease-linear hover:bg-[rgba(255,255,255,0.065)] hover:text-[rgba(247,242,233,0.92)]" onClick={() => { setSearchModalOpen(false); setSidebarQuery(""); }}>
+              <button type="button" className="inline-grid h-8 w-8 shrink-0 place-items-center border-0 bg-transparent text-[rgba(236,230,219,0.56)] cursor-pointer rounded-[10px] transition-[background,color] duration-[140ms] ease-linear hover:bg-[#2f2f2d] hover:text-[rgba(247,242,233,0.92)]" onClick={() => { setSearchModalOpen(false); setSidebarQuery(""); }}>
                 <IconClose />
               </button>
             </div>
@@ -1377,7 +1467,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                 <button
                   key={conversation.id}
                   type="button"
-                  className={`flex w-full items-center gap-2.5 border-0 rounded-[10px] bg-transparent text-[rgba(245,240,232,0.86)] cursor-pointer py-2.5 px-3 text-left text-[0.9rem] transition-[background] duration-[140ms] ease-linear hover:bg-[rgba(255,255,255,0.06)] ${conversation.id === activeConversationId ? "bg-[rgba(255,255,255,0.08)]" : ""}`}
+                  className={`flex w-full items-center gap-2.5 border-0 rounded-[10px] bg-transparent text-[rgba(245,240,232,0.86)] cursor-pointer py-2.5 px-3 text-left text-[0.9rem] transition-[background] duration-[140ms] ease-linear hover:bg-[#2f2f2d] ${conversation.id === activeConversationId ? "bg-[#2f2f2d]" : ""}`}
                   onClick={() => {
                     setSearchModalOpen(false);
                     setSidebarQuery("");
