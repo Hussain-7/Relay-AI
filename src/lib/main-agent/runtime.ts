@@ -327,6 +327,7 @@ export async function streamMainAgentRun(input: {
               }
 
               if (block.type === "server_tool_use") {
+                serverPartialText = "";
                 indexToToolUseId.set(rawEvent.index, block.id);
                 indexToToolName.set(rawEvent.index, block.name);
                 emit("tool.call.started", "main_agent", {
@@ -340,6 +341,7 @@ export async function streamMainAgentRun(input: {
 
               // Client tool use (custom backend tools like chat_search, github, coding)
               if (block.type === "tool_use") {
+                serverPartialText = "";
                 indexToToolUseId.set(rawEvent.index, block.id);
                 indexToToolName.set(rawEvent.index, block.name);
                 emit("tool.call.started", "main_agent", {
@@ -353,6 +355,7 @@ export async function streamMainAgentRun(input: {
 
               // MCP tool use (external MCP server tools)
               if ((block as unknown as { type: string }).type === "mcp_tool_use") {
+                serverPartialText = "";
                 const mcpBlock = block as unknown as { id: string; name: string; input: unknown; server_name: string };
                 indexToToolUseId.set(rawEvent.index, mcpBlock.id);
                 indexToToolName.set(rawEvent.index, mcpBlock.name);
@@ -386,6 +389,7 @@ export async function streamMainAgentRun(input: {
               if ("type" in block) {
                 const blockType = (block as unknown as { type: string }).type;
                 if (blockType === "mcp_tool_use") {
+                  serverPartialText = "";
                   const mcpBlock = block as unknown as { id: string; name: string; input: unknown; server_name: string };
                   indexToToolUseId.set(rawEvent.index, mcpBlock.id);
                   indexToToolName.set(rawEvent.index, mcpBlock.name);
@@ -660,7 +664,22 @@ export async function streamMainAgentRun(input: {
           }
         }
 
-        const finalText = getTextWithCitations(finalMessage.content);
+        // Only include text that appears after the last tool-related block.
+        // Pre-tool text (e.g. "Sure! Let me look that up") is shown in the
+        // timeline as intermediate text, not in the final response bubble.
+        const toolBlockTypes = new Set(["tool_use", "tool_result", "server_tool_use", "mcp_tool_use", "mcp_tool_result", "web_search_tool_result", "web_fetch_tool_result", "code_execution_tool_result", "tool_search_tool_result"]);
+        let lastToolIndex = -1;
+        for (let i = finalMessage.content.length - 1; i >= 0; i--) {
+          const blockType = (finalMessage.content[i] as unknown as { type: string }).type;
+          if (toolBlockTypes.has(blockType)) {
+            lastToolIndex = i;
+            break;
+          }
+        }
+        const finalContentBlocks = lastToolIndex >= 0
+          ? finalMessage.content.slice(lastToolIndex + 1)
+          : finalMessage.content;
+        const finalText = getTextWithCitations(finalContentBlocks);
 
         const usageRaw = finalMessage.usage as unknown as Record<string, unknown>;
         const inputTokens = finalMessage.usage.input_tokens;

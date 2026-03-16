@@ -333,7 +333,7 @@ export async function toggleConversationStar(input: {
 }) {
   await prisma.conversation.updateMany({
     where: { id: input.conversationId, userId: input.userId },
-    data: { isStarred: input.isStarred },
+    data: { isStarred: input.isStarred, updatedAt: new Date() },
   });
 }
 

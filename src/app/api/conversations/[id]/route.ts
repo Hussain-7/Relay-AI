@@ -109,7 +109,7 @@ export async function PATCH(
       userId: user.userId,
     });
 
-    await invalidateCache(`conv:${id}`);
+    await invalidateCache(`conv:${id}`, `convos:${user.userId}`);
 
     return Response.json({ conversation });
   } catch (error) {

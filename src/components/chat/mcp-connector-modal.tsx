@@ -363,8 +363,22 @@ export function McpConnectorModal({ onClose }: { onClose: () => void }) {
 
               {/* Connector list */}
               {isLoading ? (
-                <div className="flex items-center justify-center py-10">
-                  <span className="text-[rgba(245,240,232,0.3)] text-[0.84rem]">Loading\u2026</span>
+                <div className="flex flex-col gap-1.5">
+                  {Array.from({ length: 3 }, (_, i) => (
+                    <div key={i} className="rounded-[12px] border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.02)] px-3.5 py-2.5 animate-pulse">
+                      <div className="flex items-start gap-3">
+                        <span className="h-[18px] w-[32px] rounded-full bg-[rgba(255,255,255,0.06)] shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="h-3.5 rounded bg-[rgba(255,255,255,0.06)]" style={{ width: `${80 + (i * 30) % 60}px` }} />
+                            <span className="h-1.5 w-1.5 rounded-full bg-[rgba(255,255,255,0.06)]" />
+                            <span className="h-2.5 w-14 rounded bg-[rgba(255,255,255,0.04)]" />
+                          </div>
+                          <span className="block h-2.5 w-40 rounded bg-[rgba(255,255,255,0.04)] mt-1.5" />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ) : connectors.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-10 gap-2">

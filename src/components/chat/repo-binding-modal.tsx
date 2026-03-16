@@ -263,8 +263,17 @@ export function RepoBindingModal({
             {/* Repo list */}
             <div className="repo-scroll overflow-y-auto px-5 pb-4 min-h-0 flex-1">
               {isLoading || isOwnerReposLoading ? (
-                <div className="flex items-center justify-center py-10">
-                  <span className="text-[rgba(245,240,232,0.3)] text-[0.84rem]">Loading repos...</span>
+                <div className="border border-[rgba(255,255,255,0.06)] rounded-[12px] overflow-hidden divide-y divide-[rgba(255,255,255,0.06)]">
+                  {Array.from({ length: 6 }, (_, i) => (
+                    <div key={i} className="flex items-center gap-3 px-4 py-2.5 animate-pulse">
+                      <span className="h-4 w-4 rounded-full bg-[rgba(255,255,255,0.06)] shrink-0" />
+                      <div className="flex-1 flex items-center gap-2">
+                        <span className="h-3.5 rounded bg-[rgba(255,255,255,0.06)]" style={{ width: `${90 + (i * 17) % 60}px` }} />
+                        <span className="h-3 w-10 rounded bg-[rgba(255,255,255,0.04)]" />
+                      </div>
+                      <span className="h-7 w-16 rounded-[6px] bg-[rgba(255,255,255,0.04)]" />
+                    </div>
+                  ))}
                 </div>
               ) : displayRepos.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-10 gap-1.5">

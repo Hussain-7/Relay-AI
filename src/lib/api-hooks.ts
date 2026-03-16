@@ -277,9 +277,24 @@ export function useToggleConversationStar() {
 
       queryClient.setQueryData<ConversationSummaryDto[]>(
         queryKeys.conversations,
-        (old) => (old ?? []).map((c) => (c.id === id ? { ...c, isStarred } : c)),
+        (old) => {
+          const now = new Date().toISOString();
+          const updated = (old ?? []).map((c) => (c.id === id ? { ...c, isStarred, updatedAt: now } : c));
+          return updated.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+        },
       );
       return { previousList };
+    },
+    onSuccess: (conversation, { id }) => {
+      // Apply server truth to both caches so subsequent refetches don't flash
+      queryClient.setQueryData<ConversationSummaryDto[]>(
+        queryKeys.conversations,
+        (old) => (old ?? []).map((c) => (c.id === id ? { ...c, isStarred: conversation.isStarred } : c)),
+      );
+      queryClient.setQueryData<ConversationDetailDto>(
+        queryKeys.conversation(id),
+        (old) => old ? { ...old, isStarred: conversation.isStarred } : old,
+      );
     },
     onError: (_err, _vars, context) => {
       if (context?.previousList) {

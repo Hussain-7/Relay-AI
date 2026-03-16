@@ -19,6 +19,7 @@ import {
   useLinkRepoToConversation,
   useRenameConversation,
   useToggleConversationStar,
+  useMcpConnectors,
   queryKeys,
 } from "@/lib/api-hooks";
 import type { LiveRunState } from "@/lib/chat-utils";
@@ -76,6 +77,8 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   const { data: catalog } = useModelCatalog();
   const { data: conversations = [], isLoading: isLoadingConversations } = useConversations();
   const { data: githubStatus } = useGithubStatus();
+  const { data: mcpConnectors = [] } = useMcpConnectors();
+  const activeMcpCount = mcpConnectors.filter((c) => c.status === "ACTIVE").length;
   const disconnectGithub = useDisconnectGithub();
   const { data: activeConversation, isFetching: isFetchingDetail } = useConversationDetail(
     hasPendingForThis ? null : activeConversationId,
@@ -1392,6 +1395,32 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                   >
                     <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3 w-3"><path d="M4 12L12 4M12 12L4 4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
                   </button>
+                </div>
+              )}
+
+              {activeMcpCount > 0 && (
+                <div className="group/mcp relative">
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-2.5 py-1 text-[0.78rem] text-[rgba(245,240,232,0.55)] cursor-pointer transition-colors duration-140 hover:bg-[rgba(255,255,255,0.06)] hover:text-[rgba(245,240,232,0.8)]"
+                    onClick={() => setConnectorModalOpen(true)}
+                  >
+                    <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+                      <path d="M6 2v3M10 2v3M6 11v3M10 11v3M2 6h3M2 10h3M11 6h3M11 10h3" />
+                      <rect x="5" y="5" width="6" height="6" rx="1" />
+                    </svg>
+                    <span>{activeMcpCount} MCP</span>
+                  </button>
+                  <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 opacity-0 scale-95 group-hover/mcp:opacity-100 group-hover/mcp:scale-100 transition-[opacity,transform] duration-150 origin-bottom">
+                    <div className="rounded-[10px] border border-[rgba(255,255,255,0.1)] bg-[rgba(28,26,22,0.96)] shadow-[0_8px_24px_rgba(0,0,0,0.4)] backdrop-blur-xl px-3 py-2 whitespace-nowrap">
+                      {mcpConnectors.filter((c) => c.status === "ACTIVE").map((c) => (
+                        <div key={c.id} className="flex items-center gap-2 py-0.5">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0" />
+                          <span className="text-[0.76rem] text-[rgba(245,240,232,0.85)]">{c.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               )}
 
