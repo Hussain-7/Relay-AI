@@ -1211,8 +1211,8 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
               </div>
             </section>
           ) : (
-            <div className="chat-stage-inner h-full overflow-y-auto overflow-x-hidden overscroll-contain [overflow-anchor:none] pt-6 px-[30px] pb-[236px] min-w-0 max-[980px]:px-[18px] max-[980px]:w-full max-[980px]:max-w-full max-[980px]:pb-[180px]" ref={transcriptRef} onScroll={syncScrollShadows}>
-              <div className="chat-transcript-inner min-h-0 min-w-0 max-w-3xl! mx-auto px-5">
+            <div className="chat-stage-inner h-full overflow-y-auto overflow-x-hidden overscroll-contain [overflow-anchor:none] pt-6 px-[30px] pb-[236px] min-w-0 max-[980px]:px-[6px] max-[980px]:w-full max-[980px]:max-w-full max-[980px]:pb-[180px]" ref={transcriptRef} onScroll={syncScrollShadows}>
+              <div className="chat-transcript-inner min-h-0 min-w-0 max-w-3xl! mx-auto px-1 sm:px-5">
                 {errorMessage ? <div className="max-w-[860px] mx-auto mb-[18px] border border-[rgba(181,103,69,0.3)] rounded-[18px] bg-[rgba(181,103,69,0.12)] text-[#f3c7b4] px-4 py-3.5">{errorMessage}</div> : null}
 
                 {(() => {
