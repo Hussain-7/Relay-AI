@@ -36,10 +36,10 @@ export const codingSessionCatalog: ToolCatalogEntry[] = [
 export function createCodingSessionStartTool(ctx: ToolRuntimeContext) {
   return betaZodTool({
     name: "coding_session_start_or_continue",
-    description: "Provision or resume the repo-backed coding workspace for this chat. The linked repository is automatically used — do not pass a repo ID.",
+    description: "Start or resume a remote coding session in an E2B cloud sandbox. Use this when the user asks you to write code, fix bugs, implement features, refactor, or any task that requires reading/writing files in a repository. This provisions a sandbox, clones the linked GitHub repo, and runs a coding agent (Claude Code) that has full filesystem access with Read, Write, Edit, Bash, Git, etc. The coding agent can also create PRs and push commits. Do NOT use your built-in code_execution tool for repository work — that is only for short-lived analysis/data scripts. Always use this tool for real coding tasks.",
     inputSchema: z.object({
       taskBrief: z.string().min(1).describe("Clear description of the coding task to perform"),
-      branchStrategy: z.string().optional().describe("Branch naming strategy (defaults to chat/{conversationId})"),
+      branchStrategy: z.string().optional().describe( "Branch naming strategy (defaults to chat/{conversationId})"),
     }),
     async run(input) {
       try {
@@ -109,7 +109,7 @@ export function createCodingSessionStartTool(ctx: ToolRuntimeContext) {
 export function createCodingSessionStatusTool(ctx: ToolRuntimeContext) {
   return betaZodTool({
     name: "coding_session_status",
-    description: "Get the latest coding workspace status for this chat.",
+    description: "Check the current state of the coding session (status, branch, workspace path). Use this to verify if a session is already active before starting one, or to get session details for follow-up operations.",
     inputSchema: z.object({
       codingSessionId: z.string().optional(),
     }),
@@ -155,7 +155,7 @@ export function createCodingSessionStatusTool(ctx: ToolRuntimeContext) {
 export function createCodingSessionPauseTool(ctx: ToolRuntimeContext) {
   return betaZodTool({
     name: "coding_session_pause",
-    description: "Pause the current coding workspace to save resources.",
+    description: "Pause the E2B sandbox to save resources. The session can be resumed later with coding_session_start_or_continue. Use this when the user is done coding for now but may return later.",
     inputSchema: z.object({
       codingSessionId: z.string(),
     }),

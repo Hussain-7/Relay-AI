@@ -1,9 +1,7 @@
 import { z } from "zod";
-import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 import type { BetaToolResultContentBlockParam } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 import type { BetaRunnableTool } from "@anthropic-ai/sdk/lib/tools/BetaRunnableTool";
 
-import { searchMemoryEntries, writeMemoryEntry } from "@/lib/memory/service";
 import { prisma } from "@/lib/prisma";
 import type { ToolCatalogEntry, ToolRuntimeContext } from "./context";
 import { jsonResult } from "./context";
@@ -13,7 +11,7 @@ export const memoryCatalog: ToolCatalogEntry = {
   label: "Memory",
   runtime: "main_agent",
   kind: "anthropic_client",
-  enabled: false,
+  enabled: true,
   description: "Workspace memory persisted in Postgres and exposed as a Claude-style memory tool.",
 };
 
@@ -220,74 +218,3 @@ export function createMemoryTool(ctx: ToolRuntimeContext): BetaRunnableTool<Memo
   };
 }
 
-export function createMemorySearchTool(ctx: ToolRuntimeContext) {
-  return betaZodTool({
-    name: "memory_search",
-    description: "Search saved workspace memory entries relevant to the current task.",
-    inputSchema: z.object({
-      query: z.string().min(1),
-      limit: z.number().int().min(1).max(10).optional(),
-    }),
-    async run(input) {
-      try {
-        const results = await searchMemoryEntries({
-          userId: ctx.userId,
-          conversationId: ctx.conversationId,
-          query: input.query,
-          limit: input.limit,
-        });
-        await ctx.emit("tool.call.completed", {
-          toolName: "memory_search",
-          toolRuntime: "custom",
-          resultCount: results.length,
-          resultPreview: `${results.length} memory entries found`,
-        });
-        return jsonResult(results);
-      } catch (error) {
-        await ctx.emit("tool.call.failed", {
-          toolName: "memory_search",
-          toolRuntime: "custom",
-          error: error instanceof Error ? error.message : "Unknown memory search error",
-        });
-        throw error;
-      }
-    },
-  });
-}
-
-export function createMemoryWriteTool(ctx: ToolRuntimeContext) {
-  return betaZodTool({
-    name: "memory_write",
-    description: "Persist a durable note to workspace memory.",
-    inputSchema: z.object({
-      title: z.string().min(1),
-      content: z.string().min(1),
-      tags: z.array(z.string()).optional(),
-    }),
-    async run(input) {
-      try {
-        const entry = await writeMemoryEntry({
-          userId: ctx.userId,
-          conversationId: ctx.conversationId,
-          title: input.title,
-          content: input.content,
-          tags: input.tags,
-        });
-        await ctx.emit("tool.call.completed", {
-          toolName: "memory_write",
-          toolRuntime: "custom",
-          memoryEntryId: entry.id,
-          resultPreview: `Saved "${entry.key}"`,
-        });
-        return `Saved memory entry "${entry.key}".`;
-      } catch (error) {
-        await ctx.emit("tool.call.failed", {
-          toolName: "memory_write",
-          toolRuntime: "custom",
-          error: error instanceof Error ? error.message : "Unknown memory write error",
-        });
-        throw error;
-      }
-    },
-  });
-}

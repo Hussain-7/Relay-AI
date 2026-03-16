@@ -10,7 +10,7 @@ import { env, hasAnthropicApiKey } from "@/lib/env";
 import { getConfiguredMcpServers } from "@/lib/main-agent/mcp";
 import { buildMainAgentSystemPrompt } from "@/lib/main-agent/system-prompt";
 import { MAIN_AGENT_SERVER_TOOLS, getMainAgentTools } from "@/lib/main-agent/tools";
-import { createMemoryTool, createMemorySearchTool, createMemoryWriteTool } from "@/lib/main-agent/tools/memory";
+import { createMemoryTool } from "@/lib/main-agent/tools/memory";
 import { getDomain, getTextWithCitations } from "@/lib/main-agent/citations";
 import { generateErrorResponse } from "@/lib/main-agent/error-recovery";
 import {
@@ -218,6 +218,7 @@ export async function streamMainAgentRun(input: {
               type: "text" as const,
               text: buildMainAgentSystemPrompt({
                 mcpServerNames: configuredMcpServers.map((s) => s.name),
+                memoryEnabled: prefs.memory,
                 linkedRepo: conversation.repoBinding
                   ? {
                       repoFullName: conversation.repoBinding.repoFullName,
@@ -252,13 +253,10 @@ export async function streamMainAgentRun(input: {
             },
           ]),
           tools: [
-            // TODO: re-enable server tools after coding session testing
-            // ...MAIN_AGENT_SERVER_TOOLS.map((tool) => tool.tool),
+            ...MAIN_AGENT_SERVER_TOOLS.map((tool) => tool.tool),
             ...tools,
             ...(prefs.memory ? [
               createMemoryTool({ userId: input.userId, conversationId: input.conversationId, runId, emit: async (type, payload) => emit(type, "main_agent", payload) }),
-              createMemorySearchTool({ userId: input.userId, conversationId: input.conversationId, runId, emit: async (type, payload) => emit(type, "main_agent", payload) }),
-              createMemoryWriteTool({ userId: input.userId, conversationId: input.conversationId, runId, emit: async (type, payload) => emit(type, "main_agent", payload) }),
             ] : []),
             // Generate mcp_toolset entries for each configured MCP server
             ...configuredMcpServers.map((server) => ({
@@ -280,6 +278,7 @@ export async function streamMainAgentRun(input: {
         let stopped = false;
         let serverPartialText = "";
         let stopCheckCounter = 0;
+        const emittedMcpToolIds = new Set<string>();
 
         for await (const assistantIteration of runner) {
           console.log(`[stop-debug] [${runId}] outer loop: new iteration yielded`);
@@ -339,7 +338,7 @@ export async function streamMainAgentRun(input: {
                 });
               }
 
-              // Client tool use (custom backend tools like chat_search, github, coding)
+              // Client tool use (custom backend tools: coding session, sandbox, memory)
               if (block.type === "tool_use") {
                 serverPartialText = "";
                 indexToToolUseId.set(rawEvent.index, block.id);
@@ -359,6 +358,7 @@ export async function streamMainAgentRun(input: {
                 const mcpBlock = block as unknown as { id: string; name: string; input: unknown; server_name: string };
                 indexToToolUseId.set(rawEvent.index, mcpBlock.id);
                 indexToToolName.set(rawEvent.index, mcpBlock.name);
+                emittedMcpToolIds.add(mcpBlock.id);
                 emit("tool.call.started", "main_agent", {
                   toolName: mcpBlock.name,
                   toolRuntime: `mcp:${mcpBlock.server_name}`,
@@ -370,53 +370,27 @@ export async function streamMainAgentRun(input: {
 
               // MCP tool result
               if ((block as unknown as { type: string }).type === "mcp_tool_result") {
-                const mcpResult = block as unknown as { tool_use_id: string; content: unknown };
+                const mcpResult = block as unknown as { tool_use_id: string; content: unknown; is_error?: boolean };
                 const toolUseId = mcpResult.tool_use_id;
                 // Find the matching tool name from our tracking
                 const matchingName = Array.from(indexToToolUseId.entries())
                   .find(([, id]) => id === toolUseId);
                 const toolName = matchingName ? indexToToolName.get(matchingName[0]) ?? "mcp_tool" : "mcp_tool";
 
-                emit("tool.call.completed", "main_agent", {
+                emit(mcpResult.is_error ? "tool.call.failed" : "tool.call.completed", "main_agent", {
                   toolName,
                   toolRuntime: "mcp",
                   toolUseId,
                   result: mcpResult.content,
+                  isError: mcpResult.is_error ?? false,
                 });
-              }
 
-              // MCP tool use (tools from external MCP servers)
-              if ("type" in block) {
-                const blockType = (block as unknown as { type: string }).type;
-                if (blockType === "mcp_tool_use") {
-                  serverPartialText = "";
-                  const mcpBlock = block as unknown as { id: string; name: string; input: unknown; server_name: string };
-                  indexToToolUseId.set(rawEvent.index, mcpBlock.id);
-                  indexToToolName.set(rawEvent.index, mcpBlock.name);
-                  emit("tool.call.started", "main_agent", {
-                    toolName: mcpBlock.name,
-                    toolRuntime: `mcp:${mcpBlock.server_name}`,
-                    toolUseId: mcpBlock.id,
-                    input: mcpBlock.input,
-                    index: rawEvent.index,
-                  });
-                }
-
-                // MCP tool result
-                if (blockType === "mcp_tool_result") {
-                  const mcpResult = block as unknown as { tool_use_id: string; content: unknown; is_error?: boolean };
-                  emit("tool.call.completed", "main_agent", {
-                    toolName: indexToToolName.get(rawEvent.index) ?? "mcp_tool",
-                    toolRuntime: "mcp",
-                    toolUseId: mcpResult.tool_use_id,
-                    result: mcpResult.content,
-                    isError: mcpResult.is_error ?? false,
-                  });
-                }
+                // Track emitted MCP tool IDs to avoid duplicates in post-loop handler
+                emittedMcpToolIds.add(toolUseId);
               }
 
               // Handle compaction blocks (context was summarized)
-              if ("type" in block && (block as unknown as { type: string }).type === "compaction") {
+              if ((block as unknown as { type: string }).type === "compaction") {
                 emit("tool.call.completed", "system", {
                   toolName: "compaction",
                   toolRuntime: "anthropic_server",
@@ -623,15 +597,17 @@ export async function streamMainAgentRun(input: {
 
         const finalMessage: BetaMessage = await runner.done();
 
-        // Emit MCP tool events from the final response (toolRunner handles MCP
-        // between iterations, so they don't appear in the streaming loop)
+        // Emit MCP tool events from the final response that weren't already
+        // emitted during streaming (toolRunner handles MCP between iterations)
         const mcpToolNames = new Map<string, string>();
         for (const block of finalMessage.content) {
           const blockAny = block as unknown as Record<string, unknown>;
           if (blockAny.type === "mcp_tool_use") {
+            const id = String(blockAny.id);
+            if (emittedMcpToolIds.has(id)) continue;
             const name = String(blockAny.name ?? "mcp_tool");
             const serverName = String(blockAny.server_name ?? "mcp");
-            mcpToolNames.set(String(blockAny.id), name);
+            mcpToolNames.set(id, name);
             emit("tool.call.started", "main_agent", {
               toolName: name,
               toolRuntime: `mcp:${serverName}`,
@@ -641,6 +617,7 @@ export async function streamMainAgentRun(input: {
           }
           if (blockAny.type === "mcp_tool_result") {
             const toolUseId = String(blockAny.tool_use_id ?? "");
+            if (emittedMcpToolIds.has(toolUseId)) continue;
             const content = blockAny.content;
             // Extract text from content array if present
             let resultText = "";

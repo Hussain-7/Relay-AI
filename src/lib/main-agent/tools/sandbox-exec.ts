@@ -20,7 +20,7 @@ export function createSandboxExecTool(ctx: ToolRuntimeContext) {
   return betaZodTool({
     name: "sandbox_exec",
     description:
-      "Execute a shell command in the active E2B coding sandbox. Use this to read/write files, run git commands, install packages, or any other shell operation in the cloned repository workspace.",
+      "Run a shell command in the ACTIVE E2B sandbox. Use this ONLY after a coding session is already running (via coding_session_start_or_continue). Good for: checking git status, running tests, listing files, installing packages, or verifying changes. Do NOT use this as the first tool — always start a coding session first. Do NOT confuse this with the built-in code_execution tool — code_execution runs short-lived scripts server-side, while sandbox_exec runs commands in the persistent E2B sandbox where the repo is cloned.",
     inputSchema: z.object({
       command: z.string().min(1).describe("The shell command to execute"),
       workspacePath: z.string().optional().describe("Working directory (defaults to the session workspace)"),
@@ -75,71 +75,6 @@ export function createSandboxExecTool(ctx: ToolRuntimeContext) {
           toolName: "sandbox_exec",
           toolRuntime: "custom",
           error: error instanceof Error ? error.message : "Unknown sandbox exec error",
-        });
-        throw error;
-      }
-    },
-  });
-}
-
-export function createSandboxWriteFileTool(ctx: ToolRuntimeContext) {
-  return betaZodTool({
-    name: "sandbox_write_file",
-    description: "Write content to a file in the E2B coding sandbox. Creates parent directories automatically.",
-    inputSchema: z.object({
-      filePath: z.string().min(1).describe("Absolute path or relative to workspace"),
-      content: z.string().describe("File content to write"),
-    }),
-    async run(input) {
-      try {
-        if (!hasE2bConfig()) {
-          throw new Error("E2B_API_KEY is required.");
-        }
-
-        const session = await prisma.codingSession.findFirst({
-          where: {
-            conversationId: ctx.conversationId,
-            status: { in: ["READY", "RUNNING"] },
-          },
-          orderBy: { updatedAt: "desc" },
-        });
-
-        if (!session?.sandboxId) {
-          throw new Error("No active coding session.");
-        }
-
-        const sandbox = await Sandbox.connect(session.sandboxId, {
-          apiKey: env.E2B_API_KEY,
-          timeoutMs: 1000 * 60 * 20,
-        });
-
-        // Resolve path relative to workspace if not absolute
-        const fullPath = input.filePath.startsWith("/")
-          ? input.filePath
-          : `${session.workspacePath}/${input.filePath}`;
-
-        // Ensure parent directory exists
-        const dir = fullPath.substring(0, fullPath.lastIndexOf("/"));
-        if (dir) {
-          await sandbox.commands.run(`mkdir -p "${dir}"`);
-        }
-
-        await sandbox.files.write(fullPath, input.content);
-
-        await ctx.emit("tool.call.completed", {
-          toolName: "sandbox_write_file",
-          toolRuntime: "custom",
-          filePath: fullPath,
-          bytes: input.content.length,
-          resultPreview: `Wrote ${input.content.length} bytes to ${fullPath}`,
-        });
-
-        return jsonResult({ written: fullPath, bytes: input.content.length });
-      } catch (error) {
-        await ctx.emit("tool.call.failed", {
-          toolName: "sandbox_write_file",
-          toolRuntime: "custom",
-          error: error instanceof Error ? error.message : "Unknown write error",
         });
         throw error;
       }

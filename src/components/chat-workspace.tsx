@@ -1126,6 +1126,10 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                   />
                 ) : null}
               </div>
+            ) : isLoadingDetail ? (
+              <div className="min-w-0 flex-[0_1_auto] py-1.5 px-2.5">
+                <div className="h-[14px] w-[140px] rounded-[4px] bg-[rgba(255,255,255,0.08)] animate-pulse" />
+              </div>
             ) : (
               <div className="min-w-0 flex-[0_1_auto] py-1.5 px-2.5 text-[0.96rem] font-[430] leading-[1.2] whitespace-nowrap overflow-hidden text-ellipsis" style={{ opacity: 0.4 }}>New chat</div>
             )}

@@ -1,10 +1,8 @@
 export type { ToolRuntimeContext, ToolCatalogEntry } from "./context";
 
 import type { ToolRuntimeContext } from "./context";
-import { createChatSearchTool, chatSearchCatalog } from "./chat-search";
-import { createGithubCreatePrTool, githubCatalog } from "./github";
 import { createCodingSessionStartTool, createCodingSessionStatusTool, createCodingSessionPauseTool, codingSessionCatalog } from "./coding-session";
-import { createSandboxExecTool, createSandboxWriteFileTool, sandboxExecCatalog } from "./sandbox-exec";
+import { createSandboxExecTool, sandboxExecCatalog } from "./sandbox-exec";
 import { memoryCatalog } from "./memory";
 
 // ── Server tools (executed by the Anthropic API) ──
@@ -67,14 +65,10 @@ export const MAIN_AGENT_SERVER_TOOLS = [
 
 export function getMainAgentTools(ctx: ToolRuntimeContext) {
   return [
-    // TODO: re-enable after coding session testing
-    // createChatSearchTool(ctx),
-    // createGithubCreatePrTool(ctx),
-    // createSandboxExecTool(ctx),
-    // createSandboxWriteFileTool(ctx),
     createCodingSessionStartTool(ctx),
     createCodingSessionStatusTool(ctx),
     createCodingSessionPauseTool(ctx),
+    createSandboxExecTool(ctx),
   ];
 }
 
@@ -93,10 +87,8 @@ export const TOOL_CATALOG = [
     description: entry.description,
   })),
   // Custom backend tools
-  chatSearchCatalog,
-  githubCatalog,
   ...codingSessionCatalog,
   sandboxExecCatalog,
-  // Disabled tools (available but not wired up)
+  // Memory (available when memory preference is on)
   memoryCatalog,
 ];
