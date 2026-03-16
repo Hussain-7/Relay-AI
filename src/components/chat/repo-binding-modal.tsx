@@ -147,7 +147,7 @@ export function RepoBindingModal({
       onClick={onClose}
     >
       <div
-        className="w-[min(560px,92vw)] max-h-[75vh] flex flex-col border border-[rgba(255,255,255,0.08)] rounded-[20px] bg-[rgba(30,28,24,0.98)] shadow-[0_24px_64px_rgba(0,0,0,0.55)] overflow-hidden"
+        className="w-[min(560px,92vw)] h-[min(75vh,620px)] flex flex-col border border-[rgba(255,255,255,0.08)] rounded-[20px] bg-[rgba(30,28,24,0.98)] shadow-[0_24px_64px_rgba(0,0,0,0.55)] overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -264,7 +264,7 @@ export function RepoBindingModal({
             <div className="repo-scroll overflow-y-auto px-5 pb-4 min-h-0 flex-1">
               {isLoading || isOwnerReposLoading ? (
                 <div className="border border-[rgba(255,255,255,0.06)] rounded-[12px] overflow-hidden divide-y divide-[rgba(255,255,255,0.06)]">
-                  {Array.from({ length: 6 }, (_, i) => (
+                  {Array.from({ length: 10 }, (_, i) => (
                     <div key={i} className="flex items-center gap-3 px-4 py-2.5 animate-pulse">
                       <span className="h-4 w-4 rounded-full bg-[rgba(255,255,255,0.06)] shrink-0" />
                       <div className="flex-1 flex items-center gap-2">
