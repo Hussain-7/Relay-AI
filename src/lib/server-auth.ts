@@ -87,20 +87,38 @@ async function ensureUserProfile(user: RequestUser) {
   const isCached = cachedAt !== undefined && Date.now() - cachedAt < USER_CACHE_TTL_MS;
 
   if (!isCached) {
-    await prisma.userProfile.upsert({
-      where: { userId: user.userId },
-      update: {
-        email: user.email,
-        fullName: user.fullName,
-        avatarUrl: user.avatarUrl,
-      },
-      create: {
-        userId: user.userId,
-        email: user.email,
-        fullName: user.fullName,
-        avatarUrl: user.avatarUrl,
-      },
-    });
+    try {
+      await prisma.userProfile.upsert({
+        where: { userId: user.userId },
+        update: {
+          email: user.email,
+          fullName: user.fullName,
+          avatarUrl: user.avatarUrl,
+        },
+        create: {
+          userId: user.userId,
+          email: user.email,
+          fullName: user.fullName,
+          avatarUrl: user.avatarUrl,
+        },
+      });
+    } catch (err) {
+      // Handle email uniqueness conflict — another userId already has this email
+      // (e.g. switching from dev mode demo-user to real Supabase auth).
+      // Reassign the existing profile to the new userId.
+      if ((err as { code?: string }).code === "P2002") {
+        await prisma.userProfile.update({
+          where: { email: user.email },
+          data: {
+            userId: user.userId,
+            fullName: user.fullName,
+            avatarUrl: user.avatarUrl,
+          },
+        });
+      } else {
+        throw err;
+      }
+    }
 
     userExistsCache.set(user.userId, Date.now());
   }
