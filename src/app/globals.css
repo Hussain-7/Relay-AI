@@ -38,6 +38,13 @@
   body {
     height: 100%;
     min-height: 100%;
+  }
+
+  /* Chat workspace manages its own scroll containers,
+     so lock the body by default. Pages that need native
+     scrolling (e.g. login) opt out with .allow-scroll. */
+  html:not(.allow-scroll),
+  html:not(.allow-scroll) > body {
     overflow: hidden;
   }
 
