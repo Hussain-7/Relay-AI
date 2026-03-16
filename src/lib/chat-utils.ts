@@ -6,7 +6,7 @@ export type LiveRunState = {
   attachments: AttachmentDto[];
   events: TimelineEventEnvelope[];
   partialText: string;
-  status: "running" | "failed";
+  status: "running" | "failed" | "interrupted";
   error: string | null;
 };
 

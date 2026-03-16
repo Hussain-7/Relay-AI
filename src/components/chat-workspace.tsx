@@ -558,6 +558,9 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                     status = "failed";
                     error = String(ev.payload?.error ?? "The agent run failed.");
                   }
+                  if (ev.type === "run.cancelled") {
+                    status = "interrupted";
+                  }
                 }
 
                 lastRunId = runId;
@@ -617,6 +620,9 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
               status = "failed";
               error = String(ev.payload?.error ?? "The agent run failed.");
             }
+            if (ev.type === "run.cancelled") {
+              status = "interrupted";
+            }
           }
           lastRunId = runId;
           lastPartialText = text;
@@ -628,8 +634,15 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
       // Phase 5: Post-stream cache patch instead of refreshConversation()
       if (lastRunId) {
         const completedEvent = allEvents.find((e) => e.type === "run.completed");
+        const cancelledEvent = allEvents.find((e) => e.type === "run.cancelled");
         const finalText = lastPartialText;
         const now = new Date().toISOString();
+
+        const runStatus = completedEvent
+          ? ("COMPLETED" as const)
+          : cancelledEvent
+            ? ("CANCELLED" as const)
+            : ("FAILED" as const);
 
         // Patch detail cache — append the completed run
         queryClient.setQueryData<ConversationDetailDto>(
@@ -639,14 +652,14 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
 
             const newRun = {
               id: lastRunId!,
-              status: completedEvent ? ("COMPLETED" as const) : ("FAILED" as const),
+              status: runStatus,
               userPrompt: prompt,
               finalText,
-              metadataJson: null,
+              metadataJson: cancelledEvent ? { cancelled: true } : null,
               createdAt: now,
               updatedAt: now,
-              completedAt: completedEvent ? now : null,
-              cancelledAt: null,
+              completedAt: completedEvent || cancelledEvent ? now : null,
+              cancelledAt: cancelledEvent ? now : null,
               attachments: attachments,
               approvals: [],
               events: allEvents.filter((e) => e.runId === lastRunId),
@@ -671,7 +684,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                     ...c,
                     updatedAt: now,
                     latestSnippet: finalText || prompt,
-                    latestRunStatus: completedEvent ? ("COMPLETED" as const) : ("FAILED" as const),
+                    latestRunStatus: runStatus,
                   }
                 : c,
             ),
@@ -739,6 +752,12 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
       setPendingMessage({ conversationId: newId, prompt, attachments });
       router.push(`/chat/${newId}`);
     }
+  }
+
+  async function handleStop() {
+    const runId = liveRun?.runId;
+    if (!runId) return;
+    await fetch(`/api/agent/runs/${runId}/stop`, { method: "POST" }).catch(() => {});
   }
 
   function handleSelectMainModel(modelId: string) {
@@ -1184,6 +1203,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                             finalText={run.finalText}
                             createdAt={run.createdAt}
                             isLast
+                            isInterrupted={run.status === "CANCELLED"}
                           />
                         </div>
                       );
@@ -1197,6 +1217,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                         events={run.events}
                         finalText={run.finalText}
                         createdAt={run.createdAt}
+                        isInterrupted={run.status === "CANCELLED"}
                       />
                     );
                   });
@@ -1210,7 +1231,8 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                       events={liveRun.events}
                       finalText={liveRun.partialText || null}
                       createdAt={new Date().toISOString()}
-                      isLive
+                      isLive={liveRun.status !== "interrupted"}
+                      isInterrupted={liveRun.status === "interrupted"}
                     />
                   </div>
                 ) : null}
@@ -1406,14 +1428,29 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
 
                 <button
                   type="button"
-                  className="inline-grid h-[40px] w-[40px] place-items-center rounded-[12px] border-0 bg-[#d47049] text-[#fff8f0] cursor-pointer shadow-[0_6px_16px_rgba(207,109,67,0.25)] transition-[transform,background,opacity] duration-[180ms] ease-linear hover:not-disabled:-translate-y-px hover:not-disabled:bg-[#dd7851] disabled:opacity-50 disabled:cursor-not-allowed max-[980px]:h-[36px] max-[980px]:w-[36px] max-[980px]:rounded-[10px]"
+                  className={`inline-grid h-[40px] w-[40px] place-items-center rounded-[12px] border-0 cursor-pointer transition-[transform,background,opacity] duration-[180ms] ease-linear max-[980px]:h-[36px] max-[980px]:w-[36px] max-[980px]:rounded-[10px] ${
+                    liveRun?.status === "running"
+                      ? "bg-[#30302e] text-[rgba(236,230,219,0.7)] border border-[rgba(255,255,255,0.15)] hover:text-[rgba(236,230,219,0.95)] hover:border-[rgba(255,255,255,0.25)]"
+                      : "bg-[#d47049] text-[#fff8f0] shadow-[0_6px_16px_rgba(207,109,67,0.25)] hover:not-disabled:-translate-y-px hover:not-disabled:bg-[#dd7851] disabled:opacity-50 disabled:cursor-not-allowed"
+                  }`}
                   onClick={() => {
-                    void handleSend();
+                    if (liveRun?.status === "running") {
+                      handleStop();
+                    } else {
+                      void handleSend();
+                    }
                   }}
-                  disabled={!composerValue.trim() || isSending}
-                  aria-label={isSending ? "Streaming response" : "Send message"}
+                  disabled={liveRun?.status !== "running" && (!composerValue.trim() || isSending)}
+                  aria-label={liveRun?.status === "running" ? "Stop response" : "Send message"}
                 >
-                  <IconArrowUp />
+                  {liveRun?.status === "running" ? (
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                      <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5" />
+                      <rect x="5.5" y="5.5" width="5" height="5" rx="0.5" fill="currentColor" />
+                    </svg>
+                  ) : (
+                    <IconArrowUp />
+                  )}
                 </button>
               </div>
             </div>

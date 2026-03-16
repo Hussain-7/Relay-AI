@@ -18,6 +18,8 @@ export function RunThread({
   createdAt,
   isLive,
   isLast,
+  isInterrupted,
+  onRetry,
 }: {
   userPrompt: string;
   attachments: AttachmentDto[];
@@ -26,6 +28,8 @@ export function RunThread({
   createdAt: string;
   isLive?: boolean;
   isLast?: boolean;
+  isInterrupted?: boolean;
+  onRetry?: () => void;
 }) {
   const entries = useMemo(() => buildTimelineEntries(events), [events]);
   const showPendingDot = isLive && entries.length === 0 && !finalText;
@@ -128,9 +132,29 @@ export function RunThread({
                   {finalText}
                 </Streamdown>
               </div>
-              {isLive ? <div className="mt-2.5 text-muted text-[0.76rem]">Streaming</div> : null}
+              {isLive && !isInterrupted ? <div className="mt-2.5 text-muted text-[0.76rem]">Streaming</div> : null}
+              {isInterrupted ? (
+                <div className="mt-3 flex items-center justify-between gap-3 rounded-[12px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-3.5 py-2.5">
+                  <div className="flex items-center gap-2 text-[0.85rem] text-[rgba(236,230,219,0.6)]">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="shrink-0 opacity-60">
+                      <circle cx="8" cy="8" r="6.5" />
+                      <path d="M8 5v3.5M8 10.5v.5" />
+                    </svg>
+                    Claude&apos;s response was interrupted
+                  </div>
+                  {onRetry ? (
+                    <button
+                      type="button"
+                      className="shrink-0 rounded-[8px] border border-[rgba(255,255,255,0.12)] bg-[rgba(255,255,255,0.05)] px-3 py-1.5 text-[0.8rem] text-[rgba(236,230,219,0.8)] cursor-pointer transition-[background,border-color] duration-150 hover:bg-[rgba(255,255,255,0.1)] hover:border-[rgba(255,255,255,0.2)]"
+                      onClick={onRetry}
+                    >
+                      Retry
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
-            {!isLive ? (
+            {!isLive && !isInterrupted ? (
               <div className={`flex items-center gap-1 h-8 transition-opacity duration-[140ms] ease-linear ${agentActionsAlwaysVisible ? "opacity-100" : "opacity-0 group-hover/msg:opacity-100"}`}>
                 <CopyButton text={finalText} label="Copy response" />
               </div>

@@ -25,6 +25,7 @@ import { maybeUpdateConversationTitle } from "@/lib/main-agent/titles";
 import { prisma } from "@/lib/prisma";
 import { calculateCostUsd } from "@/lib/usage";
 import { appendRunEvent } from "@/lib/run-events";
+import { checkStopFlag, clearStopFlag } from "@/lib/run-stop";
 import { invalidateCache } from "@/lib/server-cache";
 
 export async function streamMainAgentRun(input: {
@@ -276,7 +277,18 @@ export async function streamMainAgentRun(input: {
           attachmentIds: attachments.map((attachment) => attachment.id),
         });
 
+        let stopped = false;
+        let serverPartialText = "";
+        let stopCheckCounter = 0;
+
         for await (const assistantIteration of runner) {
+          console.log(`[stop-debug] [${runId}] outer loop: new iteration yielded`);
+          // Check stop flag between tool runner iterations
+          if (await checkStopFlag(runId)) {
+            console.log(`[stop-debug] [${runId}] outer loop: stop flag detected at iteration start`);
+            stopped = true;
+            break;
+          }
           const toolInputSnapshots = new Map<number, string>();
           const indexToToolUseId = new Map<number, string>();
           const indexToToolName = new Map<number, string>();
@@ -287,6 +299,16 @@ export async function streamMainAgentRun(input: {
           const blockTextBuffer = new Map<number, string>();
 
           for await (const rawEvent of assistantIteration as AsyncIterable<BetaRawMessageStreamEvent>) {
+            // Check stop flag every ~10 events to avoid Redis spam
+            if (++stopCheckCounter % 10 === 0) {
+              const flagValue = await checkStopFlag(runId);
+              console.log(`[stop-debug] [${runId}] inner loop: check #${stopCheckCounter}, flag=${flagValue}`);
+              if (flagValue) {
+                console.log(`[stop-debug] [${runId}] inner loop: breaking inner loop`);
+                stopped = true;
+                break;
+              }
+            }
             if (rawEvent.type === "content_block_start") {
               const block = rawEvent.content_block;
 
@@ -468,6 +490,7 @@ export async function streamMainAgentRun(input: {
               }
 
               if (rawEvent.delta.type === "text_delta") {
+                serverPartialText += rawEvent.delta.text;
                 const citations = pendingCitations.get(rawEvent.index);
                 let textToEmit = rawEvent.delta.text;
 
@@ -547,6 +570,51 @@ export async function streamMainAgentRun(input: {
               }
             }
           }
+          // Break outer loop immediately so the runner doesn't start
+          // another API call before we can act on the stop flag
+          if (stopped) {
+            console.log(`[stop-debug] [${runId}] breaking outer loop after inner loop exit`);
+            break;
+          }
+          console.log(`[stop-debug] [${runId}] inner loop ended naturally, continuing outer loop`);
+        }
+
+        console.log(`[stop-debug] [${runId}] exited loop. stopped=${stopped}`);
+
+        // If stopped by client via Redis flag, save partial state and close gracefully
+        if (stopped) {
+          console.log(`[stop-debug] [${runId}] saving partial state and closing stream`);
+          await clearStopFlag(runId);
+
+          const partialText = serverPartialText.trim() || null;
+
+          // Save partial assistant message so it persists across refresh
+          await Promise.all([
+            partialText
+              ? prisma.message.create({
+                  data: {
+                    conversationId: input.conversationId,
+                    role: "ASSISTANT",
+                    contentJson: [{ type: "text", text: partialText }] as unknown as Prisma.InputJsonValue,
+                  },
+                })
+              : Promise.resolve(),
+            prisma.agentRun.update({
+              where: { id: runId },
+              data: {
+                status: RunStatus.CANCELLED,
+                finalText: partialText,
+                metadataJson: { cancelled: true } as Prisma.InputJsonValue,
+                cancelledAt: new Date(),
+                completedAt: new Date(),
+              },
+            }),
+          ]).catch(() => {});
+
+          emit("run.cancelled", "system", { status: "cancelled" });
+          try { controller.close(); } catch { /* client already disconnected */ }
+          await Promise.allSettled(pendingWrites);
+          return;
         }
 
         const finalMessage: BetaMessage = await runner.done();

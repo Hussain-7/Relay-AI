@@ -21,6 +21,7 @@ export type TimelineEventType =
   | "coding.session.resumed"
   | "coding.agent.running"
   | "run.completed"
+  | "run.cancelled"
   | "run.failed";
 
 export type JsonRecord = Record<string, unknown>;
