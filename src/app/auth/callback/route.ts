@@ -3,9 +3,9 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
+  const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const origin = new URL(request.url).origin;
+  const next = searchParams.get("next") ?? "/chat/new";
 
   if (code) {
     const cookieStore = await cookies();
@@ -30,5 +30,5 @@ export async function GET(request: Request) {
     await supabase.auth.exchangeCodeForSession(code);
   }
 
-  return NextResponse.redirect(`${origin}/chat/new`);
+  return NextResponse.redirect(`${origin}${next}`);
 }

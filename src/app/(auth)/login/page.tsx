@@ -1,9 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
 export default function LoginPage() {
+  const searchParams = useSearchParams();
+  const next = searchParams.get("next") ?? "/chat/new";
   const [isLoading, setIsLoading] = useState(false);
 
   async function handleGoogleSignIn() {
@@ -12,7 +15,7 @@ export default function LoginPage() {
     await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
       },
     });
   }
