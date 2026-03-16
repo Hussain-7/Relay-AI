@@ -190,6 +190,13 @@
   word-break: break-word;
 }
 
+/* Prevent table cells from breaking numbers/short words mid-character */
+.agent-response .chat-markdown [data-streamdown] td,
+.agent-response .chat-markdown [data-streamdown] th {
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
 .agent-response .chat-markdown [data-streamdown] > :first-child {
   margin-top: 0;
 }
