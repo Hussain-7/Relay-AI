@@ -15,6 +15,7 @@ export interface ConfiguredMcpServer {
 }
 
 const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000; // refresh 5 min before expiry
+const TOKEN_REFRESH_TIMEOUT_MS = 3000; // max 3s for token refresh
 
 export async function getConfiguredMcpServers(userId: string): Promise<ConfiguredMcpServer[]> {
   const connectors = await prisma.mcpConnector.findMany({
@@ -22,43 +23,51 @@ export async function getConfiguredMcpServers(userId: string): Promise<Configure
     orderBy: { createdAt: "asc" },
   });
 
-  const servers: ConfiguredMcpServer[] = [];
+  // Process all connectors in parallel — each one resolves independently
+  const results = await Promise.allSettled(
+    connectors.map(async (connector): Promise<ConfiguredMcpServer | null> => {
+      let authToken: string | null = null;
 
-  for (const connector of connectors) {
-    let authToken: string | null = null;
+      if (connector.encryptedAccessToken && connector.accessTokenIv) {
+        // Check if token is expired or near-expiry
+        const isExpired = connector.tokenExpiresAt &&
+          connector.tokenExpiresAt.getTime() < Date.now() + TOKEN_EXPIRY_BUFFER_MS;
 
-    if (connector.encryptedAccessToken && connector.accessTokenIv) {
-      // Check if token is expired or near-expiry
-      const isExpired = connector.tokenExpiresAt &&
-        connector.tokenExpiresAt.getTime() < Date.now() + TOKEN_EXPIRY_BUFFER_MS;
-
-      if (isExpired && connector.encryptedRefreshToken) {
-        const refreshed = await refreshMcpToken(connector);
-        if (refreshed) {
-          authToken = refreshed.accessToken;
-        } else {
-          // Refresh failed — skip this connector
-          continue;
-        }
-      } else {
-        try {
-          if (env.MCP_TOKEN_SECRET) {
-            authToken = decryptToken(connector.encryptedAccessToken, connector.accessTokenIv);
+        if (isExpired && connector.encryptedRefreshToken) {
+          // Race token refresh against a timeout so one slow OAuth server doesn't block the run
+          const refreshed = await Promise.race([
+            refreshMcpToken(connector),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), TOKEN_REFRESH_TIMEOUT_MS)),
+          ]);
+          if (refreshed) {
+            authToken = refreshed.accessToken;
+          } else {
+            console.warn(`MCP connector "${connector.name}": token refresh timed out or failed, skipping`);
+            return null;
           }
-        } catch {
-          // Decryption failed — skip
-          continue;
+        } else {
+          try {
+            if (env.MCP_TOKEN_SECRET) {
+              authToken = decryptToken(connector.encryptedAccessToken, connector.accessTokenIv);
+            }
+          } catch {
+            console.warn(`MCP connector "${connector.name}": token decryption failed, skipping`);
+            return null;
+          }
         }
       }
-    }
 
-    servers.push({
-      name: connector.name,
-      type: "url",
-      url: connector.url,
-      authorization_token: authToken,
-    });
-  }
+      return {
+        name: connector.name,
+        type: "url",
+        url: connector.url,
+        authorization_token: authToken,
+      };
+    }),
+  );
 
-  return servers;
+  return results
+    .filter((r): r is PromiseFulfilledResult<ConfiguredMcpServer | null> => r.status === "fulfilled")
+    .map((r) => r.value)
+    .filter((s): s is ConfiguredMcpServer => s !== null);
 }

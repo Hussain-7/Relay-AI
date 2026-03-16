@@ -33,7 +33,7 @@ export default function LoginPage() {
 
           {/* Headline */}
           <h1 className="font-serif text-[2.4rem] leading-[1.1] tracking-[-0.03em] text-[rgba(245,240,232,0.95)] max-[480px]:text-[1.9rem]">
-            Think fast,<br />
+            Think fast,
             build faster
           </h1>
           <p className="mt-3 text-[0.95rem] leading-[1.5] text-[rgba(245,240,232,0.5)] max-w-[340px]">
