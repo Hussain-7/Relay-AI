@@ -5,7 +5,6 @@ import type {
 } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 import { Prisma, RunStatus } from "@prisma/client";
 
-import { ensureMainAgentSession } from "@/lib/conversations";
 import { type TimelineEventEnvelope } from "@/lib/contracts";
 import { env, hasAnthropicApiKey } from "@/lib/env";
 import { getConfiguredMcpServers } from "@/lib/main-agent/mcp";
@@ -82,16 +81,11 @@ export async function streamMainAgentRun(input: {
       };
 
       try {
-        const t0 = performance.now();
         const anthropic = hasAnthropicApiKey() ? getAnthropicClient() : null;
 
-        // Batch 1: All independent reads in parallel
-        const timed = <T>(label: string, p: Promise<T>): Promise<T> => {
-          const s = performance.now();
-          return p.then((v) => { console.log(`[TTFB]   ${label}: ${(performance.now() - s).toFixed(1)}ms`); return v; });
-        };
-        const [conversation, mainAgentSession, attachments, messageHistory, configuredMcpServers] = await Promise.all([
-          timed("conversation", prisma.conversation.findUniqueOrThrow({
+        // All independent reads in parallel — single DB round-trip
+        const [conversationWithSession, attachments, messageHistory, configuredMcpServers] = await Promise.all([
+          prisma.conversation.findUniqueOrThrow({
             where: { id: input.conversationId },
             include: {
               repoBinding: {
@@ -101,13 +95,10 @@ export async function streamMainAgentRun(input: {
                   defaultBranch: true,
                 },
               },
+              mainAgentSession: true,
             },
-          })),
-          timed("session", ensureMainAgentSession({
-            conversationId: input.conversationId,
-            userId: input.userId,
-          })),
-          timed("attachments", input.attachmentIds.length
+          }),
+          input.attachmentIds.length
             ? prisma.attachment.findMany({
                 where: {
                   id: { in: input.attachmentIds },
@@ -115,19 +106,27 @@ export async function streamMainAgentRun(input: {
                 },
                 orderBy: { createdAt: "asc" },
               })
-            : Promise.resolve([])),
-          timed("messageHistory", prisma.message.findMany({
+            : Promise.resolve([]),
+          prisma.message.findMany({
             where: { conversationId: input.conversationId },
             orderBy: { createdAt: "asc" },
-          })),
-          // MCP failures are non-fatal — continue without connectors
-          timed("mcpServers", getConfiguredMcpServers(input.userId).catch((err) => {
+          }),
+          getConfiguredMcpServers(input.userId).catch((err) => {
             console.warn("Failed to load MCP servers, continuing without:", err);
             return [] as Awaited<ReturnType<typeof getConfiguredMcpServers>>;
-          })),
+          }),
         ]);
-        const tParallelReads = performance.now();
-        console.log(`[TTFB] parallel reads total: ${(tParallelReads - t0).toFixed(1)}ms`);
+
+        const conversation = conversationWithSession;
+
+        // Ensure session exists — create only if needed (avoids redundant conversation re-fetch)
+        const mainAgentSession = conversationWithSession.mainAgentSession
+          ?? await prisma.mainAgentSession.create({
+              data: {
+                conversationId: input.conversationId,
+                userId: input.userId,
+              },
+            });
 
         const userContent: BetaContentBlockParam[] = [
           ...buildAttachmentBlocks(
@@ -143,9 +142,9 @@ export async function streamMainAgentRun(input: {
           },
         ];
 
-        // Deferred DB writes: start immediately, overlap with tool/prompt construction
+        // Deferred DB writes: overlap with tool construction + API call startup
         const dbWritesPromise = Promise.all([
-          timed("agentRun.create", prisma.agentRun.create({
+          prisma.agentRun.create({
             data: {
               id: runId,
               conversationId: input.conversationId,
@@ -159,14 +158,14 @@ export async function streamMainAgentRun(input: {
                   }
                 : undefined,
             },
-          })),
-          timed("message.create", prisma.message.create({
+          }),
+          prisma.message.create({
             data: {
               conversationId: input.conversationId,
               role: "USER",
               contentJson: userContent as unknown as Prisma.InputJsonValue,
             },
-          })),
+          }),
         ]);
 
         titleUpdatePromise = maybeUpdateConversationTitle({
@@ -199,17 +198,7 @@ export async function streamMainAgentRun(input: {
           ...(configuredMcpServers.length ? ["mcp-client-2025-11-20"] : []),
         ];
 
-        // Await DB writes before first event persistence (appendRunEvent needs the AgentRun row)
-        const tBeforeDbWait = performance.now();
-        await dbWritesPromise;
-        const tDbWrites = performance.now();
-        console.log(`[TTFB] db writes (waited): ${(tDbWrites - tBeforeDbWait).toFixed(1)}ms (started ${(tBeforeDbWait - tParallelReads).toFixed(1)}ms ago)`);
-
-        emit("run.started", "system", {
-          mainAgentSessionId: mainAgentSession.id,
-          attachmentIds: attachments.map((attachment) => attachment.id),
-        });
-
+        // Start API call immediately — don't wait for DB writes yet
         const runner = anthropic.beta.messages.toolRunner({
           model: activeModel,
           max_tokens: 16384,
@@ -278,9 +267,15 @@ export async function streamMainAgentRun(input: {
           ],
           ...(configuredMcpServers.length ? { mcp_servers: configuredMcpServers } : {}),
         } as Parameters<typeof anthropic.beta.messages.toolRunner>[0]);
-        const tRunnerCreated = performance.now();
-        console.log(`[TTFB] runner created (API call starting): ${(tRunnerCreated - t0).toFixed(1)}ms total from start`);
-        let firstByteLogged = false;
+
+        // Await DB writes — they've been running in parallel with tool construction + runner creation
+        await dbWritesPromise;
+
+        emit("run.started", "system", {
+          mainAgentSessionId: mainAgentSession.id,
+          attachmentIds: attachments.map((attachment) => attachment.id),
+        });
+
         for await (const assistantIteration of runner) {
           const toolInputSnapshots = new Map<number, string>();
           const indexToToolUseId = new Map<number, string>();
@@ -292,11 +287,6 @@ export async function streamMainAgentRun(input: {
           const blockTextBuffer = new Map<number, string>();
 
           for await (const rawEvent of assistantIteration as AsyncIterable<BetaRawMessageStreamEvent>) {
-            if (!firstByteLogged) {
-              firstByteLogged = true;
-              const tFirstByte = performance.now();
-              console.log(`[TTFB] first stream event from Anthropic: ${(tFirstByte - t0).toFixed(1)}ms total | API latency: ${(tFirstByte - tRunnerCreated).toFixed(1)}ms`);
-            }
             if (rawEvent.type === "content_block_start") {
               const block = rawEvent.content_block;
 
