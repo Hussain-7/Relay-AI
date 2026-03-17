@@ -39,11 +39,15 @@ function formatToolInputSummary(toolName: string, toolInput: unknown): string {
       const pattern = typeof inp.pattern === "string" ? inp.pattern : "";
       return pattern ? `Grep(${pattern})` : "Grep";
     }
-    case "Agent": {
-      const subType = typeof inp.subagent_type === "string" ? inp.subagent_type : "";
+    case "Agent":
+    case "Task": {
       const desc = typeof inp.description === "string" ? inp.description : "";
-      const label = subType && desc ? `${subType}: ${desc}` : subType || desc;
-      return label ? `Agent(${label})` : "Agent";
+      const prompt = typeof inp.prompt === "string" ? inp.prompt : "";
+      const subType = typeof inp.subagent_type === "string" ? inp.subagent_type : "";
+      // Prefer description (short summary), fall back to truncated prompt
+      const label = desc || (prompt.length > 80 ? prompt.slice(0, 80) + "…" : prompt);
+      const prefix = subType ? `${subType}: ` : "";
+      return label ? `Task(${prefix}${label})` : "Task";
     }
     default:
       return toolName;
