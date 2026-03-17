@@ -307,6 +307,7 @@ export async function refreshMcpToken(
   }
 }
 
-export function getOAuthCallbackUrl() {
-  return `${env.APP_URL}/api/mcp-connectors/callback`;
+export function getOAuthCallbackUrl(request?: Request) {
+  const baseUrl = request ? new URL(request.url).origin : env.APP_URL;
+  return `${baseUrl}/api/mcp-connectors/callback`;
 }

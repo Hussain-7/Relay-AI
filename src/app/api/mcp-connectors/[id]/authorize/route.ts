@@ -34,7 +34,7 @@ export async function GET(
   let clientSecret = connector.oauthClientSecret;
 
   if (!clientId && metadata.registration_endpoint) {
-    const redirectUri = getOAuthCallbackUrl();
+    const redirectUri = getOAuthCallbackUrl(request);
     const reg = await registerOAuthClient(metadata.registration_endpoint, redirectUri);
     if (reg) {
       clientId = reg.clientId;
@@ -70,7 +70,7 @@ export async function GET(
   const authUrl = new URL(metadata.authorization_endpoint);
   authUrl.searchParams.set("response_type", "code");
   authUrl.searchParams.set("client_id", clientId);
-  authUrl.searchParams.set("redirect_uri", getOAuthCallbackUrl());
+  authUrl.searchParams.set("redirect_uri", getOAuthCallbackUrl(request));
   authUrl.searchParams.set("code_challenge", codeChallenge);
   authUrl.searchParams.set("code_challenge_method", "S256");
   authUrl.searchParams.set("state", state);

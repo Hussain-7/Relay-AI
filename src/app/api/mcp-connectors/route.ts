@@ -91,7 +91,7 @@ export async function POST(request: Request) {
 
   if (result.needsAuth && result.authServerMetadata) {
     // OAuth-protected server — save with NEEDS_AUTH + metadata
-    const redirectUri = getOAuthCallbackUrl();
+    const redirectUri = getOAuthCallbackUrl(request);
 
     // Try dynamic client registration
     let clientId: string | undefined;

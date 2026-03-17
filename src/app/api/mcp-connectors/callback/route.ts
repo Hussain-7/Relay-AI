@@ -51,7 +51,7 @@ export async function GET(request: Request) {
   const tokens = await exchangeCodeForTokens(
     metadata.token_endpoint,
     code,
-    getOAuthCallbackUrl(),
+    getOAuthCallbackUrl(request),
     codeVerifier,
     connector.oauthClientId,
     connector.oauthClientSecret ?? undefined,
