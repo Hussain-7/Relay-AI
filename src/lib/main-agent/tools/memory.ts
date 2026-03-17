@@ -202,6 +202,7 @@ export function createMemoryTool(ctx: ToolRuntimeContext): BetaRunnableTool<Memo
         await ctx.emit("tool.call.completed", {
           toolName: "memory",
           toolRuntime: "anthropic_client",
+          input: command,
           result: typeof result === "string" ? result.slice(0, 2000) : jsonResult(result).slice(0, 2000),
         });
 
@@ -210,6 +211,7 @@ export function createMemoryTool(ctx: ToolRuntimeContext): BetaRunnableTool<Memo
         await ctx.emit("tool.call.failed", {
           toolName: "memory",
           toolRuntime: "anthropic_client",
+          input: command,
           error: error instanceof Error ? error.message : "Unknown memory tool error",
         });
         throw error;

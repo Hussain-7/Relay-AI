@@ -127,7 +127,8 @@ export function useConversations() {
       );
       return data.conversations;
     },
-    staleTime: 60 * 1000,
+    staleTime: 30 * 1000,
+    refetchOnWindowFocus: true,
   });
 }
 

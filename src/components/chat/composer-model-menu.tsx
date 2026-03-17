@@ -5,25 +5,12 @@ import { createPortal } from "react-dom";
 
 import type { ModelCatalogDto } from "@/lib/contracts";
 import { IconCheck } from "@/components/icons";
+import { Toggle as ToggleSwitch } from "@/components/ui/toggle";
 
 export interface AgentPreferences {
   thinking: boolean;
   effort: "low" | "medium" | "high";
   memory: boolean;
-}
-
-function ToggleSwitch({ enabled, onChange }: { enabled: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={enabled}
-      className={`relative inline-flex h-[20px] w-[36px] shrink-0 cursor-pointer rounded-full border-0 transition-colors duration-150 ${enabled ? "bg-[rgba(212,112,73,0.7)]" : "bg-[rgba(255,255,255,0.12)]"}`}
-      onClick={() => onChange(!enabled)}
-    >
-      <span className={`pointer-events-none inline-block h-[16px] w-[16px] rounded-full bg-white shadow-sm transition-transform duration-150 translate-y-[2px] ${enabled ? "translate-x-[18px]" : "translate-x-[2px]"}`} />
-    </button>
-  );
 }
 
 export function ComposerModelMenuPortal({

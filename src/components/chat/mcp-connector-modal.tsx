@@ -12,6 +12,7 @@ import {
   type McpConnectorDto,
 } from "@/lib/api-hooks";
 import { IconClose, IconPlus } from "@/components/icons";
+import { Toggle } from "@/components/ui/toggle";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -37,22 +38,6 @@ function truncateUrl(url: string, max = 52) {
   return url.length > max ? url.slice(0, max - 1) + "\u2026" : url;
 }
 
-// ── Toggle ──────────────────────────────────────────────────────────────────
-
-function Toggle({ enabled, onChange }: { enabled: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={enabled}
-      className={`relative inline-flex h-[18px] w-[32px] shrink-0 cursor-pointer rounded-full border-0 transition-colors duration-150 ${enabled ? "bg-emerald-500/70" : "bg-[rgba(255,255,255,0.1)]"}`}
-      onClick={() => onChange(!enabled)}
-    >
-      <span className={`pointer-events-none inline-block h-[14px] w-[14px] rounded-full bg-white shadow-sm transition-transform duration-150 translate-y-[2px] ${enabled ? "translate-x-[16px]" : "translate-x-[2px]"}`} />
-    </button>
-  );
-}
-
 // ── Connector Card ──────────────────────────────────────────────────────────
 
 function ConnectorCard({
@@ -76,6 +61,7 @@ function ConnectorCard({
         {/* Toggle */}
         <div className="pt-0.5">
           <Toggle
+            size="small"
             enabled={connector.status === "ACTIVE"}
             onChange={onToggle}
           />

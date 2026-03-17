@@ -53,6 +53,7 @@ export function createGithubCreateRepoTool(ctx: ToolRuntimeContext) {
         await ctx.emit("tool.call.completed", {
           toolName: "github_create_repo",
           toolRuntime: "custom",
+          input,
           result: `Repository ${binding.repoFullName} created (branch: ${binding.defaultBranch ?? "main"})`,
         });
 
@@ -67,6 +68,7 @@ export function createGithubCreateRepoTool(ctx: ToolRuntimeContext) {
         await ctx.emit("tool.call.failed", {
           toolName: "github_create_repo",
           toolRuntime: "custom",
+          input,
           error: error instanceof Error ? error.message : "Unknown error creating repo",
         });
         throw error;

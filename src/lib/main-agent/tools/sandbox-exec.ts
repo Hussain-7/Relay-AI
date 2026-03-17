@@ -65,6 +65,7 @@ export function createSandboxExecTool(ctx: ToolRuntimeContext) {
         await ctx.emit("tool.call.completed", {
           toolName: "sandbox_exec",
           toolRuntime: "custom",
+          input,
           exitCode: result.exitCode,
           result: (result.stdout || result.stderr).slice(0, 2000),
         });
@@ -74,6 +75,7 @@ export function createSandboxExecTool(ctx: ToolRuntimeContext) {
         await ctx.emit("tool.call.failed", {
           toolName: "sandbox_exec",
           toolRuntime: "custom",
+          input,
           error: error instanceof Error ? error.message : "Unknown sandbox exec error",
         });
         throw error;

@@ -62,11 +62,12 @@ export async function appendRunEvent(input: {
   const supabase = getSupabaseServerClient();
 
   if (supabase) {
-    await supabase.channel(`conversation:${input.conversationId}`).send({
+    // Fire-and-forget: don't block event persistence on Supabase broadcast latency
+    supabase.channel(`conversation:${input.conversationId}`).send({
       type: "broadcast",
       event: "run_event",
       payload: envelope,
-    });
+    }).catch(() => {});
   }
 
   return envelope;

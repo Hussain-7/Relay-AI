@@ -223,33 +223,9 @@ export async function startOrResumeCodingSession(input: {
     workspacePath,
   });
 
-  if (input.runId) {
-    await appendRunEvent({
-      runId: input.runId,
-      conversationId: input.conversationId,
-      type: "coding.session.created",
-      source: "system",
-      payload: {
-        codingSessionId: codingSession.id,
-        sandboxId: codingSession.sandboxId,
-        workspacePath: codingSession.workspacePath,
-        taskBrief: input.taskBrief ?? null,
-      },
-    });
-
-    await appendRunEvent({
-      runId: input.runId,
-      conversationId: input.conversationId,
-      type: "coding.session.ready",
-      source: "system",
-      payload: {
-        codingSessionId: codingSession.id,
-        sandboxId: codingSession.sandboxId,
-        workspacePath: codingSession.workspacePath,
-        branch: codingSession.branch,
-      },
-    });
-  }
+  // Note: coding.session.created and coding.session.ready events are emitted
+  // via ctx.emitProgress in the calling tool (coding-session.ts), which handles
+  // both SSE delivery and DB persistence. No appendRunEvent needed here.
 
   return codingSession;
 }
@@ -414,17 +390,11 @@ export async function runCodingTask(input: {
       data: { status: CodingSessionStatus.RUNNING, lastActiveAt: new Date() },
     });
 
-    // Emit coding.agent.running to both SSE (real-time) and DB (persistence)
+    // Emit coding.agent.running via onProgress (handles SSE + DB persistence)
     input.onProgress?.("coding.agent.running", "coding_agent", {
       codingSessionId: session.id,
+      workspacePath: session.workspacePath,
       message: "Running coding agent...",
-    });
-    await appendRunEvent({
-      runId: input.runId,
-      conversationId: input.conversationId,
-      type: "coding.agent.running",
-      source: "coding_agent",
-      payload: { codingSessionId: session.id, workspacePath: session.workspacePath },
     });
     const escapedTask = input.taskBrief.replace(/'/g, "'\\''");
     // Resume the previous Claude Code session if one exists (maintains conversation context)
@@ -522,14 +492,7 @@ export async function runCodingTask(input: {
                       toolRuntime: "coding_agent",
                       input: toolInput,
                     };
-                    input.onProgress?.("tool.call.started", "coding_agent", payload);
-                    appendRunEvent({
-                      runId: input.runId,
-                      conversationId: input.conversationId,
-                      type: "tool.call.started",
-                      source: "coding_agent",
-                      payload: { ...payload, input: inputPreview },
-                    });
+                    input.onProgress?.("tool.call.started", "coding_agent", { ...payload, input: inputPreview });
                     pendingToolUses.set(block.id as string, block.name as string);
                   }
                   if (block.type === "tool_result") {
@@ -546,13 +509,6 @@ export async function runCodingTask(input: {
                       result: resultPreview,
                     };
                     input.onProgress?.("tool.call.completed", "coding_agent", payload);
-                    appendRunEvent({
-                      runId: input.runId,
-                      conversationId: input.conversationId,
-                      type: "tool.call.completed",
-                      source: "coding_agent",
-                      payload,
-                    });
                     pendingToolUses.delete(toolUseId);
                   }
                 }
@@ -592,13 +548,6 @@ export async function runCodingTask(input: {
     for (const [toolUseId, toolName] of pendingToolUses) {
       const payload = { toolUseId, toolName, toolRuntime: "coding_agent" };
       input.onProgress?.("tool.call.completed", "coding_agent", payload);
-      appendRunEvent({
-        runId: input.runId,
-        conversationId: input.conversationId,
-        type: "tool.call.completed",
-        source: "coding_agent",
-        payload,
-      });
     }
     pendingToolUses.clear();
 

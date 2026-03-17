@@ -710,26 +710,32 @@ export async function streamMainAgentRun(input: {
           }
         }
         if (toolInputMap.size > 0) {
-          // Update persisted tool.call.started events with full input (background)
+          // Update persisted tool.call.started events with full input (batched, background)
           pendingWrites.push(
             (async () => {
               const startedEvents = await prisma.runEvent.findMany({
                 where: { runId, type: "tool.call.started" },
               });
-              for (const evt of startedEvents) {
-                const payload = evt.payloadJson as Record<string, unknown> | null;
-                const toolUseId = payload?.toolUseId as string | undefined;
-                if (toolUseId && toolInputMap.has(toolUseId)) {
-                  await prisma.runEvent.update({
+              const updates = startedEvents
+                .filter((evt) => {
+                  const payload = evt.payloadJson as Record<string, unknown> | null;
+                  const toolUseId = payload?.toolUseId as string | undefined;
+                  return toolUseId && toolInputMap.has(toolUseId);
+                })
+                .map((evt) => {
+                  const payload = evt.payloadJson as Record<string, unknown>;
+                  return prisma.runEvent.update({
                     where: { id: evt.id },
                     data: {
                       payloadJson: {
                         ...payload,
-                        input: toolInputMap.get(toolUseId),
+                        input: toolInputMap.get(payload.toolUseId as string),
                       } as Prisma.InputJsonValue,
                     },
-                  }).catch(() => {});
-                }
+                  });
+                });
+              if (updates.length > 0) {
+                await prisma.$transaction(updates);
               }
             })().catch(() => {}),
           );

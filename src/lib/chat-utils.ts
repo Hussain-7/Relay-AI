@@ -11,6 +11,11 @@ export type LiveRunState = {
   error: string | null;
 };
 
+export type ToolLogEntry = {
+  id: string;
+  message: string;
+};
+
 export type ToolTimelineEntry = {
   id: string;
   kind: "tool";
@@ -19,6 +24,7 @@ export type ToolTimelineEntry = {
   status: "running" | "completed" | "failed";
   input: string;
   output: string;
+  logs: ToolLogEntry[];
 };
 
 export type RenderTimelineEntry =
@@ -229,6 +235,23 @@ export function resizeComposer(textarea: HTMLTextAreaElement | null) {
   textarea.style.height = `${Math.min(textarea.scrollHeight, 220)}px`;
 }
 
+const CODING_TOOL_NAMES = new Set([
+  "coding_session_start_or_continue",
+  "coding_session_status",
+  "coding_session_pause",
+]);
+
+/** Find the most recent coding session tool entry (still running or completed). */
+function findParentCodingTool(entries: RenderTimelineEntry[]): ToolTimelineEntry | null {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i];
+    if (entry.kind === "tool" && CODING_TOOL_NAMES.has(entry.title)) {
+      return entry;
+    }
+  }
+  return null;
+}
+
 export function buildTimelineEntries(events: TimelineEventEnvelope[]) {
   const entries: RenderTimelineEntry[] = [];
   const toolEntries = new Map<string, ToolTimelineEntry>();
@@ -287,6 +310,11 @@ export function buildTimelineEntries(events: TimelineEventEnvelope[]) {
       case "assistant.text.intermediate": {
         const intermediateText = typeof event.payload?.text === "string" ? event.payload.text : "";
         if (intermediateText.trim()) {
+          // Deduplicate: skip if the previous entry is an identical intermediate
+          const prevEntry = entries[entries.length - 1];
+          if (prevEntry?.kind === "intermediate" && prevEntry.text === intermediateText) {
+            break;
+          }
           entries.push({
             id: `intermediate-${event.id}`,
             kind: "intermediate",
@@ -301,6 +329,7 @@ export function buildTimelineEntries(events: TimelineEventEnvelope[]) {
           `${String(event.payload?.toolName ?? "tool")}-${event.id}`;
         // Avoid duplicates if the same tool use ID appears multiple times
         if (!toolEntries.has(key)) {
+          const isSubTool = event.source === "coding_agent";
           const toolEntry: ToolTimelineEntry = {
             id: key,
             kind: "tool",
@@ -309,9 +338,23 @@ export function buildTimelineEntries(events: TimelineEventEnvelope[]) {
             status: "running",
             input: stringifyUnknown(event.payload?.input),
             output: "",
+            logs: [],
           };
           toolEntries.set(key, toolEntry);
-          entries.push(toolEntry);
+          // Coding agent sub-tools nest under their parent tool as logs
+          if (isSubTool) {
+            const parentTool = findParentCodingTool(entries);
+            if (parentTool) {
+              parentTool.logs.push({
+                id: key,
+                message: `${String(event.payload?.toolName ?? "Tool")} — started`,
+              });
+            } else {
+              entries.push(toolEntry);
+            }
+          } else {
+            entries.push(toolEntry);
+          }
         }
         break;
       }
@@ -344,6 +387,7 @@ export function buildTimelineEntries(events: TimelineEventEnvelope[]) {
           stringifyUnknown(event.payload?.result) ||
           stringifyUnknown(event.payload?.resultPreview) ||
           stringifyUnknown(event.payload?.error);
+        const isSubTool = event.source === "coding_agent";
         const existing = toolEntries.get(key);
         if (existing) {
           existing.status = event.type === "tool.call.completed" ? "completed" : "failed";
@@ -351,6 +395,16 @@ export function buildTimelineEntries(events: TimelineEventEnvelope[]) {
           // Backfill input if the started event had empty input (e.g. after reload)
           if (!existing.input.trim() && completedInput.trim()) {
             existing.input = completedInput;
+          }
+          // Update parent tool log for coding agent sub-tools
+          if (isSubTool) {
+            const parentTool = findParentCodingTool(entries);
+            if (parentTool) {
+              const logEntry = parentTool.logs.find((l) => l.id === key);
+              if (logEntry) {
+                logEntry.message = `${candidateName} — ${event.type === "tool.call.completed" ? "done" : "failed"}`;
+              }
+            }
           }
         } else {
           const toolEntry: ToolTimelineEntry = {
@@ -361,9 +415,23 @@ export function buildTimelineEntries(events: TimelineEventEnvelope[]) {
             status: event.type === "tool.call.completed" ? "completed" : "failed",
             input: completedInput,
             output: completedOutput,
+            logs: [],
           };
           toolEntries.set(key, toolEntry);
-          entries.push(toolEntry);
+          // Coding agent sub-tools nest under their parent tool as logs
+          if (isSubTool) {
+            const parentTool = findParentCodingTool(entries);
+            if (parentTool) {
+              parentTool.logs.push({
+                id: key,
+                message: `${candidateName} — ${event.type === "tool.call.completed" ? "done" : "failed"}`,
+              });
+            } else {
+              entries.push(toolEntry);
+            }
+          } else {
+            entries.push(toolEntry);
+          }
         }
         break;
       }
@@ -373,12 +441,19 @@ export function buildTimelineEntries(events: TimelineEventEnvelope[]) {
       case "coding.session.resumed":
       case "coding.agent.running": {
         const msg = typeof event.payload?.message === "string" ? event.payload.message : null;
-        entries.push({
-          id: event.id,
-          kind: "system",
-          title: msg ?? event.type.replaceAll(".", " "),
-          description: msg ? "" : stringifyUnknown(event.payload),
-        });
+        const logMessage = msg ?? event.type.replaceAll(".", " ");
+        // Nest under the parent coding tool if one exists
+        const parentTool = findParentCodingTool(entries);
+        if (parentTool) {
+          parentTool.logs.push({ id: event.id, message: logMessage });
+        } else {
+          entries.push({
+            id: event.id,
+            kind: "system",
+            title: logMessage,
+            description: msg ? "" : stringifyUnknown(event.payload),
+          });
+        }
         break;
       }
       case "approval.requested":

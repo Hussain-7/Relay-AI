@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Streamdown } from "streamdown";
+import { code } from "@streamdown/code";
 
 import type { AttachmentDto, TimelineEventEnvelope } from "@/lib/contracts";
 import { buildTimelineEntries, formatShortTime } from "@/lib/chat-utils";
@@ -145,7 +146,7 @@ export function RunThread({
               }}
             >
               <div className="chat-markdown mt-0 min-w-0 max-w-full">
-                <Streamdown mode="streaming" isAnimating={Boolean(isLive)} caret="block" linkSafety={{ enabled: false }}>
+                <Streamdown mode="streaming" isAnimating={Boolean(isLive)} caret="block" linkSafety={{ enabled: false }} plugins={{ code }}>
                   {finalText}
                 </Streamdown>
               </div>

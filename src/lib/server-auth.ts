@@ -19,6 +19,7 @@ const ALLOWED_EMAILS = new Set([
 ]);
 
 const USER_CACHE_TTL_MS = 5 * 60 * 1000;
+const USER_CACHE_MAX_SIZE = 500;
 const userExistsCache = new Map<string, number>();
 
 function getHeaderString(headers: Headers, name: string) {
@@ -121,5 +122,11 @@ async function ensureUserProfile(user: RequestUser) {
     }
 
     userExistsCache.set(user.userId, Date.now());
+
+    // LRU eviction: prevent unbounded cache growth
+    if (userExistsCache.size > USER_CACHE_MAX_SIZE) {
+      const oldest = userExistsCache.keys().next().value;
+      if (oldest) userExistsCache.delete(oldest);
+    }
   }
 }

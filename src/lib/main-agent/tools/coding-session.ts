@@ -90,6 +90,7 @@ export function createCodingSessionStartTool(ctx: ToolRuntimeContext) {
         await ctx.emit("tool.call.completed", {
           toolName: "coding_session_start_or_continue",
           toolRuntime: "custom",
+          input,
           codingSessionId: session.id,
           sandboxId: taskResult.sandboxId,
           workspacePath: taskResult.workspacePath,
@@ -111,6 +112,7 @@ export function createCodingSessionStartTool(ctx: ToolRuntimeContext) {
         await ctx.emit("tool.call.failed", {
           toolName: "coding_session_start_or_continue",
           toolRuntime: "custom",
+          input,
           error: error instanceof Error ? error.message : "Unknown coding session start error",
         });
         throw error;
@@ -138,6 +140,7 @@ export function createCodingSessionStatusTool(ctx: ToolRuntimeContext) {
         await ctx.emit("tool.call.completed", {
           toolName: "coding_session_status",
           toolRuntime: "custom",
+          input,
           result: session ? `${session.status} — ${session.workspacePath}` : "No active session",
         });
         return jsonResult(
@@ -156,6 +159,7 @@ export function createCodingSessionStatusTool(ctx: ToolRuntimeContext) {
         await ctx.emit("tool.call.failed", {
           toolName: "coding_session_status",
           toolRuntime: "custom",
+          input,
           error: error instanceof Error ? error.message : "Unknown coding status error",
         });
         throw error;
@@ -181,6 +185,7 @@ export function createCodingSessionPauseTool(ctx: ToolRuntimeContext) {
         await ctx.emit("tool.call.completed", {
           toolName: "coding_session_pause",
           toolRuntime: "custom",
+          input,
           result: `Session ${session.id} paused`,
         });
         return jsonResult({
@@ -191,6 +196,7 @@ export function createCodingSessionPauseTool(ctx: ToolRuntimeContext) {
         await ctx.emit("tool.call.failed", {
           toolName: "coding_session_pause",
           toolRuntime: "custom",
+          input,
           error: error instanceof Error ? error.message : "Unknown coding pause error",
         });
         throw error;

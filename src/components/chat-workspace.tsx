@@ -1,6 +1,7 @@
 "use client";
 
 import { useDeferredValue, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
+import dynamic from "next/dynamic";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -46,8 +47,8 @@ import { SidebarMenuPortal } from "@/components/chat/sidebar-menu-portal";
 import { RenameModal } from "@/components/chat/rename-modal";
 import { ComposerModelMenuPortal, type AgentPreferences } from "@/components/chat/composer-model-menu";
 import { ComposerPlusMenuPortal } from "@/components/chat/composer-plus-menu";
-import { McpConnectorModal } from "@/components/chat/mcp-connector-modal";
-import { RepoBindingModal } from "@/components/chat/repo-binding-modal";
+const McpConnectorModal = dynamic(() => import("@/components/chat/mcp-connector-modal").then(m => ({ default: m.McpConnectorModal })), { ssr: false });
+const RepoBindingModal = dynamic(() => import("@/components/chat/repo-binding-modal").then(m => ({ default: m.RepoBindingModal })), { ssr: false });
 import { AttachmentChip } from "@/components/chat/attachment-chip";
 import { RunThread } from "@/components/chat/run-thread";
 import { setPendingMessage, peekPendingMessage, consumePendingMessage } from "@/lib/pending-message";
