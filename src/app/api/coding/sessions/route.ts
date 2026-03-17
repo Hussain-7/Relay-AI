@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { ensureConversationForUser } from "@/lib/conversations";
-import { getLatestCodingSession, pauseCodingSession, startOrResumeCodingSession } from "@/lib/coding/session-service";
+import { getLatestCodingSession, startOrResumeCodingSession } from "@/lib/coding/session-service";
 import { requireRequestUser } from "@/lib/server-auth";
 
 const codingSessionSchema = z.discriminatedUnion("action", [
@@ -18,11 +18,6 @@ const codingSessionSchema = z.discriminatedUnion("action", [
     repoBindingId: z.string().optional(),
     taskBrief: z.string().min(1),
     branchStrategy: z.string().optional(),
-  }),
-  z.object({
-    action: z.literal("pause"),
-    conversationId: z.string().min(1),
-    codingSessionId: z.string().min(1),
   }),
   z.object({
     action: z.literal("status"),
@@ -49,14 +44,6 @@ export async function POST(request: Request) {
           repoBindingId: body.repoBindingId,
           taskBrief: body.taskBrief,
           branchStrategy: body.branchStrategy,
-        });
-
-        return Response.json({ codingSession: session });
-      }
-      case "pause": {
-        const session = await pauseCodingSession({
-          codingSessionId: body.codingSessionId,
-          conversationId: body.conversationId,
         });
 
         return Response.json({ codingSession: session });

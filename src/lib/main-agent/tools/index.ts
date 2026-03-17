@@ -1,7 +1,7 @@
 export type { ToolRuntimeContext, ToolCatalogEntry } from "./context";
 
 import type { ToolRuntimeContext } from "./context";
-import { createCodingSessionStartTool, createCodingSessionStatusTool, createCodingSessionPauseTool, codingSessionCatalog } from "./coding-session";
+import { createCodingAgentTool, codingSessionCatalog } from "./coding-session";
 import { createSandboxExecTool, sandboxExecCatalog } from "./sandbox-exec";
 import { createGithubCreateRepoTool, githubCatalog } from "./github";
 import { createAskUserTool, askUserCatalog } from "./ask-user";
@@ -67,9 +67,7 @@ export const MAIN_AGENT_SERVER_TOOLS = [
 
 export function getMainAgentTools(ctx: ToolRuntimeContext) {
   return [
-    createCodingSessionStartTool(ctx),
-    createCodingSessionStatusTool(ctx),
-    createCodingSessionPauseTool(ctx),
+    createCodingAgentTool(ctx),
     createSandboxExecTool(ctx),
     createGithubCreateRepoTool(ctx),
     createAskUserTool(ctx),

@@ -20,7 +20,7 @@ export function createSandboxExecTool(ctx: ToolRuntimeContext) {
   return betaZodTool({
     name: "sandbox_exec",
     description:
-      "Run a shell command in the ACTIVE E2B sandbox. Use this ONLY after a coding session is already running (via coding_session_start_or_continue). Good for: checking git status, running tests, listing files, installing packages, or verifying changes. Do NOT use this as the first tool — always start a coding session first. Do NOT confuse this with the built-in code_execution tool — code_execution runs short-lived scripts server-side, while sandbox_exec runs commands in the persistent E2B sandbox where the repo is cloned.",
+      "Run a shell command in the ACTIVE E2B sandbox. Use this ONLY after a coding session is already running (via coding_agent). Good for: checking git status, running tests, listing files, installing packages, or verifying changes. Do NOT use this as the first tool — always start a coding session first. Do NOT confuse this with the built-in code_execution tool — code_execution runs short-lived scripts server-side, while sandbox_exec runs commands in the persistent E2B sandbox where the repo is cloned.",
     inputSchema: z.object({
       command: z.string().min(1).describe("The shell command to execute"),
       workspacePath: z.string().optional().describe("Working directory (defaults to the session workspace)"),
@@ -42,7 +42,7 @@ export function createSandboxExecTool(ctx: ToolRuntimeContext) {
         });
 
         if (!session?.sandboxId) {
-          throw new Error("No active coding session. Start one first with coding_session_start_or_continue.");
+          throw new Error("No active coding session. Start one first with coding_agent.");
         }
 
         const sandbox = await Sandbox.connect(session.sandboxId, {

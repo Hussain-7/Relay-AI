@@ -105,6 +105,7 @@ export async function startOrResumeCodingSession(input: {
           CodingSessionStatus.READY,
           CodingSessionStatus.RUNNING,
           CodingSessionStatus.PAUSED,
+          CodingSessionStatus.ERROR,
         ],
       },
     },
@@ -119,33 +120,58 @@ export async function startOrResumeCodingSession(input: {
       status: codingSession.status,
     });
 
-    const sandbox = await connectSandboxOrThrow(codingSession.sandboxId);
-    await sandbox.setTimeout(SANDBOX_TIMEOUT_MS);
+    try {
+      const sandbox = await connectSandboxOrThrow(codingSession.sandboxId);
+      await sandbox.setTimeout(SANDBOX_TIMEOUT_MS);
 
-    codingSession = await prisma.codingSession.update({
-      where: { id: codingSession.id },
-      data: {
-        status: CodingSessionStatus.READY,
-        lastActiveAt: new Date(),
-      },
-      include: { repoBinding: true },
-    });
-
-    if (input.runId) {
-      await appendRunEvent({
-        runId: input.runId,
-        conversationId: input.conversationId,
-        type: "coding.session.resumed",
-        source: "system",
-        payload: {
-          codingSessionId: codingSession.id,
-          sandboxId: codingSession.sandboxId,
-          workspacePath: codingSession.workspacePath,
+      codingSession = await prisma.codingSession.update({
+        where: { id: codingSession.id },
+        data: {
+          status: CodingSessionStatus.READY,
+          lastActiveAt: new Date(),
         },
+        include: { repoBinding: true },
       });
-    }
 
-    return codingSession;
+      if (input.runId) {
+        await appendRunEvent({
+          runId: input.runId,
+          conversationId: input.conversationId,
+          type: "coding.session.resumed",
+          source: "system",
+          payload: {
+            codingSessionId: codingSession.id,
+            sandboxId: codingSession.sandboxId,
+            workspacePath: codingSession.workspacePath,
+          },
+        });
+      }
+
+      return codingSession;
+    } catch (err) {
+      log.warn("Sandbox reconnect failed — marking session CLOSED, will create fresh sandbox", {
+        sessionId: codingSession.id,
+        sandboxId: codingSession.sandboxId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      await prisma.codingSession.update({
+        where: { id: codingSession.id },
+        data: { status: CodingSessionStatus.CLOSED },
+      });
+      codingSession = null;
+      // Fall through to create a new sandbox
+    }
+  } else if (codingSession) {
+    // Session exists but has no sandboxId (stuck in PROVISIONING or ERROR) — clean up
+    log.warn("Found session with no sandboxId — marking CLOSED", {
+      sessionId: codingSession.id,
+      status: codingSession.status,
+    });
+    await prisma.codingSession.update({
+      where: { id: codingSession.id },
+      data: { status: CodingSessionStatus.CLOSED },
+    });
+    codingSession = null;
   }
 
   if (!hasE2bConfig()) {
@@ -618,46 +644,3 @@ export async function runCodingTask(input: {
   }
 }
 
-export async function pauseCodingSession(input: {
-  codingSessionId: string;
-  conversationId: string;
-  runId?: string;
-}) {
-  log.info("Pausing session", { codingSessionId: input.codingSessionId });
-
-  const codingSession = await prisma.codingSession.findUnique({
-    where: { id: input.codingSessionId },
-  });
-
-  if (!codingSession?.sandboxId) {
-    throw new Error("Coding session is missing a sandbox.");
-  }
-
-  const sandbox = await connectSandboxOrThrow(codingSession.sandboxId);
-  await sandbox.betaPause();
-
-  const updatedSession = await prisma.codingSession.update({
-    where: { id: input.codingSessionId },
-    data: {
-      status: CodingSessionStatus.PAUSED,
-      lastActiveAt: new Date(),
-    },
-  });
-
-  log.info("Session paused", { codingSessionId: updatedSession.id });
-
-  if (input.runId) {
-    await appendRunEvent({
-      runId: input.runId,
-      conversationId: input.conversationId,
-      type: "coding.session.paused",
-      source: "system",
-      payload: {
-        codingSessionId: updatedSession.id,
-        sandboxId: updatedSession.sandboxId,
-      },
-    });
-  }
-
-  return updatedSession;
-}

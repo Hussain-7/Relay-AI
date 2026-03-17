@@ -40,7 +40,7 @@ Relay AI is a Next.js 16 web application that serves as an AI workspace combinin
 
 - User sends prompt → `POST /api/agent/runs` → `streamMainAgentRun()` creates an `AgentRun`, streams SSE `TimelineEventEnvelope` events back
 - Main agent tool calls (memory, GitHub, coding session) execute server-side and emit timeline events
-- Coding sessions: main agent calls `coding_session_start_or_continue` → E2B sandbox provisioned → bootstrap spec written → coding agent runs in sandbox
+- Coding sessions: main agent calls `coding_agent` → E2B sandbox provisioned → coding agent runs in sandbox
 - Events persist to `RunEvent` table and optionally broadcast via Supabase Realtime
 
 ### Path Alias
@@ -57,7 +57,7 @@ Relay AI is a Next.js 16 web application that serves as an AI workspace combinin
 - `src/lib/main-agent/tools.ts` — client-side tool definitions (memory, GitHub, coding session control)
 - `src/lib/main-agent/tool-catalog.ts` — server tool + model catalog registry
 - `src/lib/main-agent/mcp.ts` — MCP server configuration from `ANTHROPIC_MCP_SERVERS_JSON`
-- `src/lib/coding/session-service.ts` — E2B sandbox lifecycle (provision, resume, pause)
+- `src/lib/coding/session-service.ts` — E2B sandbox lifecycle (provision, resume, reconnect)
 - `src/lib/coding/agent-runner.ts` — Claude Agent SDK integration and bootstrap spec
 - `src/lib/contracts.ts` — shared DTO types and timeline event definitions
 - `src/lib/conversations.ts` — Prisma queries and DTO mapping for conversations

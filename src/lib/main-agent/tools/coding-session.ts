@@ -1,19 +1,19 @@
 import { z } from "zod";
 import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 
-import { startOrResumeCodingSession, pauseCodingSession, getLatestCodingSession, runCodingTask } from "@/lib/coding/session-service";
+import { startOrResumeCodingSession, runCodingTask } from "@/lib/coding/session-service";
 import { prisma } from "@/lib/prisma";
 import type { ToolCatalogEntry, ToolRuntimeContext } from "./context";
 import { jsonResult } from "./context";
 
 export const codingSessionCatalog: ToolCatalogEntry[] = [
   {
-    id: "coding_session",
-    label: "Coding session control",
+    id: "coding_agent",
+    label: "Coding agent",
     runtime: "main_agent",
     kind: "custom_backend",
     enabled: true,
-    description: "Provision, pause, resume, and inspect remote coding workspaces.",
+    description: "Run a coding agent in a remote E2B sandbox with full repo access.",
   },
   {
     id: "bash",
@@ -33,9 +33,9 @@ export const codingSessionCatalog: ToolCatalogEntry[] = [
   },
 ];
 
-export function createCodingSessionStartTool(ctx: ToolRuntimeContext) {
+export function createCodingAgentTool(ctx: ToolRuntimeContext) {
   return betaZodTool({
-    name: "coding_session_start_or_continue",
+    name: "coding_agent",
     description: "Start or resume a remote coding session in an E2B cloud sandbox. Use this when the user asks you to write code, fix bugs, implement features, refactor, or any task that requires reading/writing files in a repository. This provisions a sandbox, clones the linked GitHub repo, and runs a coding agent (Claude Code) that has full filesystem access with Read, Write, Edit, Bash, Git, etc. The coding agent can also create PRs and push commits. Do NOT use your built-in code_execution tool for repository work — that is only for short-lived analysis/data scripts. Always use this tool for real coding tasks.",
     inputSchema: z.object({
       taskBrief: z.string().min(1).describe("Clear description of the coding task to perform"),
@@ -88,7 +88,7 @@ export function createCodingSessionStartTool(ctx: ToolRuntimeContext) {
         });
 
         await ctx.emit("tool.call.completed", {
-          toolName: "coding_session_start_or_continue",
+          toolName: "coding_agent",
           toolRuntime: "custom",
           input,
           codingSessionId: session.id,
@@ -110,94 +110,10 @@ export function createCodingSessionStartTool(ctx: ToolRuntimeContext) {
         });
       } catch (error) {
         await ctx.emit("tool.call.failed", {
-          toolName: "coding_session_start_or_continue",
+          toolName: "coding_agent",
           toolRuntime: "custom",
           input,
           error: error instanceof Error ? error.message : "Unknown coding session start error",
-        });
-        throw error;
-      }
-    },
-  });
-}
-
-export function createCodingSessionStatusTool(ctx: ToolRuntimeContext) {
-  return betaZodTool({
-    name: "coding_session_status",
-    description: "Check the current state of the coding session (status, branch, workspace path). Use this to verify if a session is already active before starting one, or to get session details for follow-up operations.",
-    inputSchema: z.object({
-      codingSessionId: z.string().optional(),
-    }),
-    async run(input) {
-      try {
-        const session =
-          input.codingSessionId == null
-            ? await getLatestCodingSession(ctx.conversationId)
-            : await prisma.codingSession.findUnique({
-                where: { id: input.codingSessionId },
-                include: { repoBinding: true },
-              });
-        await ctx.emit("tool.call.completed", {
-          toolName: "coding_session_status",
-          toolRuntime: "custom",
-          input,
-          result: session ? `${session.status} — ${session.workspacePath}` : "No active session",
-        });
-        return jsonResult(
-          session
-            ? {
-                id: session.id,
-                status: session.status,
-                workspacePath: session.workspacePath,
-                branch: session.branch,
-                sandboxId: session.sandboxId,
-                repoBindingId: session.repoBindingId,
-              }
-            : { status: "none" },
-        );
-      } catch (error) {
-        await ctx.emit("tool.call.failed", {
-          toolName: "coding_session_status",
-          toolRuntime: "custom",
-          input,
-          error: error instanceof Error ? error.message : "Unknown coding status error",
-        });
-        throw error;
-      }
-    },
-  });
-}
-
-export function createCodingSessionPauseTool(ctx: ToolRuntimeContext) {
-  return betaZodTool({
-    name: "coding_session_pause",
-    description: "Pause the E2B sandbox to save resources. The session can be resumed later with coding_session_start_or_continue. Use this when the user is done coding for now but may return later.",
-    inputSchema: z.object({
-      codingSessionId: z.string(),
-    }),
-    async run(input) {
-      try {
-        const session = await pauseCodingSession({
-          codingSessionId: input.codingSessionId,
-          conversationId: ctx.conversationId,
-          runId: ctx.runId,
-        });
-        await ctx.emit("tool.call.completed", {
-          toolName: "coding_session_pause",
-          toolRuntime: "custom",
-          input,
-          result: `Session ${session.id} paused`,
-        });
-        return jsonResult({
-          codingSessionId: session.id,
-          status: session.status,
-        });
-      } catch (error) {
-        await ctx.emit("tool.call.failed", {
-          toolName: "coding_session_pause",
-          toolRuntime: "custom",
-          input,
-          error: error instanceof Error ? error.message : "Unknown coding pause error",
         });
         throw error;
       }

@@ -21,7 +21,7 @@ export function createGithubCreateRepoTool(ctx: ToolRuntimeContext) {
     name: "github_create_repo",
     description:
       "Create a new GitHub repository and automatically link it to this conversation. " +
-      "After creation, the repo is ready for coding_session_start_or_continue to clone and work on. " +
+      "After creation, the repo is ready for coding_agent to clone and work on. " +
       "Use this when the user asks to create a new project/repo on GitHub. " +
       "Requires the GitHub App to be installed. The repo is created as private by default with an initial commit.",
     inputSchema: z.object({
@@ -62,7 +62,7 @@ export function createGithubCreateRepoTool(ctx: ToolRuntimeContext) {
           repoFullName: binding.repoFullName,
           defaultBranch: binding.defaultBranch,
           linkedToConversation: true,
-          message: `Repository ${binding.repoFullName} created and linked. You can now use coding_session_start_or_continue to work on it.`,
+          message: `Repository ${binding.repoFullName} created and linked. You can now use coding_agent to work on it.`,
         });
       } catch (error) {
         await ctx.emit("tool.call.failed", {
