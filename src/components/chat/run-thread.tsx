@@ -24,6 +24,7 @@ function getFileTypeBadge(filename: string): string {
 }
 
 export function RunThread({
+  runId,
   userPrompt,
   attachments,
   outputAttachments = [],
@@ -35,6 +36,7 @@ export function RunThread({
   isInterrupted,
   onRetry,
 }: {
+  runId?: string | null;
   userPrompt: string;
   attachments: AttachmentDto[];
   outputAttachments?: AttachmentDto[];
@@ -124,7 +126,7 @@ export function RunThread({
         </div>
       ) : null}
 
-      {entries.length > 0 ? <RunActivityAccordion entries={entries} isLive={isLive} /> : null}
+      {entries.length > 0 ? <RunActivityAccordion runId={runId} entries={entries} isLive={isLive} /> : null}
 
       {finalText ? (
         <div className="message-row flex w-full min-w-0 justify-start">

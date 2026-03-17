@@ -1226,6 +1226,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                       return (
                         <div key={run.id} ref={latestRunRef} style={{ minHeight: "calc(100vh - 140px)" }}>
                           <RunThread
+                            runId={run.id}
                             userPrompt={run.userPrompt}
                             attachments={run.attachments}
                             outputAttachments={run.outputAttachments}
@@ -1242,6 +1243,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                     return (
                       <RunThread
                         key={run.id}
+                        runId={run.id}
                         userPrompt={run.userPrompt}
                         attachments={run.attachments}
                         outputAttachments={run.outputAttachments}
@@ -1257,6 +1259,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                 {liveRun && !runs.some((r) => r.id === liveRun.runId) ? (
                   <div ref={latestRunRef} style={{ minHeight: "calc(100vh - 180px)" }}>
                     <RunThread
+                      runId={liveRun.runId}
                       userPrompt={liveRun.userPrompt}
                       attachments={liveRun.attachments}
                       outputAttachments={liveRun.outputAttachments}
