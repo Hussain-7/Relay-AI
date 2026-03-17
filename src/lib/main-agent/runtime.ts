@@ -85,7 +85,7 @@ export async function streamMainAgentRun(input: {
         const anthropic = hasAnthropicApiKey() ? getAnthropicClient() : null;
 
         // All independent reads in parallel — single DB round-trip
-        const [conversationWithSession, attachments, messageHistory, configuredMcpServers] = await Promise.all([
+        const [conversationWithSession, attachments, messageHistory, configuredMcpServers, activeCodingSession] = await Promise.all([
           prisma.conversation.findUniqueOrThrow({
             where: { id: input.conversationId },
             include: {
@@ -115,6 +115,14 @@ export async function streamMainAgentRun(input: {
           getConfiguredMcpServers(input.userId).catch((err) => {
             console.warn("Failed to load MCP servers, continuing without:", err);
             return [] as Awaited<ReturnType<typeof getConfiguredMcpServers>>;
+          }),
+          prisma.codingSession.findFirst({
+            where: {
+              conversationId: input.conversationId,
+              status: { in: ["PROVISIONING", "READY", "RUNNING", "PAUSED", "ERROR"] },
+            },
+            orderBy: { updatedAt: "desc" },
+            select: { id: true, status: true, sandboxId: true, workspacePath: true, branch: true },
           }),
         ]);
 
@@ -240,6 +248,14 @@ export async function streamMainAgentRun(input: {
                       repoFullName: conversation.repoBinding.repoFullName,
                       defaultBranch: conversation.repoBinding.defaultBranch,
                       repoBindingId: conversation.repoBinding.id,
+                    }
+                  : null,
+                codingSession: activeCodingSession
+                  ? {
+                      status: activeCodingSession.status,
+                      sandboxId: activeCodingSession.sandboxId,
+                      workspacePath: activeCodingSession.workspacePath,
+                      branch: activeCodingSession.branch,
                     }
                   : null,
               }),
