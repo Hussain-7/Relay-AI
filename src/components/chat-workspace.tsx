@@ -110,6 +110,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
   const [connectorModalOpen, setConnectorModalOpen] = useState(false);
   const [repoModalOpen, setRepoModalOpen] = useState(false);
+  const [repoChipOpen, setRepoChipOpen] = useState(false);
   const linkRepoMutation = useLinkRepoToConversation();
   const plusButtonRef = useRef<HTMLButtonElement | null>(null);
   const { preferences: userPreferences, savePreferences } = usePreferences();
@@ -150,6 +151,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
       setHeaderMenuOpen(false);
       setModelMenuOpen(false);
       setPlusMenuOpen(false);
+      setRepoChipOpen(false);
     }
   });
 
@@ -1413,21 +1415,52 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
               )}
 
               {activeConversation?.repoBinding && (
-                <div className="inline-flex items-center gap-1.5 rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-2.5 py-1 text-[0.78rem] text-[rgba(245,240,232,0.65)]">
-                  <IconGithub />
-                  <span className="max-w-[160px] truncate">{activeConversation.repoBinding.repoFullName}</span>
+                <div className="relative min-w-0 shrink">
+                  {/* Desktop: full chip with name + × */}
+                  <div className="hidden min-[981px]:inline-flex items-center gap-1.5 rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-2.5 py-1 text-[0.78rem] text-[rgba(245,240,232,0.65)]" title={activeConversation.repoBinding.repoFullName}>
+                    <IconGithub />
+                    <span className="max-w-[160px] truncate">{activeConversation.repoBinding.repoName}</span>
+                    <button
+                      type="button"
+                      className="inline-grid h-4 w-4 place-items-center border-0 bg-transparent text-[rgba(245,240,232,0.35)] cursor-pointer rounded-full p-0 transition-colors duration-140 hover:text-[rgba(245,240,232,0.7)]"
+                      onClick={() => {
+                        if (activeConversation) {
+                          linkRepoMutation.mutate({ conversationId: activeConversation.id, repoBindingId: null });
+                        }
+                      }}
+                      aria-label="Unlink repository"
+                    >
+                      <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3 w-3"><path d="M4 12L12 4M12 12L4 4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+                    </button>
+                  </div>
+                  {/* Mobile: icon-only button with click popover */}
                   <button
                     type="button"
-                    className="inline-grid h-4 w-4 place-items-center border-0 bg-transparent text-[rgba(245,240,232,0.35)] cursor-pointer rounded-full p-0 transition-colors duration-140 hover:text-[rgba(245,240,232,0.7)]"
-                    onClick={() => {
-                      if (activeConversation) {
-                        linkRepoMutation.mutate({ conversationId: activeConversation.id, repoBindingId: null });
-                      }
-                    }}
-                    aria-label="Unlink repository"
+                    className="min-[981px]:hidden inline-grid h-8 w-8 place-items-center rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] text-[rgba(245,240,232,0.65)] cursor-pointer p-0 transition-colors duration-140 hover:bg-[rgba(255,255,255,0.06)]"
+                    onClick={() => setRepoChipOpen((v) => !v)}
+                    aria-label={`Linked repo: ${activeConversation.repoBinding.repoFullName}`}
                   >
-                    <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3 w-3"><path d="M4 12L12 4M12 12L4 4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+                    <IconGithub />
                   </button>
+                  {repoChipOpen && (
+                    <div className="min-[981px]:hidden absolute bottom-full left-0 mb-2 z-50">
+                      <div className="rounded-[10px] border border-[rgba(255,255,255,0.1)] bg-[rgba(28,26,22,0.96)] shadow-[0_8px_24px_rgba(0,0,0,0.4)] backdrop-blur-xl px-3 py-2.5 whitespace-nowrap">
+                        <div className="text-[0.78rem] text-[rgba(245,240,232,0.85)] font-medium">{activeConversation.repoBinding.repoFullName}</div>
+                        <button
+                          type="button"
+                          className="mt-2 w-full text-left text-[0.75rem] text-[rgba(243,199,180,0.8)] cursor-pointer border-0 bg-transparent p-0 hover:text-[rgba(243,199,180,1)]"
+                          onClick={() => {
+                            if (activeConversation) {
+                              linkRepoMutation.mutate({ conversationId: activeConversation.id, repoBindingId: null });
+                            }
+                            setRepoChipOpen(false);
+                          }}
+                        >
+                          Disconnect repo
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1435,14 +1468,16 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                 <div className="group/mcp relative">
                   <button
                     type="button"
-                    className="inline-flex items-center gap-1.5 rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-2.5 py-1 text-[0.78rem] text-[rgba(245,240,232,0.55)] cursor-pointer transition-colors duration-140 hover:bg-[rgba(255,255,255,0.06)] hover:text-[rgba(245,240,232,0.8)]"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-2.5 py-1 max-[980px]:px-2 text-[0.78rem] text-[rgba(245,240,232,0.55)] cursor-pointer transition-colors duration-140 hover:bg-[rgba(255,255,255,0.06)] hover:text-[rgba(245,240,232,0.8)]"
                     onClick={() => setConnectorModalOpen(true)}
+                    aria-label={`${activeMcpCount} MCP connector${activeMcpCount > 1 ? "s" : ""} connected`}
                   >
                     <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
                       <path d="M6 2v3M10 2v3M6 11v3M10 11v3M2 6h3M2 10h3M11 6h3M11 10h3" />
                       <rect x="5" y="5" width="6" height="6" rx="1" />
                     </svg>
-                    <span>{activeMcpCount} MCP</span>
+                    <span className="max-[980px]:hidden">{activeMcpCount} MCP</span>
+                    <span className="hidden max-[980px]:inline text-[0.7rem]">{activeMcpCount}</span>
                   </button>
                   <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 opacity-0 scale-95 group-hover/mcp:opacity-100 group-hover/mcp:scale-100 transition-[opacity,transform] duration-150 origin-bottom">
                     <div className="rounded-[10px] border border-[rgba(255,255,255,0.1)] bg-[rgba(28,26,22,0.96)] shadow-[0_8px_24px_rgba(0,0,0,0.4)] backdrop-blur-xl px-3 py-2 whitespace-nowrap">
