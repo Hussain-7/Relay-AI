@@ -147,6 +147,7 @@ function AddConnectorForm({
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [token, setToken] = useState("");
+  const [clientId, setClientId] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = useCallback(async () => {
@@ -162,6 +163,7 @@ function AddConnectorForm({
         name: name.trim(),
         url: url.trim(),
         authorizationToken: token.trim() || undefined,
+        clientId: clientId.trim() || undefined,
       });
 
       if (result.needsAuth) {
@@ -175,11 +177,12 @@ function AddConnectorForm({
       setName("");
       setUrl("");
       setToken("");
+      setClientId("");
       onCreated();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to connect");
     }
-  }, [name, url, token, createMutation, onCreated]);
+  }, [name, url, token, clientId, createMutation, onCreated]);
 
   return (
     <div className="flex flex-col h-full">
@@ -239,6 +242,22 @@ function AddConnectorForm({
           />
           <p className="text-[rgba(245,240,232,0.25)] text-[0.72rem] mt-1.5 m-0">
             Leave empty for open servers or OAuth-protected servers.
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-[rgba(245,240,232,0.52)] text-[0.76rem] font-medium mb-1.5">
+            Client ID <span className="text-[rgba(245,240,232,0.28)] font-normal">(optional)</span>
+          </label>
+          <input
+            type="text"
+            className="w-full rounded-[10px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-3.5 py-2.5 text-[rgba(245,240,232,0.92)] text-[0.88rem] outline-none placeholder:text-[rgba(245,240,232,0.22)] focus:border-[rgba(212,112,73,0.4)] transition-colors font-mono text-[0.82rem]"
+            placeholder="e.g. vercel-mcp-adapter"
+            value={clientId}
+            onChange={(e) => setClientId(e.target.value)}
+          />
+          <p className="mt-1 text-[rgba(245,240,232,0.28)] text-[0.72rem] m-0">
+            Required for servers that don&apos;t support automatic registration
           </p>
         </div>
 

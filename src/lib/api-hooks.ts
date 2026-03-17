@@ -431,7 +431,7 @@ export function useCreateMcpConnector() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (vars: { name: string; url: string; authorizationToken?: string }) => {
+    mutationFn: async (vars: { name: string; url: string; authorizationToken?: string; clientId?: string }) => {
       const data = await fetchJson<{
         connector: McpConnectorDto;
         needsAuth?: boolean;

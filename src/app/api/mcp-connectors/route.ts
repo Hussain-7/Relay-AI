@@ -11,6 +11,7 @@ const createSchema = z.object({
   name: z.string().min(1).max(100),
   url: z.string().url(),
   authorizationToken: z.string().optional(),
+  clientId: z.string().optional(),
 });
 
 export async function GET(request: Request) {
@@ -111,7 +112,7 @@ export async function POST(request: Request) {
         url: body.url,
         status: "NEEDS_AUTH",
         oauthServerMetadata: result.authServerMetadata as unknown as Prisma.InputJsonValue,
-        oauthClientId: clientId,
+        oauthClientId: clientId ?? body.clientId,
         oauthClientSecret: clientSecret,
       },
     });

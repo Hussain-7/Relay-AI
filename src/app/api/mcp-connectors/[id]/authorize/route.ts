@@ -47,7 +47,10 @@ export async function GET(
   }
 
   if (!clientId) {
-    return Response.json({ error: "Could not register OAuth client" }, { status: 422 });
+    return Response.json({
+      error:
+        "This server requires a pre-registered Client ID. Delete and re-add this connector, entering the Client ID in the form (e.g. Vercel MCP uses 'vercel-mcp-adapter').",
+    }, { status: 422 });
   }
 
   // PKCE
