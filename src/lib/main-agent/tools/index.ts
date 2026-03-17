@@ -4,6 +4,7 @@ import type { ToolRuntimeContext } from "./context";
 import { createCodingSessionStartTool, createCodingSessionStatusTool, createCodingSessionPauseTool, codingSessionCatalog } from "./coding-session";
 import { createSandboxExecTool, sandboxExecCatalog } from "./sandbox-exec";
 import { createGithubCreateRepoTool, githubCatalog } from "./github";
+import { createAskUserTool, askUserCatalog } from "./ask-user";
 import { memoryCatalog } from "./memory";
 
 // ── Server tools (executed by the Anthropic API) ──
@@ -71,6 +72,7 @@ export function getMainAgentTools(ctx: ToolRuntimeContext) {
     createCodingSessionPauseTool(ctx),
     createSandboxExecTool(ctx),
     createGithubCreateRepoTool(ctx),
+    createAskUserTool(ctx),
   ];
 }
 
@@ -92,6 +94,7 @@ export const TOOL_CATALOG = [
   ...codingSessionCatalog,
   sandboxExecCatalog,
   githubCatalog,
+  askUserCatalog,
   // Memory (available when memory preference is on)
   memoryCatalog,
 ];

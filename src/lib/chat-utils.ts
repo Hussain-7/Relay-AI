@@ -48,8 +48,13 @@ export type RenderTimelineEntry =
   | {
       id: string;
       kind: "approval";
-      title: string;
-      description: string;
+      approvalId: string;
+      question: string;
+      options: string[] | null;
+      allowFreeform: boolean;
+      status: "pending" | "answered" | "rejected" | "timeout";
+      response: Record<string, unknown> | null;
+      runId: string;
     }
   | {
       id: string;
@@ -175,6 +180,10 @@ export function buildActivitySummary(entries: RenderTimelineEntry[], isLive: boo
 
   if (entries.some((entry) => entry.kind === "thinking")) {
     return isLive ? "Thinking through the answer" : "Reasoned through the answer";
+  }
+
+  if (entries.some((entry) => entry.kind === "approval" && entry.status === "pending")) {
+    return "Waiting for your response";
   }
 
   if (entries.some((entry) => entry.kind === "approval")) {
@@ -456,13 +465,52 @@ export function buildTimelineEntries(events: TimelineEventEnvelope[]) {
         }
         break;
       }
-      case "approval.requested":
-      case "approval.resolved": {
+      case "approval.requested": {
+        const approvalId = typeof event.payload?.approvalId === "string" ? event.payload.approvalId : event.id;
+        const question = typeof event.payload?.question === "string" ? event.payload.question : "Approval requested";
+        const options = Array.isArray(event.payload?.options) ? (event.payload.options as string[]) : null;
+        const allowFreeform = typeof event.payload?.allowFreeform === "boolean" ? event.payload.allowFreeform : true;
         entries.push({
-          id: event.id,
+          id: `approval-${approvalId}`,
           kind: "approval",
-          title: event.type === "approval.requested" ? "Approval requested" : "Approval resolved",
-          description: stringifyUnknown(event.payload),
+          approvalId,
+          question,
+          options,
+          allowFreeform,
+          status: "pending",
+          response: null,
+          runId: event.runId,
+        });
+        break;
+      }
+      case "approval.resolved": {
+        const resolvedApprovalId = typeof event.payload?.approvalId === "string" ? event.payload.approvalId : null;
+        const resolvedStatus = event.payload?.status === "APPROVED" ? "answered" as const
+          : event.payload?.status === "REJECTED" && (event.payload?.response as Record<string, unknown> | null)?.reason === "timeout" ? "timeout" as const
+          : "rejected" as const;
+        const resolvedResponse = (event.payload?.response as Record<string, unknown> | null) ?? null;
+        // Find and update the matching pending approval entry
+        if (resolvedApprovalId) {
+          const existing = entries.find(
+            (e) => e.kind === "approval" && e.approvalId === resolvedApprovalId,
+          );
+          if (existing && existing.kind === "approval") {
+            existing.status = resolvedStatus;
+            existing.response = resolvedResponse;
+            break;
+          }
+        }
+        // Fallback: create a standalone resolved entry (shouldn't normally happen)
+        entries.push({
+          id: `approval-resolved-${event.id}`,
+          kind: "approval",
+          approvalId: resolvedApprovalId ?? event.id,
+          question: "Question",
+          options: null,
+          allowFreeform: true,
+          status: resolvedStatus,
+          response: resolvedResponse,
+          runId: event.runId,
         });
         break;
       }

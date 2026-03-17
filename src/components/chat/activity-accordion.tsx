@@ -11,6 +11,9 @@ import { ActivityStep } from "@/components/chat/activity-step";
 // Keyed by runId so each run's accordion state is independent.
 const userToggledRuns = new Map<string, boolean>();
 
+// Track which runs have been auto-expanded for pending approvals
+const autoExpandedForApproval = new Set<string>();
+
 export function RunActivityAccordion({
   runId,
   entries,
@@ -20,14 +23,30 @@ export function RunActivityAccordion({
   entries: RenderTimelineEntry[];
   isLive?: boolean;
 }) {
+  const hasPendingApproval = entries.some((e) => e.kind === "approval" && e.status === "pending");
+
   const [isExpanded, setIsExpanded] = useState(() => {
     // If user previously toggled this run's accordion, respect that
     if (runId && userToggledRuns.has(runId)) {
       return userToggledRuns.get(runId)!;
     }
+    // Auto-expand if there's already a pending approval on mount
+    if (hasPendingApproval) {
+      return true;
+    }
     // Default: collapsed
     return false;
   });
+
+  // Auto-expand when a pending approval arrives after mount.
+  // We derive this as a one-way latch: once we detect a new pending approval
+  // for a run we haven't auto-expanded yet, we set state during render
+  // (React allows setState during render if it's the same component and conditional).
+  if (hasPendingApproval && runId && !autoExpandedForApproval.has(runId) && !isExpanded) {
+    autoExpandedForApproval.add(runId);
+    userToggledRuns.set(runId, true);
+    setIsExpanded(true);
+  }
 
   const summary = useMemo(() => buildActivitySummary(entries, Boolean(isLive)), [entries, isLive]);
 

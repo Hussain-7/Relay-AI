@@ -190,6 +190,7 @@ export async function streamMainAgentRun(input: {
           emitProgress: (type: Parameters<typeof emit>[0], source: Parameters<typeof emit>[1], payload?: Record<string, unknown> | null) => emit(type, source, payload),
         };
         const tools = getMainAgentTools(toolCtx);
+        console.log("[debug] Custom tools passed to runner:", tools.map((t) => (t as unknown as { name: string }).name));
 
         const activeModel = mainAgentSession.anthropicModel ?? env.ANTHROPIC_MAIN_MODEL;
         const prefs = input.preferences ?? {};
@@ -209,8 +210,8 @@ export async function streamMainAgentRun(input: {
         // Start API call immediately — don't wait for DB writes yet
         const runner = anthropic.beta.messages.toolRunner({
           model: activeModel,
-          max_tokens: 16384,
-          max_iterations: 20,
+          max_tokens: 32000,
+          max_iterations: 30,
           stream: true,
           betas,
           container: {

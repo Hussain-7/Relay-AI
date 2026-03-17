@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
+import { appendRunEvent } from "@/lib/run-events";
 import { requireRequestUser } from "@/lib/server-auth";
 
 const approveSchema = z.object({
@@ -24,6 +25,7 @@ export async function POST(
         id,
         userId: user.userId,
       },
+      select: { id: true, conversationId: true },
     });
 
     if (!run) {
@@ -36,6 +38,19 @@ export async function POST(
         status: body.status,
         responseJson: (body.responseJson ?? {}) as Prisma.InputJsonValue,
         resolvedAt: new Date(),
+      },
+    });
+
+    // Persist the resolved event so it survives page reloads and broadcasts via Realtime
+    await appendRunEvent({
+      runId: id,
+      conversationId: run.conversationId,
+      type: "approval.resolved",
+      source: "user",
+      payload: {
+        approvalId: body.approvalId,
+        status: body.status,
+        response: body.responseJson ?? null,
       },
     });
 

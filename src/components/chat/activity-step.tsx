@@ -2,6 +2,7 @@ import type { RenderTimelineEntry } from "@/lib/chat-utils";
 import { formatToolDisplayName, formatToolStatusLabel, formatToolRuntimeLabel } from "@/lib/chat-utils";
 import { IconThinking, IconTool, IconDone, IconInfo } from "@/components/icons";
 import { ToolStepDetails } from "@/components/chat/tool-step-details";
+import { ApprovalCard } from "@/components/chat/approval-card";
 
 export function ActivityStep({
   entry,
@@ -64,6 +65,22 @@ export function ActivityStep({
           </div>
           {entry.runtime ? <div className="mt-1 text-[rgba(245,240,232,0.42)] text-[0.78rem]">{formatToolRuntimeLabel(entry.runtime)}</div> : null}
           <ToolStepDetails entry={entry} />
+        </div>
+      </li>
+    );
+  }
+
+  if (entry.kind === "approval") {
+    return (
+      <li className="activity-step grid grid-cols-[34px_minmax(0,1fr)] gap-3.5">
+        <div className="flex flex-col items-center min-h-full" aria-hidden="true">
+          <span className="inline-grid h-7 w-7 place-items-center border border-[rgba(255,255,255,0.1)] rounded-full bg-[rgba(255,255,255,0.02)] text-[rgba(245,240,232,0.62)]">
+            <IconInfo />
+          </span>
+          {!isLast ? <span className="w-px flex-1 mt-2 bg-[linear-gradient(180deg,rgba(255,255,255,0.1),rgba(255,255,255,0.02))]" /> : null}
+        </div>
+        <div className="min-w-0 pt-px">
+          <ApprovalCard entry={entry} />
         </div>
       </li>
     );
