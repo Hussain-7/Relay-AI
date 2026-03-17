@@ -119,6 +119,52 @@ export async function getLatestCodingSession(conversationId: string) {
   });
 }
 
+/**
+ * Kill the E2B sandbox and mark the coding session as CLOSED.
+ * Saves cost by not letting idle sandboxes run for the full timeout.
+ */
+export async function closeCodingSession(conversationId: string) {
+  const session = await prisma.codingSession.findFirst({
+    where: {
+      conversationId,
+      status: { in: ["PROVISIONING", "READY", "RUNNING", "PAUSED", "ERROR"] },
+    },
+    orderBy: { updatedAt: "desc" },
+  });
+
+  if (!session) {
+    return { closed: false, reason: "No active coding session found." };
+  }
+
+  if (session.sandboxId && hasE2bConfig()) {
+    try {
+      const sandbox = await Sandbox.connect(session.sandboxId, {
+        apiKey: env.E2B_API_KEY,
+        timeoutMs: 10_000,
+      });
+      await sandbox.kill();
+      log.info("Sandbox killed", { sandboxId: session.sandboxId, sessionId: session.id });
+    } catch (err) {
+      // Sandbox may already be dead — that's fine
+      log.warn("Failed to kill sandbox (may already be stopped)", {
+        sandboxId: session.sandboxId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  await prisma.codingSession.update({
+    where: { id: session.id },
+    data: { status: CodingSessionStatus.CLOSED },
+  });
+
+  return {
+    closed: true,
+    sessionId: session.id,
+    sandboxId: session.sandboxId,
+  };
+}
+
 const SANDBOX_CLAUDE_MD = `
 You are Relay AI's coding agent working in a sandboxed workspace.
 

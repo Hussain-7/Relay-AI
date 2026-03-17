@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 
-import { startOrResumeCodingSession, runCodingTask } from "@/lib/coding/session-service";
+import { startOrResumeCodingSession, runCodingTask, closeCodingSession } from "@/lib/coding/session-service";
 import { prisma } from "@/lib/prisma";
 import type { ToolCatalogEntry, ToolRuntimeContext } from "./context";
 import { jsonResult } from "./context";
@@ -30,6 +30,14 @@ export const codingSessionCatalog: ToolCatalogEntry[] = [
     kind: "claude_code_builtin",
     enabled: true,
     description: "Claude Code file editing inside the remote coding workspace.",
+  },
+  {
+    id: "close_sandbox",
+    label: "Close sandbox",
+    runtime: "main_agent",
+    kind: "custom_backend",
+    enabled: true,
+    description: "Kill the E2B sandbox to save cost when the coding task is done.",
   },
 ];
 
@@ -130,6 +138,50 @@ export function createCodingAgentTool(ctx: ToolRuntimeContext) {
           toolRuntime: "custom",
           input,
           error: error instanceof Error ? error.message : "Unknown coding session start error",
+        });
+        throw error;
+      }
+    },
+  });
+}
+
+export function createCloseSandboxTool(ctx: ToolRuntimeContext) {
+  return betaZodTool({
+    name: "close_sandbox",
+    description:
+      "Close the active E2B sandbox to stop billing. Use after the coding task is done and no more sandbox commands are needed. The sandbox costs money while running, so close it when work is complete. A new sandbox will be provisioned automatically if the user asks for more coding work later.",
+    inputSchema: z.object({
+      confirm: z.boolean().describe("Set to true to confirm closing the sandbox"),
+    }),
+    async run(input) {
+      try {
+        if (!input.confirm) {
+          return jsonResult({ closed: false, reason: "Confirmation required. Set confirm: true to close." });
+        }
+
+        const result = await closeCodingSession(ctx.conversationId);
+
+        if (result.closed) {
+          ctx.emitProgress("coding.session.paused", "system", {
+            message: "Sandbox closed",
+            codingSessionId: result.sessionId,
+          });
+        }
+
+        await ctx.emit("tool.call.completed", {
+          toolName: "close_sandbox",
+          toolRuntime: "custom",
+          input,
+          ...result,
+        });
+
+        return jsonResult(result);
+      } catch (error) {
+        await ctx.emit("tool.call.failed", {
+          toolName: "close_sandbox",
+          toolRuntime: "custom",
+          input,
+          error: error instanceof Error ? error.message : "Failed to close sandbox",
         });
         throw error;
       }
