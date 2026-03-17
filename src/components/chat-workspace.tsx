@@ -74,7 +74,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   );
 
   // TanStack Query hooks
-  const { data: authUser } = useUser();
+  const { data: authUser, isLoading: isLoadingUser } = useUser();
   const { data: catalog } = useModelCatalog();
   const { data: conversations = [], isLoading: isLoadingConversations } = useConversations();
   const { data: githubStatus } = useGithubStatus();
@@ -1005,6 +1005,16 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
         </div>
 
         <div className="relative mt-auto pt-2 border-t border-[rgba(255,255,255,0.06)]" ref={profileRef}>
+          {isLoadingUser ? (
+            <div className="grid w-full grid-cols-[36px_1fr_16px] items-center gap-2.5 rounded-[10px] py-2.5 px-2 animate-pulse">
+              <div className="h-9 w-9 rounded-full bg-[rgba(255,255,255,0.08)]" />
+              <div className="min-w-0 space-y-1.5">
+                <div className="h-[14px] w-24 rounded bg-[rgba(255,255,255,0.08)]" />
+                <div className="h-[12px] w-36 rounded bg-[rgba(255,255,255,0.06)]" />
+              </div>
+              <div className="h-4 w-4" />
+            </div>
+          ) : (
           <button
             type="button"
             className="grid w-full grid-cols-[36px_1fr_16px] items-center gap-2.5 border-0 rounded-[10px] bg-transparent text-inherit cursor-pointer py-2.5 px-2 text-left transition-[background] duration-[140ms] ease-linear hover:bg-[#2f2f2d]"
@@ -1023,69 +1033,59 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
             </div>
             <span className="inline-grid place-items-center text-[rgba(236,230,219,0.36)]"><IconChevron /></span>
           </button>
+          )}
 
           {profileMenuOpen ? (
             <div className="absolute bottom-[calc(100%+8px)] left-0 right-0 border border-[rgba(255,255,255,0.12)] rounded-[16px] bg-[linear-gradient(180deg,rgba(63,61,56,0.96),rgba(53,51,47,0.96))] p-3 shadow-[0_24px_60px_rgba(0,0,0,0.34)] backdrop-blur-[18px]">
-              <div className="flex justify-between gap-3 py-[7px] px-1 text-muted text-[0.8rem]">
-                <span>Model</span>
-                <strong className="text-foreground font-medium">{formatModelDisplayName(catalog?.mainAgentModel) ?? "Loading"}</strong>
-              </div>
-              <div className="flex justify-between gap-3 py-[7px] px-1 text-muted text-[0.8rem]">
-                <span>Tools</span>
-                <strong className="text-foreground font-medium">{catalog?.builtInTools.filter((tool) => tool.enabled).length ?? 0}</strong>
-              </div>
-              <div className="flex justify-between items-center gap-3 py-[7px] px-1 text-muted text-[0.8rem]">
-                <span className="flex items-center gap-2">
-                  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
-                  GitHub
-                </span>
-                {githubStatus?.installed ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (confirm("Disconnect GitHub and uninstall the app?")) {
-                        disconnectGithub.mutate();
-                      }
-                    }}
-                    className="text-[rgba(122,168,148,0.9)] font-medium hover:text-[rgba(212,112,73,0.9)] transition-colors"
-                  >
-                    {disconnectGithub.isPending ? "Disconnecting…" : "Connected"}
-                  </button>
-                ) : githubStatus?.configured ? (
-                  <a
-                    href={githubStatus.installUrl ?? "/api/github/install"}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[rgba(212,112,73,0.9)] font-medium no-underline hover:text-[rgba(212,112,73,1)]"
-                    onClick={() => {
-                      // Start polling for installation status every 3s
-                      const interval = setInterval(() => {
-                        void queryClient.invalidateQueries({ queryKey: queryKeys.githubStatus });
-                      }, 3000);
-                      // Stop after 2 minutes
-                      setTimeout(() => clearInterval(interval), 120_000);
-                    }}
-                  >
-                    Connect
-                  </a>
-                ) : (
-                  <span className="text-[rgba(245,240,232,0.38)] font-medium">Not configured</span>
-                )}
-              </div>
-              <div className="mt-1 pt-2 border-t border-[rgba(255,255,255,0.08)]">
-                <button
-                  type="button"
-                  className="w-full rounded-[8px] border-0 bg-transparent text-left text-[0.8rem] text-[rgba(245,240,232,0.55)] cursor-pointer py-[7px] px-1 transition-colors duration-100 hover:text-[rgba(245,240,232,0.85)]"
-                  onClick={async () => {
-                    const { getSupabaseBrowserClient } = await import("@/lib/supabase-browser");
-                    const supabase = getSupabaseBrowserClient();
-                    await supabase.auth.signOut();
-                    router.push("/login");
-                  }}
-                >
-                  Sign out
-                </button>
-              </div>
+              {githubStatus?.configured ? (
+                <div className="pb-2 mb-1 border-b border-[rgba(255,255,255,0.08)]">
+                  {githubStatus.installed ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (confirm("Uninstall the GitHub App? You can reinstall it later.")) {
+                          disconnectGithub.mutate();
+                        }
+                      }}
+                      className="flex w-full items-center gap-2.5 rounded-[8px] border-0 bg-transparent text-left text-[0.8rem] cursor-pointer py-[7px] px-1 transition-colors duration-100 group/gh"
+                    >
+                      <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" className="text-[rgba(245,240,232,0.5)] shrink-0" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+                      <span className="flex-1 text-[rgba(245,240,232,0.55)] group-hover/gh:text-[rgba(245,240,232,0.85)]">
+                        {disconnectGithub.isPending ? "Uninstalling…" : "Uninstall GitHub App"}
+                      </span>
+                      <span className="h-1.5 w-1.5 rounded-full bg-[rgba(122,168,148,0.8)]" title="Installed" />
+                    </button>
+                  ) : (
+                    <a
+                      href={githubStatus.installUrl ?? "/api/github/install"}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex w-full items-center gap-2.5 rounded-[8px] no-underline text-left text-[0.8rem] cursor-pointer py-[7px] px-1 transition-colors duration-100 group/gh"
+                      onClick={() => {
+                        const interval = setInterval(() => {
+                          void queryClient.invalidateQueries({ queryKey: queryKeys.githubStatus });
+                        }, 3000);
+                        setTimeout(() => clearInterval(interval), 120_000);
+                      }}
+                    >
+                      <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" className="text-[rgba(245,240,232,0.5)] shrink-0" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+                      <span className="flex-1 text-[rgba(245,240,232,0.55)] group-hover/gh:text-[rgba(245,240,232,0.85)]">Install GitHub App</span>
+                    </a>
+                  )}
+                </div>
+              ) : null}
+              <button
+                type="button"
+                className="w-full rounded-[8px] border-0 bg-transparent text-left text-[0.8rem] text-[rgba(245,240,232,0.55)] cursor-pointer py-[7px] px-1 transition-colors duration-100 hover:text-[rgba(245,240,232,0.85)]"
+                onClick={async () => {
+                  const { getSupabaseBrowserClient } = await import("@/lib/supabase-browser");
+                  const supabase = getSupabaseBrowserClient();
+                  await supabase.auth.signOut();
+                  router.push("/login");
+                }}
+              >
+                Sign out
+              </button>
             </div>
           ) : null}
         </div>
