@@ -66,7 +66,7 @@ export function createSandboxExecTool(ctx: ToolRuntimeContext) {
           toolName: "sandbox_exec",
           toolRuntime: "custom",
           exitCode: result.exitCode,
-          resultPreview: result.stdout.slice(0, 200) || result.stderr.slice(0, 200),
+          result: (result.stdout || result.stderr).slice(0, 2000),
         });
 
         return jsonResult(output);

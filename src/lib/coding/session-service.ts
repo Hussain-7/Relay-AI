@@ -351,6 +351,7 @@ export async function runCodingTask(input: {
   runId: string;
   userId: string;
   taskBrief: string;
+  onProgress?: (type: import("@/lib/contracts").TimelineEventType, source: import("@/lib/contracts").TimelineSource, payload?: Record<string, unknown> | null) => void;
 }) {
   log.info("runCodingTask starting", {
     codingSessionId: input.codingSessionId,
@@ -413,6 +414,11 @@ export async function runCodingTask(input: {
       data: { status: CodingSessionStatus.RUNNING, lastActiveAt: new Date() },
     });
 
+    // Emit coding.agent.running to both SSE (real-time) and DB (persistence)
+    input.onProgress?.("coding.agent.running", "coding_agent", {
+      codingSessionId: session.id,
+      message: "Running coding agent...",
+    });
     await appendRunEvent({
       runId: input.runId,
       conversationId: input.conversationId,
@@ -445,6 +451,7 @@ export async function runCodingTask(input: {
 
     // Collect streaming events
     const events: Array<Record<string, unknown>> = [];
+    const pendingToolUses = new Map<string, string>(); // toolUseId → toolName
     let finalResult = "";
     let sessionId: string | null = null;
     let lineBuf = "";
@@ -498,42 +505,55 @@ export async function runCodingTask(input: {
               });
             }
 
-            // Emit tool events to timeline in real-time
+            // Emit coding agent sub-tool events to SSE stream (real-time) and DB
             if (event.type === "assistant" && event.message) {
               const msg = event.message as { content?: Array<Record<string, unknown>> };
               if (Array.isArray(msg.content)) {
                 for (const block of msg.content) {
                   if (block.type === "tool_use") {
+                    // Capture tool input — truncate to keep events manageable
+                    const toolInput = block.input;
+                    const inputPreview = typeof toolInput === "string"
+                      ? toolInput.slice(0, 1000)
+                      : JSON.stringify(toolInput ?? {}).slice(0, 1000);
+                    const payload = {
+                      toolName: block.name as string,
+                      toolUseId: block.id as string,
+                      toolRuntime: "coding_agent",
+                      input: toolInput,
+                    };
+                    input.onProgress?.("tool.call.started", "coding_agent", payload);
                     appendRunEvent({
                       runId: input.runId,
                       conversationId: input.conversationId,
                       type: "tool.call.started",
                       source: "coding_agent",
-                      payload: {
-                        toolName: block.name as string,
-                        toolUseId: block.id as string,
-                      },
+                      payload: { ...payload, input: inputPreview },
                     });
+                    pendingToolUses.set(block.id as string, block.name as string);
                   }
                   if (block.type === "tool_result") {
+                    const toolUseId = block.tool_use_id as string;
+                    // Capture tool result content
+                    const resultContent = block.content;
+                    const resultPreview = typeof resultContent === "string"
+                      ? resultContent.slice(0, 1000)
+                      : JSON.stringify(resultContent ?? "").slice(0, 1000);
+                    const payload = {
+                      toolUseId,
+                      toolName: pendingToolUses.get(toolUseId) ?? "tool",
+                      toolRuntime: "coding_agent",
+                      result: resultPreview,
+                    };
+                    input.onProgress?.("tool.call.completed", "coding_agent", payload);
                     appendRunEvent({
                       runId: input.runId,
                       conversationId: input.conversationId,
                       type: "tool.call.completed",
                       source: "coding_agent",
-                      payload: {
-                        toolUseId: block.tool_use_id as string,
-                      },
+                      payload,
                     });
-                  }
-                  if (block.type === "text") {
-                    appendRunEvent({
-                      runId: input.runId,
-                      conversationId: input.conversationId,
-                      type: "assistant.text.delta",
-                      source: "coding_agent",
-                      payload: { delta: block.text as string },
-                    });
+                    pendingToolUses.delete(toolUseId);
                   }
                 }
               }
@@ -567,6 +587,20 @@ export async function runCodingTask(input: {
         }
       }
     }
+
+    // Close any unclosed tool entries (prevents perpetual "Running" state)
+    for (const [toolUseId, toolName] of pendingToolUses) {
+      const payload = { toolUseId, toolName, toolRuntime: "coding_agent" };
+      input.onProgress?.("tool.call.completed", "coding_agent", payload);
+      appendRunEvent({
+        runId: input.runId,
+        conversationId: input.conversationId,
+        type: "tool.call.completed",
+        source: "coding_agent",
+        payload,
+      });
+    }
+    pendingToolUses.clear();
 
     log.info("Claude Code CLI finished", {
       cliExitCode,

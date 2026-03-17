@@ -53,8 +53,7 @@ export function createGithubCreateRepoTool(ctx: ToolRuntimeContext) {
         await ctx.emit("tool.call.completed", {
           toolName: "github_create_repo",
           toolRuntime: "custom",
-          repoFullName: binding.repoFullName,
-          defaultBranch: binding.defaultBranch,
+          result: `Repository ${binding.repoFullName} created (branch: ${binding.defaultBranch ?? "main"})`,
         });
 
         return jsonResult({

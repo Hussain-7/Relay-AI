@@ -9,6 +9,7 @@ export type TimelineEventType =
   | "assistant.text.intermediate"
   | "assistant.message.completed"
   | "assistant.thinking.delta"
+  | "assistant.thinking.completed"
   | "tool.call.started"
   | "tool.call.input.delta"
   | "tool.call.completed"

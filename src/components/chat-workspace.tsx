@@ -582,7 +582,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                 // Only store events needed for timeline rendering (skip text deltas)
                 const timelineEvents = [
                   ...extraEvents,
-                  ...batch.filter((ev) => ev.type !== "assistant.text.delta"),
+                  ...batch.filter((ev) => ev.type !== "assistant.text.delta" && ev.type !== "assistant.thinking.completed"),
                 ];
 
                 return {
@@ -644,7 +644,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
           }
           lastRunId = runId;
           lastPartialText = text;
-          const timelineEvents = [...extraEvents, ...batch.filter((ev) => ev.type !== "assistant.text.delta")];
+          const timelineEvents = [...extraEvents, ...batch.filter((ev) => ev.type !== "assistant.text.delta" && ev.type !== "assistant.thinking.completed")];
           return { ...current, runId, partialText: text, events: timelineEvents.length > 0 ? [...current.events, ...timelineEvents] : current.events, ...(newOutputAttachments ? { outputAttachments: newOutputAttachments } : {}), status, error };
         });
       }

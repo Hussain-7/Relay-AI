@@ -182,12 +182,14 @@ export async function streamMainAgentRun(input: {
         }
 
         // Build tools and system prompt while DB writes run in parallel
-        const tools = getMainAgentTools({
+        const toolCtx = {
           userId: input.userId,
           conversationId: input.conversationId,
           runId,
-          emit: async (type, payload) => emit(type, "main_agent", payload),
-        });
+          emit: async (type: "tool.call.completed" | "tool.call.failed", payload: Record<string, unknown>) => emit(type, "main_agent", payload),
+          emitProgress: (type: Parameters<typeof emit>[0], source: Parameters<typeof emit>[1], payload?: Record<string, unknown> | null) => emit(type, source, payload),
+        };
+        const tools = getMainAgentTools(toolCtx);
 
         const activeModel = mainAgentSession.anthropicModel ?? env.ANTHROPIC_MAIN_MODEL;
         const prefs = input.preferences ?? {};
@@ -270,7 +272,7 @@ export async function streamMainAgentRun(input: {
             ...MAIN_AGENT_SERVER_TOOLS.map((tool) => tool.tool),
             ...tools,
             ...(prefs.memory ? [
-              createMemoryTool({ userId: input.userId, conversationId: input.conversationId, runId, emit: async (type, payload) => emit(type, "main_agent", payload) }),
+              createMemoryTool(toolCtx),
             ] : []),
             // Generate mcp_toolset entries for each configured MCP server
             ...configuredMcpServers.map((server) => ({
@@ -305,6 +307,10 @@ export async function streamMainAgentRun(input: {
           const toolInputSnapshots = new Map<number, string>();
           const indexToToolUseId = new Map<number, string>();
           const indexToToolName = new Map<number, string>();
+          // Accumulated full input per toolUseId — used to persist input in completed events
+          const toolUseInputs = new Map<string, string>();
+          // Accumulated thinking text per block index — flushed as a single persisted event on block end
+          const thinkingBlocks = new Map<number, string>();
 
           // Track pending citations per block index for inline streaming citations
           // Each citation includes cited_text so we know when the cited content has been streamed
@@ -333,6 +339,7 @@ export async function streamMainAgentRun(input: {
               }
 
               if (block.type === "thinking" && block.thinking) {
+                thinkingBlocks.set(rawEvent.index, block.thinking);
                 emit("assistant.thinking.delta", "main_agent", {
                   delta: block.thinking,
                   index: rawEvent.index,
@@ -340,6 +347,10 @@ export async function streamMainAgentRun(input: {
               }
 
               if (block.type === "server_tool_use") {
+                // Flush pre-tool text as intermediate (persisted for reload)
+                if (serverPartialText.trim()) {
+                  emit("assistant.text.intermediate", "main_agent", { text: serverPartialText.trim() });
+                }
                 serverPartialText = "";
                 indexToToolUseId.set(rawEvent.index, block.id);
                 indexToToolName.set(rawEvent.index, block.name);
@@ -354,6 +365,9 @@ export async function streamMainAgentRun(input: {
 
               // Client tool use (custom backend tools: coding session, sandbox, memory)
               if (block.type === "tool_use") {
+                if (serverPartialText.trim()) {
+                  emit("assistant.text.intermediate", "main_agent", { text: serverPartialText.trim() });
+                }
                 serverPartialText = "";
                 indexToToolUseId.set(rawEvent.index, block.id);
                 indexToToolName.set(rawEvent.index, block.name);
@@ -368,6 +382,9 @@ export async function streamMainAgentRun(input: {
 
               // MCP tool use (external MCP server tools)
               if ((block as unknown as { type: string }).type === "mcp_tool_use") {
+                if (serverPartialText.trim()) {
+                  emit("assistant.text.intermediate", "main_agent", { text: serverPartialText.trim() });
+                }
                 serverPartialText = "";
                 const mcpBlock = block as unknown as { id: string; name: string; input: unknown; server_name: string };
                 indexToToolUseId.set(rawEvent.index, mcpBlock.id);
@@ -395,6 +412,7 @@ export async function streamMainAgentRun(input: {
                   toolName,
                   toolRuntime: "mcp",
                   toolUseId,
+                  input: toolUseInputs.get(toolUseId),
                   result: mcpResult.content,
                   isError: mcpResult.is_error ?? false,
                 });
@@ -422,6 +440,7 @@ export async function streamMainAgentRun(input: {
                   toolName: inferServerToolName(block),
                   toolRuntime: "anthropic_server",
                   toolUseId: block.tool_use_id,
+                  input: toolUseInputs.get(block.tool_use_id),
                   result: block.content,
                 });
               }
@@ -438,14 +457,26 @@ export async function streamMainAgentRun(input: {
                     toolName: blockType === "bash_code_execution_tool_result" ? "code_execution" : "text_editor",
                     toolRuntime: "anthropic_server",
                     toolUseId: anyBlock.tool_use_id,
+                    input: toolUseInputs.get(anyBlock.tool_use_id),
                     result: anyBlock.content,
                   });
                 }
               }
             }
 
-            // Clean up citation state when a block ends
+            // Clean up state when a block ends
             if (rawEvent.type === "content_block_stop") {
+              // Persist consolidated thinking block (single DB event instead of per-delta)
+              const thinkingText = thinkingBlocks.get(rawEvent.index);
+              if (thinkingText?.trim()) {
+                // Emit a non-delta thinking event that gets persisted to DB
+                emit("assistant.thinking.completed", "main_agent", {
+                  text: thinkingText.trim(),
+                  index: rawEvent.index,
+                });
+                thinkingBlocks.delete(rawEvent.index);
+              }
+
               // If there are leftover pending citations when block ends, flush them
               const leftover = pendingCitations.get(rawEvent.index);
               if (leftover?.length) {
@@ -543,6 +574,9 @@ export async function streamMainAgentRun(input: {
               }
 
               if (rawEvent.delta.type === "thinking_delta") {
+                // Accumulate thinking text for persisted event on block end
+                const prev = thinkingBlocks.get(rawEvent.index) ?? "";
+                thinkingBlocks.set(rawEvent.index, prev + rawEvent.delta.thinking);
                 emit("assistant.thinking.delta", "main_agent", {
                   delta: rawEvent.delta.thinking,
                   index: rawEvent.index,
@@ -552,11 +586,16 @@ export async function streamMainAgentRun(input: {
               if (rawEvent.delta.type === "input_json_delta") {
                 const nextSnapshot = `${toolInputSnapshots.get(rawEvent.index) ?? ""}${rawEvent.delta.partial_json}`;
                 toolInputSnapshots.set(rawEvent.index, nextSnapshot);
+                // Track full input by toolUseId for persistence in completed events
+                const deltaToolUseId = indexToToolUseId.get(rawEvent.index);
+                if (deltaToolUseId) {
+                  toolUseInputs.set(deltaToolUseId, nextSnapshot);
+                }
                 emit("tool.call.input.delta", "main_agent", {
                   delta: rawEvent.delta.partial_json,
                   snapshot: nextSnapshot,
                   index: rawEvent.index,
-                  toolUseId: indexToToolUseId.get(rawEvent.index),
+                  toolUseId: deltaToolUseId,
                   toolName: indexToToolName.get(rawEvent.index),
                 });
               }
@@ -653,6 +692,47 @@ export async function streamMainAgentRun(input: {
               },
             );
           }
+        }
+
+        // Backfill tool inputs into persisted events from the final message.
+        // During streaming, server_tool_use blocks arrive with input: {} and the
+        // full input is only available in the final message. Update the DB records
+        // so that "View request and response" works after page reload.
+        const toolInputMap = new Map<string, unknown>();
+        for (const block of finalMessage.content) {
+          const b = block as unknown as Record<string, unknown>;
+          if (
+            (b.type === "server_tool_use" || b.type === "tool_use" || b.type === "mcp_tool_use") &&
+            typeof b.id === "string" &&
+            b.input != null
+          ) {
+            toolInputMap.set(b.id, b.input);
+          }
+        }
+        if (toolInputMap.size > 0) {
+          // Update persisted tool.call.started events with full input (background)
+          pendingWrites.push(
+            (async () => {
+              const startedEvents = await prisma.runEvent.findMany({
+                where: { runId, type: "tool.call.started" },
+              });
+              for (const evt of startedEvents) {
+                const payload = evt.payloadJson as Record<string, unknown> | null;
+                const toolUseId = payload?.toolUseId as string | undefined;
+                if (toolUseId && toolInputMap.has(toolUseId)) {
+                  await prisma.runEvent.update({
+                    where: { id: evt.id },
+                    data: {
+                      payloadJson: {
+                        ...payload,
+                        input: toolInputMap.get(toolUseId),
+                      } as Prisma.InputJsonValue,
+                    },
+                  }).catch(() => {});
+                }
+              }
+            })().catch(() => {}),
+          );
         }
 
         // Persist container ID for cross-turn reuse

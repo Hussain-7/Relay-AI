@@ -49,6 +49,11 @@ export function createCodingSessionStartTool(ctx: ToolRuntimeContext) {
         });
         const repoBindingId = conv?.repoBindingId ?? undefined;
 
+        // Progress: provisioning
+        ctx.emitProgress("coding.session.created", "system", {
+          message: "Provisioning sandbox...",
+        });
+
         // 1. Provision or resume the sandbox
         const session = await startOrResumeCodingSession({
           conversationId: ctx.conversationId,
@@ -57,6 +62,13 @@ export function createCodingSessionStartTool(ctx: ToolRuntimeContext) {
           repoBindingId,
           taskBrief: input.taskBrief,
           branchStrategy: input.branchStrategy,
+        });
+
+        // Progress: session ready
+        ctx.emitProgress("coding.session.ready", "system", {
+          codingSessionId: session.id,
+          sandboxId: session.sandboxId,
+          message: session.sandboxId ? "Sandbox connected" : "Session provisioned",
         });
 
         // 2. Link coding session to agent run
@@ -72,6 +84,7 @@ export function createCodingSessionStartTool(ctx: ToolRuntimeContext) {
           runId: ctx.runId,
           userId: ctx.userId,
           taskBrief: input.taskBrief,
+          onProgress: ctx.emitProgress,
         });
 
         await ctx.emit("tool.call.completed", {
@@ -82,7 +95,7 @@ export function createCodingSessionStartTool(ctx: ToolRuntimeContext) {
           workspacePath: taskResult.workspacePath,
           status: taskResult.exitCode === 0 ? "completed" : "failed",
           eventCount: taskResult.eventCount,
-          resultPreview: taskResult.result.slice(0, 500),
+          result: taskResult.result.slice(0, 2000),
         });
 
         return jsonResult({
@@ -125,8 +138,7 @@ export function createCodingSessionStatusTool(ctx: ToolRuntimeContext) {
         await ctx.emit("tool.call.completed", {
           toolName: "coding_session_status",
           toolRuntime: "custom",
-          hasSession: Boolean(session),
-          resultPreview: session ? `${session.status} — ${session.workspacePath}` : "No active session",
+          result: session ? `${session.status} — ${session.workspacePath}` : "No active session",
         });
         return jsonResult(
           session
@@ -169,8 +181,7 @@ export function createCodingSessionPauseTool(ctx: ToolRuntimeContext) {
         await ctx.emit("tool.call.completed", {
           toolName: "coding_session_pause",
           toolRuntime: "custom",
-          codingSessionId: session.id,
-          resultPreview: `Session ${session.id} paused`,
+          result: `Session ${session.id} paused`,
         });
         return jsonResult({
           codingSessionId: session.id,

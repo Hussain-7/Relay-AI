@@ -121,6 +121,8 @@ export function formatToolRuntimeLabel(runtime: string | null) {
       return "Built-in";
     case "anthropic_client":
       return "Connected";
+    case "coding_agent":
+      return "Coding agent";
     default:
       return runtime ? runtime.replaceAll("_", " ") : null;
   }
@@ -242,6 +244,7 @@ export function buildTimelineEntries(events: TimelineEventEnvelope[]) {
 
   const nonFlushingTypes = new Set([
     "assistant.thinking.delta",
+    "assistant.thinking.completed",
     "conversation.updated",
     "run.started",
     "run.completed",
@@ -264,6 +267,21 @@ export function buildTimelineEntries(events: TimelineEventEnvelope[]) {
         }
 
         thinkingEntry.text += typeof event.payload?.delta === "string" ? event.payload.delta : "";
+        break;
+      }
+      case "assistant.thinking.completed": {
+        // Consolidated thinking event (persisted to DB, used on reload)
+        // Only create if no delta-based thinking entry exists yet
+        if (!thinkingEntry) {
+          const text = typeof event.payload?.text === "string" ? event.payload.text : "";
+          if (text.trim()) {
+            thinkingEntry = {
+              id: `thinking-${event.id}`,
+              kind: "thinking",
+              text,
+            };
+          }
+        }
         break;
       }
       case "assistant.text.intermediate": {
@@ -321,13 +339,19 @@ export function buildTimelineEntries(events: TimelineEventEnvelope[]) {
             .reverse()
             .find((entry) => entry.title === candidateName)?.id ||
           `${candidateName}-${event.id}`;
+        const completedInput = stringifyUnknown(event.payload?.input);
+        const completedOutput =
+          stringifyUnknown(event.payload?.result) ||
+          stringifyUnknown(event.payload?.resultPreview) ||
+          stringifyUnknown(event.payload?.error);
         const existing = toolEntries.get(key);
         if (existing) {
           existing.status = event.type === "tool.call.completed" ? "completed" : "failed";
-          existing.output =
-            stringifyUnknown(event.payload?.result) ||
-            stringifyUnknown(event.payload?.resultPreview) ||
-            stringifyUnknown(event.payload?.error);
+          existing.output = completedOutput;
+          // Backfill input if the started event had empty input (e.g. after reload)
+          if (!existing.input.trim() && completedInput.trim()) {
+            existing.input = completedInput;
+          }
         } else {
           const toolEntry: ToolTimelineEntry = {
             id: key,
@@ -335,11 +359,8 @@ export function buildTimelineEntries(events: TimelineEventEnvelope[]) {
             title: candidateName,
             runtime: typeof event.payload?.toolRuntime === "string" ? event.payload.toolRuntime : null,
             status: event.type === "tool.call.completed" ? "completed" : "failed",
-            input: "",
-            output:
-              stringifyUnknown(event.payload?.result) ||
-              stringifyUnknown(event.payload?.resultPreview) ||
-              stringifyUnknown(event.payload?.error),
+            input: completedInput,
+            output: completedOutput,
           };
           toolEntries.set(key, toolEntry);
           entries.push(toolEntry);
@@ -349,12 +370,14 @@ export function buildTimelineEntries(events: TimelineEventEnvelope[]) {
       case "coding.session.created":
       case "coding.session.ready":
       case "coding.session.paused":
-      case "coding.session.resumed": {
+      case "coding.session.resumed":
+      case "coding.agent.running": {
+        const msg = typeof event.payload?.message === "string" ? event.payload.message : null;
         entries.push({
           id: event.id,
           kind: "system",
-          title: event.type.replaceAll(".", " "),
-          description: stringifyUnknown(event.payload),
+          title: msg ?? event.type.replaceAll(".", " "),
+          description: msg ? "" : stringifyUnknown(event.payload),
         });
         break;
       }

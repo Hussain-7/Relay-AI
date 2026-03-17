@@ -202,7 +202,7 @@ export function createMemoryTool(ctx: ToolRuntimeContext): BetaRunnableTool<Memo
         await ctx.emit("tool.call.completed", {
           toolName: "memory",
           toolRuntime: "anthropic_client",
-          resultPreview: typeof result === "string" ? result : jsonResult(result),
+          result: typeof result === "string" ? result.slice(0, 2000) : jsonResult(result).slice(0, 2000),
         });
 
         return result;
