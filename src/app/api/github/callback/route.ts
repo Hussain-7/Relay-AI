@@ -73,6 +73,7 @@ export async function GET(request: Request) {
     // Exchange OAuth code for user access token
     // Sent during app install (if "Request user authorization" is enabled)
     // OR during standalone OAuth authorize flow (/api/github/authorize)
+    console.log('In here',code, env.GITHUB_APP_CLIENT_ID, env.GITHUB_APP_CLIENT_SECRET);
     if (code && env.GITHUB_APP_CLIENT_ID && env.GITHUB_APP_CLIENT_SECRET) {
       try {
         const tokenResponse = await fetch("https://github.com/login/oauth/access_token", {

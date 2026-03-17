@@ -434,14 +434,38 @@ export async function createRemoteRepo(input: {
   description?: string;
   isPrivate?: boolean;
 }) {
+  // Prefer user OAuth token — it can create repos on personal accounts
+  const userToken = await getGitHubUserToken(input.userId);
+
+  if (userToken) {
+    const userClient = new Octokit({ auth: userToken });
+
+    // Resolve owner: explicit > authenticated user
+    let owner = input.owner;
+    if (!owner) {
+      const { data: authedUser } = await userClient.request("GET /user");
+      owner = authedUser.login;
+    }
+
+    const response = await userClient.request("POST /user/repos", {
+      name: input.name,
+      description: input.description,
+      private: input.isPrivate ?? true,
+      auto_init: true,
+    });
+
+    return connectRepoBinding({
+      userId: input.userId,
+      repoFullName: response.data.full_name,
+      defaultBranch: response.data.default_branch,
+    });
+  }
+
+  // Fallback: installation token (works for org repos only)
   const client = await getInstallationClient(input.userId);
 
   if (!client) {
-    return connectRepoBinding({
-      userId: input.userId,
-      repoFullName: `${input.owner ?? "pending"}/${input.name}`,
-      defaultBranch: "main",
-    });
+    throw new Error("GitHub is not connected. Please install the GitHub App from the profile menu.");
   }
 
   // Get the account login from the installation to determine if it's a user or org
@@ -450,15 +474,31 @@ export async function createRemoteRepo(input: {
     orderBy: { updatedAt: "desc" },
   });
 
-  const owner = input.owner ?? installation?.accountLogin;
+  let owner = input.owner ?? installation?.accountLogin ?? null;
+
+  // If accountLogin is missing, resolve from GitHub API and backfill
+  if (!owner && installation) {
+    try {
+      const { data } = await client.request("GET /installation/repositories", { per_page: 1 });
+      const firstRepo = data.repositories[0];
+      if (firstRepo) {
+        owner = firstRepo.full_name.split("/")[0] ?? null;
+        if (owner) {
+          await prisma.githubInstallation.update({
+            where: { id: installation.id },
+            data: { accountLogin: owner },
+          }).catch(() => {});
+        }
+      }
+    } catch {
+      // Ignore — will fall through to the error below
+    }
+  }
 
   if (!owner) {
     throw new Error("Could not determine GitHub account. Please specify an owner.");
   }
 
-  // GitHub Apps with installation tokens must use the org endpoint.
-  // For personal accounts, this also works via the same endpoint pattern
-  // since GitHub treats user accounts similarly for this API.
   try {
     const response = await client.request("POST /orgs/{org}/repos", {
       org: owner,
@@ -474,29 +514,11 @@ export async function createRemoteRepo(input: {
       defaultBranch: response.data.default_branch,
     });
   } catch {
-    // If org endpoint fails (personal account), try the user repos endpoint
-    // This requires the installation to have repo creation permissions
-    try {
-      const response = await client.request("POST /user/repos", {
-        name: input.name,
-        description: input.description,
-        private: input.isPrivate ?? true,
-        auto_init: true,
-      });
-
-      return connectRepoBinding({
-        userId: input.userId,
-        repoFullName: response.data.full_name,
-        defaultBranch: response.data.default_branch,
-      });
-    } catch {
-      // Both failed — throw a clear error
-      throw new Error(
-        `Cannot create repository "${input.name}" under "${owner}". ` +
-        `GitHub App installations cannot create repos in personal accounts — only in organizations. ` +
-        `Either specify an organization as the owner, or create the repo manually on GitHub and use the connect_repo tool instead.`,
-      );
-    }
+    throw new Error(
+      `Cannot create repository "${input.name}" under "${owner}". ` +
+      `Installation tokens can only create repos in organizations. ` +
+      `Re-authorize the GitHub App to grant a user token, or create the repo manually on GitHub.`,
+    );
   }
 }
 

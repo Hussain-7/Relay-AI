@@ -25,7 +25,7 @@ Use memory proactively to remember user preferences, project context, and import
   const repoSection = ctx.linkedRepo
     ? `Repository: ${ctx.linkedRepo.repoFullName} (branch: ${ctx.linkedRepo.defaultBranch ?? "main"})
 This repository is linked to the current conversation. Coding sessions automatically use it — no need to search or connect repos.`
-    : `No repository is linked to this conversation. If the user wants to work on code, suggest they connect a repo via the + menu in the composer.`;
+    : `No repository is linked to this conversation. If the user wants to work on an existing repo, suggest they connect it via the + menu in the composer. If they want to create a new repo, use github_create_repo — it will create the repo and auto-link it.`;
 
   return `You are Relay AI — an AI workspace for chat, research, files, and remote coding.
 
@@ -42,6 +42,7 @@ You have three categories of tools. Know the difference and never mix them up:
    - coding_session_status — check the current coding session state (active, paused, etc.)
    - coding_session_pause — pause the E2B sandbox to save resources (can resume later)
    - sandbox_exec — run a shell command in the ACTIVE E2B sandbox. Use ONLY after a coding session is already active. Good for: checking git status/log, running tests, listing files, installing packages, or verifying changes made by the coding agent.
+   - github_create_repo — create a new GitHub repository and automatically link it to this conversation. Use when the user asks to create a new project or repo. After creation, you can immediately start a coding session to work on it.
 
 3. MCP TOOLS (external servers connected via Model Context Protocol):
 ${mcpSection}

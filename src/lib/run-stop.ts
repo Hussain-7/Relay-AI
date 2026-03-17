@@ -17,7 +17,6 @@ export async function setStopFlag(runId: string): Promise<void> {
 }
 
 export async function checkStopFlag(runId: string): Promise<boolean> {
-  console.log("checkStopFlag:", runId);
   const redis = getRedis();
   if (redis) {
     const val = await redis.get(redisKey(runId));
