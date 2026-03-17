@@ -43,11 +43,33 @@ export function ToolStepDetails({ entry }: { entry: ToolTimelineEntry }) {
           {hasLogs ? (
             <section className="border border-[rgba(255,255,255,0.08)] rounded-[18px] bg-[rgba(255,255,255,0.03)] p-3 min-w-0 overflow-hidden">
               <div className="mb-2 text-[rgba(245,240,232,0.5)] text-[0.72rem] tracking-[0.12em] uppercase">Processing</div>
-              <ol className="m-0 p-0 list-none grid gap-1.5">
+              <ol className="m-0 p-0 list-none grid gap-1.5 max-h-[320px] overflow-y-auto pr-1">
                 {entry.logs.map((log) => (
-                  <li key={log.id} className="flex items-center gap-2 text-[0.8rem] leading-[1.45] text-[rgba(245,240,232,0.62)]">
-                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-[rgba(122,168,148,0.5)] shrink-0" aria-hidden="true" />
-                    {log.message}
+                  <li
+                    key={log.id}
+                    className={`flex items-start gap-2 text-[0.8rem] leading-[1.45] ${
+                      log.kind === "thinking"
+                        ? "text-[rgba(245,240,232,0.42)] italic"
+                        : log.kind === "text"
+                          ? "text-[rgba(212,190,160,0.68)]"
+                          : log.kind === "subagent"
+                            ? "text-[rgba(180,200,220,0.68)]"
+                            : "text-[rgba(245,240,232,0.62)]"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-1.5 w-1.5 rounded-full shrink-0 mt-[5px] ${
+                        log.kind === "thinking"
+                          ? "bg-[rgba(245,240,232,0.2)]"
+                          : log.kind === "text"
+                            ? "bg-[rgba(212,190,160,0.4)]"
+                            : log.kind === "subagent"
+                              ? "bg-[rgba(140,180,220,0.45)]"
+                              : "bg-[rgba(122,168,148,0.5)]"
+                      }`}
+                      aria-hidden="true"
+                    />
+                    <span className="min-w-0 break-words [overflow-wrap:anywhere]">{log.message}</span>
                   </li>
                 ))}
               </ol>

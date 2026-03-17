@@ -87,6 +87,22 @@ export function createCodingAgentTool(ctx: ToolRuntimeContext) {
           onProgress: ctx.emitProgress,
         });
 
+        // Persist coding agent cost to AgentRun metadata
+        if (taskResult.costUsd != null) {
+          await prisma.agentRun.update({
+            where: { id: ctx.runId },
+            data: {
+              metadataJson: {
+                codingAgent: {
+                  costUsd: taskResult.costUsd,
+                  usage: taskResult.usage,
+                  durationMs: taskResult.durationMs,
+                },
+              },
+            },
+          });
+        }
+
         await ctx.emit("tool.call.completed", {
           toolName: "coding_agent",
           toolRuntime: "custom",

@@ -829,6 +829,7 @@ export async function streamMainAgentRun(input: {
           text: finalText,
           model: finalMessage.model,
           stopReason: finalMessage.stop_reason,
+          costUsd,
           ...(outputAttachments.length > 0 ? { outputAttachments } : {}),
           usage: {
             inputTokens,
@@ -854,32 +855,42 @@ export async function streamMainAgentRun(input: {
               contentJson: finalMessage.content as unknown as Prisma.InputJsonValue,
             },
           }),
-          prisma.agentRun.update({
-            where: { id: runId },
-            data: {
-              status: RunStatus.COMPLETED,
-              finalText,
-              finalMessageJson: finalMessage as unknown as Prisma.InputJsonValue,
-              model: finalMessage.model,
-              inputTokens,
-              outputTokens,
-              cacheReadTokens,
-              cacheWriteTokens,
-              costUsd,
-              metadataJson: {
+          (async () => {
+            // Read existing metadataJson first to preserve data written by tools (e.g. codingAgent cost)
+            const existingRun = await prisma.agentRun.findUnique({
+              where: { id: runId },
+              select: { metadataJson: true },
+            });
+            const existingMeta = (existingRun?.metadataJson as Record<string, unknown>) ?? {};
+
+            await prisma.agentRun.update({
+              where: { id: runId },
+              data: {
+                status: RunStatus.COMPLETED,
+                finalText,
+                finalMessageJson: finalMessage as unknown as Prisma.InputJsonValue,
                 model: finalMessage.model,
-                stopReason: finalMessage.stop_reason,
-                usage: {
-                  inputTokens,
-                  outputTokens,
-                  cacheCreationInputTokens: cacheWriteTokens,
-                  cacheReadInputTokens: cacheReadTokens,
-                  serverToolUse: usageRaw.server_tool_use ?? null,
-                },
-              } as Prisma.InputJsonValue,
-              completedAt: new Date(),
-            },
-          }),
+                inputTokens,
+                outputTokens,
+                cacheReadTokens,
+                cacheWriteTokens,
+                costUsd,
+                metadataJson: {
+                  ...existingMeta,
+                  model: finalMessage.model,
+                  stopReason: finalMessage.stop_reason,
+                  usage: {
+                    inputTokens,
+                    outputTokens,
+                    cacheCreationInputTokens: cacheWriteTokens,
+                    cacheReadInputTokens: cacheReadTokens,
+                    serverToolUse: usageRaw.server_tool_use ?? null,
+                  },
+                } as Prisma.InputJsonValue,
+                completedAt: new Date(),
+              },
+            });
+          })(),
           prisma.mainAgentSession.update({
             where: { id: mainAgentSession.id },
             data: { anthropicModel: finalMessage.model },

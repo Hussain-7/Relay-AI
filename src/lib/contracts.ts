@@ -21,6 +21,12 @@ export type TimelineEventType =
   | "coding.session.paused"
   | "coding.session.resumed"
   | "coding.agent.running"
+  | "coding.agent.thinking"
+  | "coding.agent.text"
+  | "coding.agent.task.started"
+  | "coding.agent.task.progress"
+  | "coding.agent.task.completed"
+  | "coding.agent.usage"
   | "run.completed"
   | "run.cancelled"
   | "run.failed";

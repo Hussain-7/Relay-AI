@@ -53,6 +53,20 @@ export function RunThread({
   const showPendingDot = isLive && entries.length === 0 && !finalText;
   const hasAgentResponse = Boolean(finalText);
 
+  // Extract total cost from events (main agent + coding agent)
+  const totalCostUsd = useMemo(() => {
+    let cost = 0;
+    for (const event of events) {
+      if (event.type === "assistant.message.completed" && typeof event.payload?.costUsd === "number") {
+        cost += event.payload.costUsd;
+      }
+      if (event.type === "coding.agent.usage" && typeof event.payload?.costUsd === "number") {
+        cost += event.payload.costUsd;
+      }
+    }
+    return cost > 0 ? cost : null;
+  }, [events]);
+
   // Citation tooltip state
   const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
   const tooltipTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -195,6 +209,11 @@ export function RunThread({
             {!isLive && !isInterrupted ? (
               <div className={`flex items-center gap-1 h-8 transition-opacity duration-[140ms] ease-linear ${agentActionsAlwaysVisible ? "opacity-100" : "opacity-0 group-hover/msg:opacity-100"}`}>
                 <CopyButton text={finalText} label="Copy response" />
+                {totalCostUsd != null ? (
+                  <span className="text-[rgba(236,230,219,0.34)] text-[0.7rem] px-1 tabular-nums" title={`Total cost: $${totalCostUsd.toFixed(6)}`}>
+                    ${totalCostUsd < 0.01 ? totalCostUsd.toFixed(4) : totalCostUsd.toFixed(2)}
+                  </span>
+                ) : null}
               </div>
             ) : null}
           </div>

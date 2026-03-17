@@ -14,6 +14,7 @@ export type LiveRunState = {
 export type ToolLogEntry = {
   id: string;
   message: string;
+  kind?: "thinking" | "text" | "subagent";
 };
 
 export type ToolTimelineEntry = {
@@ -277,6 +278,12 @@ export function buildTimelineEntries(events: TimelineEventEnvelope[]) {
     "run.started",
     "run.completed",
     "assistant.message.completed",
+    "coding.agent.thinking",
+    "coding.agent.text",
+    "coding.agent.task.started",
+    "coding.agent.task.progress",
+    "coding.agent.task.completed",
+    "coding.agent.usage",
   ]);
 
   for (const event of events) {
@@ -350,9 +357,12 @@ export function buildTimelineEntries(events: TimelineEventEnvelope[]) {
           if (isSubTool) {
             const parentTool = findParentCodingTool(entries);
             if (parentTool) {
+              const inputSummary = typeof event.payload?.inputSummary === "string"
+                ? event.payload.inputSummary
+                : String(event.payload?.toolName ?? "Tool");
               parentTool.logs.push({
                 id: key,
-                message: `${String(event.payload?.toolName ?? "Tool")} — started`,
+                message: inputSummary,
               });
             } else {
               entries.push(toolEntry);
@@ -407,7 +417,9 @@ export function buildTimelineEntries(events: TimelineEventEnvelope[]) {
             if (parentTool) {
               const logEntry = parentTool.logs.find((l) => l.id === key);
               if (logEntry) {
-                logEntry.message = `${candidateName} — ${event.type === "tool.call.completed" ? "done" : "failed"}`;
+                // Append status to the existing inputSummary-based message
+                const statusSuffix = event.type === "tool.call.completed" ? " — done" : " — failed";
+                logEntry.message = logEntry.message + statusSuffix;
               }
             }
           }
@@ -427,9 +439,13 @@ export function buildTimelineEntries(events: TimelineEventEnvelope[]) {
           if (isSubTool) {
             const parentTool = findParentCodingTool(entries);
             if (parentTool) {
+              const inputSummary = typeof event.payload?.inputSummary === "string"
+                ? event.payload.inputSummary
+                : candidateName;
+              const statusSuffix = event.type === "tool.call.completed" ? " — done" : " — failed";
               parentTool.logs.push({
                 id: key,
-                message: `${candidateName} — ${event.type === "tool.call.completed" ? "done" : "failed"}`,
+                message: inputSummary + statusSuffix,
               });
             } else {
               entries.push(toolEntry);
@@ -459,6 +475,62 @@ export function buildTimelineEntries(events: TimelineEventEnvelope[]) {
             description: msg ? "" : stringifyUnknown(event.payload),
           });
         }
+        break;
+      }
+      case "coding.agent.thinking": {
+        const text = typeof event.payload?.text === "string" ? event.payload.text : "";
+        const preview = text.length > 200 ? text.slice(0, 200) + "..." : text;
+        if (preview.trim()) {
+          const parentTool = findParentCodingTool(entries);
+          if (parentTool) {
+            parentTool.logs.push({ id: event.id, message: preview, kind: "thinking" });
+          }
+        }
+        break;
+      }
+      case "coding.agent.text": {
+        const text = typeof event.payload?.text === "string" ? event.payload.text : "";
+        const preview = text.length > 300 ? text.slice(0, 300) + "..." : text;
+        if (preview.trim()) {
+          const parentTool = findParentCodingTool(entries);
+          if (parentTool) {
+            parentTool.logs.push({ id: event.id, message: preview, kind: "text" });
+          }
+        }
+        break;
+      }
+      case "coding.agent.task.started": {
+        const desc = typeof event.payload?.description === "string" ? event.payload.description : "task";
+        const parentTool = findParentCodingTool(entries);
+        if (parentTool) {
+          parentTool.logs.push({ id: event.id, message: `Subagent: ${desc}`, kind: "subagent" });
+        }
+        break;
+      }
+      case "coding.agent.task.progress": {
+        const desc = typeof event.payload?.description === "string" ? event.payload.description : "";
+        if (desc.trim()) {
+          const parentTool = findParentCodingTool(entries);
+          if (parentTool) {
+            parentTool.logs.push({ id: event.id, message: desc, kind: "subagent" });
+          }
+        }
+        break;
+      }
+      case "coding.agent.task.completed": {
+        const desc = typeof event.payload?.description === "string" ? event.payload.description : "task";
+        const usage = event.payload?.usage as { total_tokens?: number; duration_ms?: number } | undefined;
+        const stats = usage
+          ? ` (${usage.total_tokens ?? "?"} tokens, ${Math.round((usage.duration_ms ?? 0) / 1000)}s)`
+          : "";
+        const parentTool = findParentCodingTool(entries);
+        if (parentTool) {
+          parentTool.logs.push({ id: event.id, message: `Subagent done: ${desc}${stats}`, kind: "subagent" });
+        }
+        break;
+      }
+      case "coding.agent.usage": {
+        // Cost is shown next to the copy button, not in logs
         break;
       }
       case "approval.requested": {

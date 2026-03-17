@@ -6,6 +6,50 @@ import { env, hasE2bConfig, hasGitHubAppConfig } from "@/lib/env";
 import { getGitHubToken } from "@/lib/github/service";
 import { prisma } from "@/lib/prisma";
 
+/**
+ * Format a compact summary of a tool call's input for display in the timeline.
+ * e.g. `Bash(pnpm typecheck)`, `Read(/src/lib/foo.ts)`, `Grep(pattern)`.
+ */
+function formatToolInputSummary(toolName: string, toolInput: unknown): string {
+  const inp = (typeof toolInput === "object" && toolInput !== null ? toolInput : {}) as Record<string, unknown>;
+
+  switch (toolName) {
+    case "Bash": {
+      const cmd = typeof inp.command === "string" ? inp.command : "";
+      const preview = cmd.length > 150 ? cmd.slice(0, 150) + "…" : cmd;
+      return preview ? `Bash(${preview})` : "Bash";
+    }
+    case "Read": {
+      const filePath = typeof inp.file_path === "string" ? inp.file_path : "";
+      return filePath ? `Read(${filePath})` : "Read";
+    }
+    case "Edit": {
+      const filePath = typeof inp.file_path === "string" ? inp.file_path : "";
+      return filePath ? `Edit(${filePath})` : "Edit";
+    }
+    case "Write": {
+      const filePath = typeof inp.file_path === "string" ? inp.file_path : "";
+      return filePath ? `Write(${filePath})` : "Write";
+    }
+    case "Glob": {
+      const pattern = typeof inp.pattern === "string" ? inp.pattern : "";
+      return pattern ? `Glob(${pattern})` : "Glob";
+    }
+    case "Grep": {
+      const pattern = typeof inp.pattern === "string" ? inp.pattern : "";
+      return pattern ? `Grep(${pattern})` : "Grep";
+    }
+    case "Agent": {
+      const subType = typeof inp.subagent_type === "string" ? inp.subagent_type : "";
+      const desc = typeof inp.description === "string" ? inp.description : "";
+      const label = subType && desc ? `${subType}: ${desc}` : subType || desc;
+      return label ? `Agent(${label})` : "Agent";
+    }
+    default:
+      return toolName;
+  }
+}
+
 const DEFAULT_WORKSPACE_ROOT = "/workspace";
 const SANDBOX_TIMEOUT_MS = 1000 * 60 * 60; // 60 minutes
 const TASK_TIMEOUT_MS = 1000 * 60 * 30; // 30 minutes
@@ -453,6 +497,9 @@ export async function runCodingTask(input: {
     let lineBuf = "";
     let cliExitCode = -1;
     let stderrCapture = "";
+    let codingCostUsd: number | null = null;
+    let codingUsage: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number } | null = null;
+    let codingDurationMs: number | null = null;
 
     const cliEnvs: Record<string, string> = {
       ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY ?? "",
@@ -489,15 +536,76 @@ export async function runCodingTask(input: {
               sessionId = (event.session_id as string) ?? null;
               log.info("Claude Code session initialized", { sessionId });
             }
+
+            // Subagent events (task lifecycle)
+            if (event.type === "system") {
+              const subtype = event.subtype as string | undefined;
+              if (subtype === "task_started") {
+                input.onProgress?.("coding.agent.task.started", "coding_agent", {
+                  taskId: event.task_id as string ?? null,
+                  description: typeof event.description === "string" ? event.description : "task",
+                  subagentType: event.subagent_type as string ?? null,
+                });
+              }
+              if (subtype === "task_progress") {
+                input.onProgress?.("coding.agent.task.progress", "coding_agent", {
+                  taskId: event.task_id as string ?? null,
+                  description: typeof event.description === "string" ? event.description : "",
+                  lastToolName: event.last_tool_name as string ?? null,
+                  usage: event.usage ?? null,
+                });
+              }
+              if (subtype === "task_notification") {
+                input.onProgress?.("coding.agent.task.completed", "coding_agent", {
+                  taskId: event.task_id as string ?? null,
+                  description: typeof event.description === "string" ? event.description : "task",
+                  status: event.status as string ?? "completed",
+                  usage: event.usage ?? null,
+                });
+              }
+            }
+
             if (event.type === "result") {
               finalResult =
                 typeof event.result === "string"
                   ? event.result
                   : JSON.stringify(event.result);
               sessionId = (event.session_id as string) ?? sessionId;
+
+              // Capture usage/cost data from the result event
+              if (typeof event.total_cost_usd === "number") {
+                codingCostUsd = event.total_cost_usd;
+              } else if (typeof event.total_cost === "number") {
+                codingCostUsd = event.total_cost;
+              }
+              const usageData = event.usage as Record<string, unknown> | undefined;
+              if (usageData) {
+                codingUsage = {
+                  inputTokens: Number(usageData.input_tokens ?? 0),
+                  outputTokens: Number(usageData.output_tokens ?? 0),
+                  cacheReadTokens: Number(usageData.cache_read_input_tokens ?? 0),
+                  cacheWriteTokens: Number(usageData.cache_creation_input_tokens ?? 0),
+                };
+              }
+              if (typeof event.duration_ms === "number") {
+                codingDurationMs = event.duration_ms;
+              } else if (typeof event.num_turns === "number") {
+                codingDurationMs = null; // duration not always present
+              }
+
+              // Emit usage event so UI can display cost in real-time
+              if (codingCostUsd != null) {
+                input.onProgress?.("coding.agent.usage", "coding_agent", {
+                  costUsd: codingCostUsd,
+                  usage: codingUsage,
+                  durationMs: codingDurationMs,
+                });
+              }
+
               log.info("Claude Code result received", {
                 resultLength: finalResult.length,
                 sessionId,
+                costUsd: codingCostUsd,
               });
             }
 
@@ -506,33 +614,54 @@ export async function runCodingTask(input: {
               const msg = event.message as { content?: Array<Record<string, unknown>> };
               if (Array.isArray(msg.content)) {
                 for (const block of msg.content) {
+                  // Thinking blocks
+                  if (block.type === "thinking" && typeof block.thinking === "string") {
+                    const text = (block.thinking as string).slice(0, 500);
+                    if (text.trim()) {
+                      input.onProgress?.("coding.agent.thinking", "coding_agent", { text });
+                    }
+                  }
+
+                  // Text blocks
+                  if (block.type === "text" && typeof block.text === "string") {
+                    const text = (block.text as string).slice(0, 500);
+                    if (text.trim()) {
+                      input.onProgress?.("coding.agent.text", "coding_agent", { text });
+                    }
+                  }
+
                   if (block.type === "tool_use") {
                     // Capture tool input — truncate to keep events manageable
                     const toolInput = block.input;
                     const inputPreview = typeof toolInput === "string"
                       ? toolInput.slice(0, 1000)
                       : JSON.stringify(toolInput ?? {}).slice(0, 1000);
+                    const inputSummary = formatToolInputSummary(block.name as string, toolInput);
                     const payload = {
                       toolName: block.name as string,
                       toolUseId: block.id as string,
                       toolRuntime: "coding_agent",
                       input: toolInput,
+                      inputSummary,
                     };
                     input.onProgress?.("tool.call.started", "coding_agent", { ...payload, input: inputPreview });
                     pendingToolUses.set(block.id as string, block.name as string);
                   }
+                }
+              }
+            }
+
+            // Tool results arrive in user messages — complete pending tool uses
+            if (event.type === "user" && event.message) {
+              const msg = event.message as { content?: Array<Record<string, unknown>> };
+              if (Array.isArray(msg.content)) {
+                for (const block of msg.content) {
                   if (block.type === "tool_result") {
                     const toolUseId = block.tool_use_id as string;
-                    // Capture tool result content
-                    const resultContent = block.content;
-                    const resultPreview = typeof resultContent === "string"
-                      ? resultContent.slice(0, 1000)
-                      : JSON.stringify(resultContent ?? "").slice(0, 1000);
                     const payload = {
                       toolUseId,
                       toolName: pendingToolUses.get(toolUseId) ?? "tool",
                       toolRuntime: "coding_agent",
-                      result: resultPreview,
                     };
                     input.onProgress?.("tool.call.completed", "coding_agent", payload);
                     pendingToolUses.delete(toolUseId);
@@ -613,6 +742,9 @@ export async function runCodingTask(input: {
       repoFullName: session.repoBinding?.repoFullName ?? null,
       branch: session.branch,
       eventCount: events.length,
+      costUsd: codingCostUsd,
+      usage: codingUsage,
+      durationMs: codingDurationMs,
     };
   } catch (error) {
     log.error("Coding task failed", {

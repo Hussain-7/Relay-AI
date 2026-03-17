@@ -44,6 +44,20 @@ export function ActivityStep({
   }
 
   if (entry.kind === "tool") {
+    // Extract task brief for coding_agent tool to show as subtitle
+    let taskBrief: string | null = null;
+    if (entry.title === "coding_agent" && entry.input.trim()) {
+      try {
+        const parsed = JSON.parse(entry.input) as { taskBrief?: string };
+        if (typeof parsed.taskBrief === "string" && parsed.taskBrief.trim()) {
+          const brief = parsed.taskBrief.trim();
+          taskBrief = brief.length > 180 ? brief.slice(0, 180) + "..." : brief;
+        }
+      } catch {
+        // input may not be valid JSON
+      }
+    }
+
     return (
       <li className="activity-step grid grid-cols-[34px_minmax(0,1fr)] gap-3.5">
         <div className="flex flex-col items-center min-h-full" aria-hidden="true">
@@ -63,6 +77,9 @@ export function ActivityStep({
                   : "text-[rgba(243,199,180,0.92)] bg-[rgba(181,103,69,0.12)]"
             }`}>{formatToolStatusLabel(entry.status)}</span>
           </div>
+          {taskBrief ? (
+            <div className="mt-1 text-[rgba(245,240,232,0.54)] text-[0.82rem] leading-[1.45] [overflow-wrap:anywhere] break-words">{taskBrief}</div>
+          ) : null}
           {entry.runtime ? <div className="mt-1 text-[rgba(245,240,232,0.42)] text-[0.78rem]">{formatToolRuntimeLabel(entry.runtime)}</div> : null}
           <ToolStepDetails entry={entry} />
         </div>
