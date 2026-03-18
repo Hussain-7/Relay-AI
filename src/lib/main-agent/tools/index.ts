@@ -70,6 +70,7 @@ export function getMainAgentTools(ctx: ToolRuntimeContext) {
     cloneRepoTool,
     codingAgentTool,
     bashSandboxTool,
+    getSandboxUrlTool,
     closeSandboxTool,
   } = createCodingTools(ctx);
 
@@ -78,6 +79,7 @@ export function getMainAgentTools(ctx: ToolRuntimeContext) {
     cloneRepoTool,
     codingAgentTool,
     bashSandboxTool,
+    getSandboxUrlTool,
     closeSandboxTool,
     createGithubCreateRepoTool(ctx),
     createAskUserTool(ctx),

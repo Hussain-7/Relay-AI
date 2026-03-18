@@ -51,6 +51,14 @@ export const codingSessionCatalog: ToolCatalogEntry[] = [
     description: "Execute a shell command in the active sandbox — run tests, check git status, install packages.",
   },
   {
+    id: "get_sandbox_url",
+    label: "Get sandbox URL",
+    runtime: "main_agent",
+    kind: "custom_backend",
+    enabled: true,
+    description: "Get public URLs for apps running in the sandbox — temporary, live only while sandbox is active.",
+  },
+  {
     id: "bash",
     label: "Bash",
     runtime: "coding_agent",
@@ -450,6 +458,71 @@ export function createCodingTools(ctx: ToolRuntimeContext) {
     },
   });
 
+  // ── get_sandbox_url ──
+
+  const getSandboxUrlTool = betaZodTool({
+    name: "get_sandbox_url",
+    description:
+      "Get temporary public URLs for apps running in the sandbox. Takes port numbers and returns publicly accessible URLs. The URLs are only available while the sandbox is running. ALWAYS start the app first (via coding_agent_sandbox or bash_sandbox) and verify it's running before calling this tool.",
+    inputSchema: z.object({
+      ports: z.array(z.number()).min(1).describe("Port numbers to get public URLs for"),
+    }),
+    async run(input) {
+      try {
+        if (!hasE2bConfig()) {
+          throw new Error("E2B_API_KEY is required.");
+        }
+
+        // Try to use cached sandbox first
+        let sandbox = cache.sandbox;
+
+        if (!sandbox) {
+          // Fallback: look up session from DB and connect directly
+          const session = await prisma.codingSession.findFirst({
+            where: {
+              conversationId: ctx.conversationId,
+              status: { in: ["READY", "RUNNING"] },
+            },
+            orderBy: { updatedAt: "desc" },
+          });
+
+          if (!session?.sandboxId) {
+            throw new Error("No active coding session. Start one first with prepare_sandbox.");
+          }
+
+          sandbox = await connectSandboxOrThrow(session.sandboxId);
+        }
+
+        const urls = input.ports.map((port) => ({
+          port,
+          url: `https://${sandbox.getHost(port)}`,
+        }));
+
+        const result = {
+          urls,
+          note: "These URLs are temporary and only available while the sandbox is running.",
+        };
+
+        await ctx.emit("tool.call.completed", {
+          toolName: "get_sandbox_url",
+          toolRuntime: "custom",
+          input,
+          result: JSON.stringify(result),
+        });
+
+        return jsonResult(result);
+      } catch (error) {
+        await ctx.emit("tool.call.failed", {
+          toolName: "get_sandbox_url",
+          toolRuntime: "custom",
+          input,
+          error: error instanceof Error ? error.message : "Failed to get sandbox URLs",
+        });
+        throw error;
+      }
+    },
+  });
+
   // ── close_sandbox ──
 
   const closeSandboxTool = betaZodTool({
@@ -506,6 +579,7 @@ export function createCodingTools(ctx: ToolRuntimeContext) {
     cloneRepoTool,
     codingAgentTool,
     bashSandboxTool,
+    getSandboxUrlTool,
     closeSandboxTool,
   };
 }
