@@ -51,23 +51,39 @@ export function createSandboxExecTool(ctx: ToolRuntimeContext) {
         });
 
         const cwd = input.workspacePath ?? session.workspacePath ?? "/workspace";
-        const result = await sandbox.commands.run(
-          `cd "${cwd}" && ${input.command}`,
-          { timeoutMs: input.timeoutMs ?? 30000 },
-        );
+
+        // E2B SDK throws CommandExitError on non-zero exit — catch to capture stdout/stderr
+        let stdout = "";
+        let stderr = "";
+        let exitCode = 0;
+        try {
+          const result = await sandbox.commands.run(
+            `cd "${cwd}" && ${input.command}`,
+            { timeoutMs: input.timeoutMs ?? 30000 },
+          );
+          stdout = result.stdout;
+          stderr = result.stderr;
+          exitCode = result.exitCode;
+        } catch (cmdError) {
+          const err = cmdError as { stdout?: string; stderr?: string; exitCode?: number; message?: string };
+          stdout = err.stdout ?? "";
+          stderr = err.stderr ?? err.message ?? String(cmdError);
+          exitCode = err.exitCode ?? 1;
+        }
 
         const output = {
-          exitCode: result.exitCode,
-          stdout: result.stdout.slice(0, 4000),
-          stderr: result.stderr.slice(0, 2000),
+          exitCode,
+          stdout: stdout.slice(0, 4000),
+          stderr: stderr.slice(0, 2000),
         };
 
-        await ctx.emit("tool.call.completed", {
+        const isFailure = exitCode !== 0;
+        await ctx.emit(isFailure ? "tool.call.failed" : "tool.call.completed", {
           toolName: "sandbox_exec",
           toolRuntime: "custom",
           input,
-          exitCode: result.exitCode,
-          result: (result.stdout || result.stderr).slice(0, 2000),
+          exitCode,
+          result: (stdout || stderr).slice(0, 2000),
         });
 
         return jsonResult(output);

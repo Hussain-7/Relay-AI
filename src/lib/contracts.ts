@@ -27,6 +27,7 @@ export type TimelineEventType =
   | "coding.agent.task.progress"
   | "coding.agent.task.completed"
   | "coding.agent.usage"
+  | "coding.agent.diff"
   | "run.completed"
   | "run.cancelled"
   | "run.failed";

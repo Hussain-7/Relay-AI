@@ -14,7 +14,11 @@ export type LiveRunState = {
 export type ToolLogEntry = {
   id: string;
   message: string;
-  kind?: "thinking" | "text" | "subagent";
+  kind?: "thinking" | "text" | "subagent" | "tool_result" | "diff";
+  /** Expandable detail content (tool output, diff body) */
+  detail?: string | null;
+  /** Whether this tool result was an error */
+  isError?: boolean;
 };
 
 export type ToolTimelineEntry = {
@@ -284,6 +288,7 @@ export function buildTimelineEntries(events: TimelineEventEnvelope[]) {
     "coding.agent.task.progress",
     "coding.agent.task.completed",
     "coding.agent.usage",
+    "coding.agent.diff",
   ]);
 
   for (const event of events) {
@@ -420,6 +425,16 @@ export function buildTimelineEntries(events: TimelineEventEnvelope[]) {
                 // Append status to the existing inputSummary-based message
                 const statusSuffix = event.type === "tool.call.completed" ? " — done" : " — failed";
                 logEntry.message = logEntry.message + statusSuffix;
+                // Attach tool result content for expandable detail
+                const resultContent =
+                  typeof event.payload?.resultContent === "string"
+                    ? event.payload.resultContent
+                    : null;
+                if (resultContent) {
+                  logEntry.kind = "tool_result";
+                  logEntry.detail = resultContent;
+                  logEntry.isError = event.payload?.isError === true;
+                }
               }
             }
           }
@@ -479,22 +494,32 @@ export function buildTimelineEntries(events: TimelineEventEnvelope[]) {
       }
       case "coding.agent.thinking": {
         const text = typeof event.payload?.text === "string" ? event.payload.text : "";
-        const preview = text.length > 200 ? text.slice(0, 200) + "..." : text;
+        const preview = text.length > 800 ? text.slice(0, 800) + "…" : text;
         if (preview.trim()) {
           const parentTool = findParentCodingTool(entries);
           if (parentTool) {
-            parentTool.logs.push({ id: event.id, message: preview, kind: "thinking" });
+            parentTool.logs.push({
+              id: event.id,
+              message: preview,
+              kind: "thinking",
+              detail: text.length > 800 ? text : null,
+            });
           }
         }
         break;
       }
       case "coding.agent.text": {
         const text = typeof event.payload?.text === "string" ? event.payload.text : "";
-        const preview = text.length > 300 ? text.slice(0, 300) + "..." : text;
+        const preview = text.length > 1000 ? text.slice(0, 1000) + "…" : text;
         if (preview.trim()) {
           const parentTool = findParentCodingTool(entries);
           if (parentTool) {
-            parentTool.logs.push({ id: event.id, message: preview, kind: "text" });
+            parentTool.logs.push({
+              id: event.id,
+              message: preview,
+              kind: "text",
+              detail: text.length > 1000 ? text : null,
+            });
           }
         }
         break;
@@ -531,6 +556,22 @@ export function buildTimelineEntries(events: TimelineEventEnvelope[]) {
       }
       case "coding.agent.usage": {
         // Cost is shown next to the copy button, not in logs
+        break;
+      }
+      case "coding.agent.diff": {
+        const diff = typeof event.payload?.diff === "string" ? event.payload.diff : "";
+        const diffStat = typeof event.payload?.diffStat === "string" ? event.payload.diffStat : "";
+        if (diff.trim()) {
+          const parentTool = findParentCodingTool(entries);
+          if (parentTool) {
+            parentTool.logs.push({
+              id: event.id,
+              message: diffStat || "Files changed",
+              kind: "diff",
+              detail: diff,
+            });
+          }
+        }
         break;
       }
       case "approval.requested": {

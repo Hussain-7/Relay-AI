@@ -53,6 +53,45 @@ function formatToolInputSummary(toolName: string, toolInput: unknown): string {
   }
 }
 
+/**
+ * Extract text content from a tool_result content block.
+ * Handles both string content and array-of-text-blocks formats.
+ */
+function extractToolResultContent(block: Record<string, unknown>): string {
+  const content = block.content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .filter(
+        (c: unknown): c is { type: string; text: string } =>
+          typeof c === "object" &&
+          c !== null &&
+          (c as Record<string, unknown>).type === "text",
+      )
+      .map((c) => c.text)
+      .join("\n");
+  }
+  return "";
+}
+
+/**
+ * Truncate tool result content with per-tool limits to keep events manageable.
+ */
+function truncateToolResult(toolName: string, content: string): string {
+  const limits: Record<string, number> = {
+    Bash: 3000,
+    Read: 1500,
+    Write: 2000,
+    Edit: 2000,
+    Grep: 2000,
+    Glob: 2000,
+  };
+  const limit = limits[toolName] ?? 1500;
+  return content.length <= limit
+    ? content
+    : content.slice(0, limit) + "\n…truncated";
+}
+
 const DEFAULT_WORKSPACE_ROOT = "/workspace";
 const SANDBOX_TIMEOUT_MS = 1000 * 60 * 60; // 60 minutes
 const TASK_TIMEOUT_MS = 1000 * 60 * 30; // 30 minutes
@@ -636,7 +675,7 @@ export async function runCodingTask(input: {
                 for (const block of msg.content) {
                   // Thinking blocks
                   if (block.type === "thinking" && typeof block.thinking === "string") {
-                    const text = (block.thinking as string).slice(0, 500);
+                    const text = (block.thinking as string).slice(0, 2000);
                     if (text.trim()) {
                       input.onProgress?.("coding.agent.thinking", "coding_agent", { text });
                     }
@@ -644,7 +683,7 @@ export async function runCodingTask(input: {
 
                   // Text blocks
                   if (block.type === "text" && typeof block.text === "string") {
-                    const text = (block.text as string).slice(0, 500);
+                    const text = (block.text as string).slice(0, 2000);
                     if (text.trim()) {
                       input.onProgress?.("coding.agent.text", "coding_agent", { text });
                     }
@@ -678,12 +717,18 @@ export async function runCodingTask(input: {
                 for (const block of msg.content) {
                   if (block.type === "tool_result") {
                     const toolUseId = block.tool_use_id as string;
-                    const payload = {
+                    const toolName = pendingToolUses.get(toolUseId) ?? "tool";
+                    const rawContent = extractToolResultContent(block);
+                    const resultContent = rawContent
+                      ? truncateToolResult(toolName, rawContent)
+                      : null;
+                    input.onProgress?.("tool.call.completed", "coding_agent", {
                       toolUseId,
-                      toolName: pendingToolUses.get(toolUseId) ?? "tool",
+                      toolName,
                       toolRuntime: "coding_agent",
-                    };
-                    input.onProgress?.("tool.call.completed", "coding_agent", payload);
+                      resultContent,
+                      isError: block.is_error === true,
+                    });
                     pendingToolUses.delete(toolUseId);
                   }
                 }
@@ -725,6 +770,48 @@ export async function runCodingTask(input: {
       input.onProgress?.("tool.call.completed", "coding_agent", payload);
     }
     pendingToolUses.clear();
+
+    // Capture git diff after task completes for visibility into code changes
+    if (session.workspacePath) {
+      try {
+        // Try uncommitted changes first, fall back to last commit's changes
+        const diffResult = await safeRun(
+          sandbox,
+          `cd "${session.workspacePath}" && git diff HEAD --stat 2>/dev/null && echo "===DIFF===" && git diff HEAD 2>/dev/null`,
+          { timeoutMs: 10000 },
+        );
+        let diffStat = "";
+        let fullDiff = "";
+        const parts = diffResult.stdout.split("===DIFF===");
+        diffStat = (parts[0] ?? "").trim();
+        fullDiff = (parts[1] ?? "").trim();
+
+        // If no uncommitted changes, check what was committed
+        if (!fullDiff) {
+          const commitDiff = await safeRun(
+            sandbox,
+            `cd "${session.workspacePath}" && git diff HEAD~1..HEAD --stat 2>/dev/null && echo "===DIFF===" && git diff HEAD~1..HEAD 2>/dev/null`,
+            { timeoutMs: 10000 },
+          );
+          const cParts = commitDiff.stdout.split("===DIFF===");
+          diffStat = (cParts[0] ?? "").trim();
+          fullDiff = (cParts[1] ?? "").trim();
+        }
+
+        if (fullDiff) {
+          const truncated =
+            fullDiff.length > 8000
+              ? fullDiff.slice(0, 8000) + "\n…diff truncated"
+              : fullDiff;
+          input.onProgress?.("coding.agent.diff", "coding_agent", {
+            diffStat,
+            diff: truncated,
+          });
+        }
+      } catch {
+        /* non-fatal */
+      }
+    }
 
     log.info("Claude Code CLI finished", {
       cliExitCode,
