@@ -43,7 +43,7 @@ export function ToolStepDetails({ entry }: { entry: ToolTimelineEntry }) {
           {hasLogs ? (
             <section className="border border-[rgba(255,255,255,0.08)] rounded-[18px] bg-[rgba(255,255,255,0.03)] p-3 min-w-0 overflow-hidden">
               <div className="mb-2 text-[rgba(245,240,232,0.5)] text-[0.72rem] tracking-[0.12em] uppercase">Processing</div>
-              <ol className="m-0 p-0 list-none grid gap-1.5 max-h-[320px] overflow-y-auto pr-1">
+              <ol className="m-0 p-0 list-none grid gap-1.5 overflow-y-auto pr-1">
                 {entry.logs.map((log) => (
                   <li
                     key={log.id}
