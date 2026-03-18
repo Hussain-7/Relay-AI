@@ -1,8 +1,7 @@
 export type { ToolRuntimeContext, ToolCatalogEntry } from "./context";
 
 import type { ToolRuntimeContext } from "./context";
-import { createCodingAgentTool, createCloseSandboxTool, codingSessionCatalog } from "./coding-session";
-import { createSandboxExecTool, sandboxExecCatalog } from "./sandbox-exec";
+import { createCodingTools, codingSessionCatalog } from "./coding-session";
 import { createGithubCreateRepoTool, githubCatalog } from "./github";
 import { createAskUserTool, askUserCatalog } from "./ask-user";
 import { memoryCatalog } from "./memory";
@@ -66,10 +65,20 @@ export const MAIN_AGENT_SERVER_TOOLS = [
 // ── Custom tools (executed on our server via toolRunner) ──
 
 export function getMainAgentTools(ctx: ToolRuntimeContext) {
+  const {
+    prepareSandboxTool,
+    cloneRepoTool,
+    codingAgentTool,
+    bashSandboxTool,
+    closeSandboxTool,
+  } = createCodingTools(ctx);
+
   return [
-    createCodingAgentTool(ctx),
-    createSandboxExecTool(ctx),
-    createCloseSandboxTool(ctx),
+    prepareSandboxTool,
+    cloneRepoTool,
+    codingAgentTool,
+    bashSandboxTool,
+    closeSandboxTool,
     createGithubCreateRepoTool(ctx),
     createAskUserTool(ctx),
   ];
@@ -91,7 +100,6 @@ export const TOOL_CATALOG = [
   })),
   // Custom backend tools
   ...codingSessionCatalog,
-  sandboxExecCatalog,
   githubCatalog,
   askUserCatalog,
   // Memory (available when memory preference is on)

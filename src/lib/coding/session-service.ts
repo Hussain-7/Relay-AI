@@ -2,8 +2,7 @@ import { Sandbox } from "@e2b/code-interpreter";
 import { CodingSessionStatus } from "@prisma/client";
 
 import { appendRunEvent } from "@/lib/run-events";
-import { env, hasE2bConfig, hasGitHubAppConfig } from "@/lib/env";
-import { getGitHubToken } from "@/lib/github/service";
+import { env, hasE2bConfig } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -95,7 +94,7 @@ async function safeRun(
   }
 }
 
-async function connectSandboxOrThrow(sandboxId: string) {
+export async function connectSandboxOrThrow(sandboxId: string) {
   if (!hasE2bConfig()) {
     throw new Error("E2B_API_KEY is required for coding sessions.");
   }
@@ -241,7 +240,7 @@ export async function startOrResumeCodingSession(input: {
         });
       }
 
-      return codingSession;
+      return { session: codingSession, sandbox };
     } catch (err) {
       log.warn("Sandbox reconnect failed — marking session CLOSED, will create fresh sandbox", {
         sessionId: codingSession.id,
@@ -347,25 +346,23 @@ export async function startOrResumeCodingSession(input: {
   // via ctx.emitProgress in the calling tool (coding-session.ts), which handles
   // both SSE delivery and DB persistence. No appendRunEvent needed here.
 
-  return codingSession;
+  return { session: codingSession, sandbox };
 }
 
 /**
  * Clone the repo into the sandbox and set up git credentials.
  * If already cloned, refreshes the remote URL with the provided token.
- * Returns the sandbox instance for further commands.
+ * Accepts a pre-connected Sandbox instance to avoid redundant connections.
  */
-async function ensureRepoCloned(
+export async function ensureRepoCloned(
+  sandbox: Sandbox,
   session: {
-    sandboxId: string;
     workspacePath: string | null;
     repoBinding: { repoFullName: string } | null;
   },
   token: string,
   gitUser: { name: string; email: string },
 ) {
-  const sandbox = await connectSandboxOrThrow(session.sandboxId);
-
   if (!session.repoBinding || !session.workspacePath) {
     log.info("No repo binding — skipping clone");
     return sandbox;
@@ -440,6 +437,9 @@ async function ensureRepoCloned(
 /**
  * Run the Claude Code CLI inside the E2B sandbox and stream results back.
  * Uses `claude --dangerously-skip-permissions --output-format stream-json`.
+ *
+ * Requires a pre-connected sandbox. Sandbox provisioning, repo cloning, and
+ * token fetching are handled by prepare_sandbox and clone_repo_sandbox tools.
  */
 export async function runCodingTask(input: {
   codingSessionId: string;
@@ -448,6 +448,10 @@ export async function runCodingTask(input: {
   userId: string;
   taskBrief: string;
   onProgress?: (type: import("@/lib/contracts").TimelineEventType, source: import("@/lib/contracts").TimelineSource, payload?: Record<string, unknown> | null) => void;
+  /** Pre-connected sandbox (required). */
+  sandbox: Sandbox;
+  /** GitHub token for git push (optional — only needed if repo is bound). */
+  gitToken?: string | null;
 }) {
   log.info("runCodingTask starting", {
     codingSessionId: input.codingSessionId,
@@ -464,45 +468,10 @@ export async function runCodingTask(input: {
   }
 
   try {
-    // Get a fresh GitHub token for clone/push (if repo is bound)
-    let gitToken: string | null = null;
-    if (session.repoBinding && hasGitHubAppConfig()) {
-      log.info("Fetching GitHub token for repo", {
-        repoFullName: session.repoBinding.repoFullName,
-      });
-      gitToken = await getGitHubToken(input.userId);
-      if (!gitToken) {
-        throw new Error("GitHub token unavailable. Ensure the GitHub App is installed.");
-      }
-      log.info("GitHub token obtained");
-    }
+    const sandbox = input.sandbox;
+    const gitToken = input.gitToken ?? null;
 
-    log.info("About to ensure repo cloned");
-
-    // Look up user profile for git commit identity
-    const userProfile = await prisma.userProfile.findUnique({
-      where: { userId: input.userId },
-      select: { email: true, fullName: true },
-    });
-    const gitUser = {
-      name: userProfile?.fullName ?? "Relay AI User",
-      email: userProfile?.email ?? `${input.userId}@users.noreply.github.com`,
-    };
-
-    // Clone repo into sandbox (or refresh remote URL with fresh token)
-    const sandbox = gitToken
-      ? await ensureRepoCloned(
-          {
-            sandboxId: session.sandboxId,
-            workspacePath: session.workspacePath,
-            repoBinding: session.repoBinding,
-          },
-          gitToken,
-          gitUser,
-        )
-      : await connectSandboxOrThrow(session.sandboxId);
-
-    log.info("Repo clone done, updating session to RUNNING");
+    log.info("Updating session to RUNNING");
 
     // Update session to RUNNING
     await prisma.codingSession.update({
@@ -579,6 +548,7 @@ export async function runCodingTask(input: {
 
           try {
             const event = JSON.parse(line) as Record<string, unknown>;
+            console.log('Events From Coding Agent:', event);
             events.push(event);
 
             // Capture session ID and final result

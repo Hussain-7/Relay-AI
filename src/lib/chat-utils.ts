@@ -245,7 +245,7 @@ export function resizeComposer(textarea: HTMLTextAreaElement | null) {
   textarea.style.height = `${Math.min(textarea.scrollHeight, 220)}px`;
 }
 
-const CODING_TOOL_NAMES = new Set(["coding_agent"]);
+const CODING_TOOL_NAMES = new Set(["coding_agent_sandbox"]);
 
 /** Find the most recent coding session tool entry (still running or completed). */
 function findParentCodingTool(entries: RenderTimelineEntry[]): ToolTimelineEntry | null {

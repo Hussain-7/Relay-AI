@@ -1,19 +1,54 @@
 import { z } from "zod";
 import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
+import type { Sandbox } from "@e2b/code-interpreter";
 
-import { startOrResumeCodingSession, runCodingTask, closeCodingSession } from "@/lib/coding/session-service";
+import {
+  startOrResumeCodingSession,
+  ensureRepoCloned,
+  runCodingTask,
+  closeCodingSession,
+  connectSandboxOrThrow,
+} from "@/lib/coding/session-service";
+import { getGitHubToken } from "@/lib/github/service";
+import { hasE2bConfig, hasGitHubAppConfig } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 import type { ToolCatalogEntry, ToolRuntimeContext } from "./context";
 import { jsonResult } from "./context";
 
+// ── Catalog entries for the UI tool list ──
+
 export const codingSessionCatalog: ToolCatalogEntry[] = [
   {
-    id: "coding_agent",
+    id: "prepare_sandbox",
+    label: "Prepare sandbox",
+    runtime: "main_agent",
+    kind: "custom_backend",
+    enabled: true,
+    description: "Provision a cloud sandbox or reconnect to an existing one for remote coding.",
+  },
+  {
+    id: "clone_repo_sandbox",
+    label: "Clone repository",
+    runtime: "main_agent",
+    kind: "custom_backend",
+    enabled: true,
+    description: "Clone the linked GitHub repository into the sandbox. Skips if already cloned.",
+  },
+  {
+    id: "coding_agent_sandbox",
     label: "Coding agent",
     runtime: "main_agent",
     kind: "custom_backend",
     enabled: true,
-    description: "Run a coding agent in a remote E2B sandbox with full repo access.",
+    description: "Run a coding task using Claude Code inside the sandbox. Reads, writes, edits files, runs commands, and manages git.",
+  },
+  {
+    id: "bash_sandbox",
+    label: "Run command",
+    runtime: "main_agent",
+    kind: "custom_backend",
+    enabled: true,
+    description: "Execute a shell command in the active sandbox — run tests, check git status, install packages.",
   },
   {
     id: "bash",
@@ -21,7 +56,7 @@ export const codingSessionCatalog: ToolCatalogEntry[] = [
     runtime: "coding_agent",
     kind: "claude_code_builtin",
     enabled: true,
-    description: "Claude Code shell access inside the remote coding workspace.",
+    description: "Shell access inside the remote coding workspace (used by the coding agent).",
   },
   {
     id: "text_editor",
@@ -29,7 +64,7 @@ export const codingSessionCatalog: ToolCatalogEntry[] = [
     runtime: "coding_agent",
     kind: "claude_code_builtin",
     enabled: true,
-    description: "Claude Code file editing inside the remote coding workspace.",
+    description: "File editing inside the remote coding workspace (used by the coding agent).",
   },
   {
     id: "close_sandbox",
@@ -37,55 +72,249 @@ export const codingSessionCatalog: ToolCatalogEntry[] = [
     runtime: "main_agent",
     kind: "custom_backend",
     enabled: true,
-    description: "Kill the E2B sandbox to save cost when the coding task is done.",
+    description: "Shut down the sandbox to stop billing. A new one is created automatically when needed.",
   },
 ];
 
-export function createCodingAgentTool(ctx: ToolRuntimeContext) {
-  return betaZodTool({
-    name: "coding_agent",
-    description: "Start or resume a remote coding session in an E2B cloud sandbox. Use this when the user asks you to write code, fix bugs, implement features, refactor, or any task that requires reading/writing files in a repository. This provisions a sandbox, clones the linked GitHub repo, and runs a coding agent (Claude Code) that has full filesystem access with Read, Write, Edit, Bash, Git, etc. The coding agent can also create PRs and push commits. Do NOT use your built-in code_execution tool for repository work — that is only for short-lived analysis/data scripts. Always use this tool for real coding tasks.",
+// ── Shared sandbox cache (closure-level, shared across all tools in a run) ──
+
+type CodingSessionWithRepo = Awaited<ReturnType<typeof startOrResumeCodingSession>>["session"];
+
+interface RunSandboxCache {
+  session: CodingSessionWithRepo | null;
+  sandbox: Sandbox | null;
+  gitToken: string | null;
+  gitUser: { name: string; email: string } | null;
+  repoReady: boolean;
+}
+
+/**
+ * Lightweight sandbox health check — runs `echo ok` with a 5s timeout.
+ * Returns false if the sandbox is dead/unreachable.
+ */
+async function isSandboxAlive(sandbox: Sandbox): Promise<boolean> {
+  try {
+    const result = await sandbox.commands.run("echo ok", { timeoutMs: 5000 });
+    return result.exitCode === 0 && result.stdout.trim() === "ok";
+  } catch {
+    return false;
+  }
+}
+
+// ── Combined factory: all coding tools share a single cache ──
+
+export function createCodingTools(ctx: ToolRuntimeContext) {
+  const cache: RunSandboxCache = {
+    session: null,
+    sandbox: null,
+    gitToken: null,
+    gitUser: null,
+    repoReady: false,
+  };
+
+  /** Clear sandbox-related cache (keep token/user since they're independent). */
+  function clearSandboxCache() {
+    cache.session = null;
+    cache.sandbox = null;
+    cache.repoReady = false;
+  }
+
+  /** Resolve repoBindingId from the conversation's linked repo. */
+  async function resolveRepoBindingId(): Promise<string | undefined> {
+    const conv = await prisma.conversation.findUnique({
+      where: { id: ctx.conversationId },
+    });
+    return conv?.repoBindingId ?? undefined;
+  }
+
+  /** Fetch git user profile for commit identity. */
+  async function fetchGitUser(): Promise<{ name: string; email: string }> {
+    const userProfile = await prisma.userProfile.findUnique({
+      where: { userId: ctx.userId },
+      select: { email: true, fullName: true },
+    });
+    return {
+      name: userProfile?.fullName ?? "Relay AI User",
+      email: userProfile?.email ?? `${ctx.userId}@users.noreply.github.com`,
+    };
+  }
+
+  // ── prepare_sandbox ──
+
+  const prepareSandboxTool = betaZodTool({
+    name: "prepare_sandbox",
+    description:
+      "Provision a new E2B cloud sandbox or reconnect to an existing one. Call this FIRST before any coding work. Creates a persistent environment where code can be written, compiled, tested, and committed. If a sandbox already exists for this conversation, reconnects and reuses it.",
     inputSchema: z.object({
-      taskBrief: z.string().min(1).describe("Clear description of the coding task to perform"),
-      branchStrategy: z.string().optional().describe( "Branch naming strategy (defaults to chat/{conversationId})"),
+      branchStrategy: z.string().optional().describe("Branch naming strategy (defaults to chat/{conversationId})"),
     }),
     async run(input) {
       try {
-        // Always resolve repoBindingId from the conversation's linked repo
-        const conv = await prisma.conversation.findUnique({
-          where: { id: ctx.conversationId },
-        });
-        const repoBindingId = conv?.repoBindingId ?? undefined;
+        const repoBindingId = await resolveRepoBindingId();
 
-        // Progress: provisioning
-        ctx.emitProgress("coding.session.created", "system", {
-          message: "Provisioning sandbox...",
-        });
-
-        // 1. Provision or resume the sandbox
-        const session = await startOrResumeCodingSession({
+        const { session, sandbox } = await startOrResumeCodingSession({
           conversationId: ctx.conversationId,
           userId: ctx.userId,
           runId: ctx.runId,
           repoBindingId,
-          taskBrief: input.taskBrief,
           branchStrategy: input.branchStrategy,
         });
 
-        // Progress: session ready
-        ctx.emitProgress("coding.session.ready", "system", {
-          codingSessionId: session.id,
-          sandboxId: session.sandboxId,
-          message: session.sandboxId ? "Sandbox connected" : "Session provisioned",
-        });
+        cache.session = session;
+        cache.sandbox = sandbox;
+        cache.repoReady = false; // New sandbox — repo not cloned yet
 
-        // 2. Link coding session to agent run
+        // Link coding session to agent run
         await prisma.agentRun.update({
           where: { id: ctx.runId },
           data: { codingSessionId: session.id },
         });
 
-        // 3. Clone repo + run the coding agent with the task
+        const resultSummary = `Sandbox ready (${session.sandboxId}). Workspace: ${session.workspacePath}`;
+        await ctx.emit("tool.call.completed", {
+          toolName: "prepare_sandbox",
+          toolRuntime: "custom",
+          input,
+          codingSessionId: session.id,
+          sandboxId: session.sandboxId,
+          workspacePath: session.workspacePath,
+          status: "ready",
+          result: resultSummary,
+        });
+
+        return jsonResult({
+          sandboxId: session.sandboxId,
+          workspacePath: session.workspacePath,
+          status: "ready",
+          hasRepo: Boolean(session.repoBinding),
+          repoFullName: session.repoBinding?.repoFullName ?? null,
+        });
+      } catch (error) {
+        clearSandboxCache();
+        await ctx.emit("tool.call.failed", {
+          toolName: "prepare_sandbox",
+          toolRuntime: "custom",
+          input,
+          error: error instanceof Error ? error.message : "Failed to prepare sandbox",
+        });
+        throw error;
+      }
+    },
+  });
+
+  // ── clone_repo_sandbox ──
+
+  const cloneRepoTool = betaZodTool({
+    name: "clone_repo_sandbox",
+    description:
+      "Clone the linked GitHub repository into the sandbox. Intelligently checks if the repo is already cloned — if so, just refreshes the git remote with a fresh token. If not, performs a shallow clone and configures git credentials. Call after prepare_sandbox when a repo is linked.",
+    inputSchema: z.object({}),
+    async run(input) {
+      try {
+        if (!cache.session || !cache.sandbox) {
+          throw new Error("No active sandbox. Call prepare_sandbox first.");
+        }
+
+        // Verify sandbox is alive
+        if (!(await isSandboxAlive(cache.sandbox))) {
+          clearSandboxCache();
+          throw new Error("Sandbox is no longer reachable. Call prepare_sandbox to provision a new one.");
+        }
+
+        if (!cache.session.repoBinding) {
+          return jsonResult({
+            cloned: false,
+            reason: "No repo linked to this conversation.",
+            workspacePath: cache.session.workspacePath,
+          });
+        }
+
+        // Fetch GitHub token if not cached
+        if (!cache.gitToken && hasGitHubAppConfig()) {
+          cache.gitToken = await getGitHubToken(ctx.userId);
+          if (!cache.gitToken) {
+            throw new Error("GitHub token unavailable. Ensure the GitHub App is installed.");
+          }
+        }
+        if (!cache.gitToken) {
+          throw new Error("GitHub token required but unavailable.");
+        }
+
+        // Fetch git user if not cached
+        if (!cache.gitUser) {
+          cache.gitUser = await fetchGitUser();
+        }
+
+        await ensureRepoCloned(
+          cache.sandbox,
+          {
+            workspacePath: cache.session.workspacePath,
+            repoBinding: cache.session.repoBinding,
+          },
+          cache.gitToken,
+          cache.gitUser,
+        );
+
+        cache.repoReady = true;
+
+        const repoFullName = cache.session.repoBinding.repoFullName;
+        const repoUrl = `https://github.com/${repoFullName}`;
+        const resultSummary = `Cloned ${repoFullName} into ${cache.session.workspacePath}`;
+
+        await ctx.emit("tool.call.completed", {
+          toolName: "clone_repo_sandbox",
+          toolRuntime: "custom",
+          // Backfill input with repo URL so it shows in the request section
+          input: { repository: repoUrl },
+          result: resultSummary,
+          repoFullName,
+          workspacePath: cache.session.workspacePath,
+        });
+
+        return jsonResult({
+          cloned: true,
+          repoFullName,
+          workspacePath: cache.session.workspacePath,
+        });
+      } catch (error) {
+        // Don't clear sandbox cache on repo errors — sandbox is still valid
+        cache.repoReady = false;
+        await ctx.emit("tool.call.failed", {
+          toolName: "clone_repo_sandbox",
+          toolRuntime: "custom",
+          input,
+          error: error instanceof Error ? error.message : "Failed to ensure repo",
+        });
+        throw error;
+      }
+    },
+  });
+
+  // ── coding_agent_sandbox ──
+
+  const codingAgentTool = betaZodTool({
+    name: "coding_agent_sandbox",
+    description:
+      "Run a coding task inside the sandbox using Claude Code. Reads, writes, and edits files, runs shell commands, manages git commits, and can push and create PRs. Requires prepare_sandbox (and clone_repo_sandbox if a repo is linked) to be called first. Can be called multiple times — each call reuses the same sandbox without re-provisioning.",
+    inputSchema: z.object({
+      taskBrief: z.string().min(1).describe("Clear description of the coding task to perform"),
+    }),
+    async run(input) {
+      try {
+        if (!cache.session || !cache.sandbox) {
+          throw new Error("No active sandbox. Call prepare_sandbox (and clone_repo_sandbox if a repo is linked) before coding_agent_sandbox.");
+        }
+
+        // Verify cached sandbox is still alive
+        if (!(await isSandboxAlive(cache.sandbox))) {
+          clearSandboxCache();
+          throw new Error("Sandbox is no longer reachable. Call prepare_sandbox to provision a new one, then clone_repo_sandbox, then retry coding_agent_sandbox.");
+        }
+
+        const session = cache.session;
+        const sandbox = cache.sandbox;
+
+        // Run the coding task — sandbox and token are pre-cached
         const taskResult = await runCodingTask({
           codingSessionId: session.id,
           conversationId: ctx.conversationId,
@@ -93,6 +322,8 @@ export function createCodingAgentTool(ctx: ToolRuntimeContext) {
           userId: ctx.userId,
           taskBrief: input.taskBrief,
           onProgress: ctx.emitProgress,
+          sandbox,
+          gitToken: cache.gitToken,
         });
 
         // Persist coding agent cost to AgentRun metadata
@@ -112,7 +343,7 @@ export function createCodingAgentTool(ctx: ToolRuntimeContext) {
         }
 
         await ctx.emit("tool.call.completed", {
-          toolName: "coding_agent",
+          toolName: "coding_agent_sandbox",
           toolRuntime: "custom",
           input,
           codingSessionId: session.id,
@@ -133,23 +364,98 @@ export function createCodingAgentTool(ctx: ToolRuntimeContext) {
           agentSessionId: taskResult.sessionId,
         });
       } catch (error) {
+        // Only clear sandbox cache on sandbox-level errors, not task failures
+        if (error instanceof Error && (error.message.includes("No active sandbox") || error.message.includes("no longer reachable"))) {
+          clearSandboxCache();
+        }
         await ctx.emit("tool.call.failed", {
-          toolName: "coding_agent",
+          toolName: "coding_agent_sandbox",
           toolRuntime: "custom",
           input,
-          error: error instanceof Error ? error.message : "Unknown coding session start error",
+          error: error instanceof Error ? error.message : "Unknown coding agent error",
         });
         throw error;
       }
     },
   });
-}
 
-export function createCloseSandboxTool(ctx: ToolRuntimeContext) {
-  return betaZodTool({
+  // ── bash_sandbox ──
+
+  const bashSandboxTool = betaZodTool({
+    name: "bash_sandbox",
+    description:
+      "Run a shell command in the active sandbox. Use for quick operations: checking git status/log, running tests, listing files, installing packages, or verifying changes. Requires an active sandbox (call prepare_sandbox first). Do NOT confuse with code_execution — that is a temporary server-side sandbox with no repo access.",
+    inputSchema: z.object({
+      command: z.string().min(1).describe("The shell command to execute"),
+      workspacePath: z.string().optional().describe("Working directory (defaults to the session workspace)"),
+      timeoutMs: z.number().optional().describe("Timeout in ms (default 30s)"),
+    }),
+    async run(input) {
+      try {
+        if (!hasE2bConfig()) {
+          throw new Error("E2B_API_KEY is required.");
+        }
+
+        // Try to use cached sandbox first
+        let sandbox = cache.sandbox;
+        let cwd = input.workspacePath ?? cache.session?.workspacePath ?? "/workspace";
+
+        if (!sandbox) {
+          // Fallback: look up session from DB and connect directly
+          const session = await prisma.codingSession.findFirst({
+            where: {
+              conversationId: ctx.conversationId,
+              status: { in: ["READY", "RUNNING"] },
+            },
+            orderBy: { updatedAt: "desc" },
+          });
+
+          if (!session?.sandboxId) {
+            throw new Error("No active coding session. Start one first with prepare_sandbox or coding_agent_sandbox.");
+          }
+
+          sandbox = await connectSandboxOrThrow(session.sandboxId);
+          cwd = input.workspacePath ?? session.workspacePath ?? "/workspace";
+        }
+
+        const result = await sandbox.commands.run(
+          `cd "${cwd}" && ${input.command}`,
+          { timeoutMs: input.timeoutMs ?? 30000 },
+        );
+
+        const output = {
+          exitCode: result.exitCode,
+          stdout: result.stdout.slice(0, 4000),
+          stderr: result.stderr.slice(0, 2000),
+        };
+
+        await ctx.emit("tool.call.completed", {
+          toolName: "bash_sandbox",
+          toolRuntime: "custom",
+          input,
+          exitCode: result.exitCode,
+          result: (result.stdout || result.stderr).slice(0, 2000),
+        });
+
+        return jsonResult(output);
+      } catch (error) {
+        await ctx.emit("tool.call.failed", {
+          toolName: "bash_sandbox",
+          toolRuntime: "custom",
+          input,
+          error: error instanceof Error ? error.message : "Unknown sandbox exec error",
+        });
+        throw error;
+      }
+    },
+  });
+
+  // ── close_sandbox ──
+
+  const closeSandboxTool = betaZodTool({
     name: "close_sandbox",
     description:
-      "Close the active E2B sandbox to stop billing. Use after the coding task is done and no more sandbox commands are needed. The sandbox costs money while running, so close it when work is complete. A new sandbox will be provisioned automatically if the user asks for more coding work later.",
+      "Shut down the active sandbox to stop billing. Use when coding work is complete and no more sandbox commands are needed. A new sandbox will be provisioned automatically if needed later.",
     inputSchema: z.object({
       confirm: z.boolean().describe("Set to true to confirm closing the sandbox"),
     }),
@@ -167,6 +473,13 @@ export function createCloseSandboxTool(ctx: ToolRuntimeContext) {
             codingSessionId: result.sessionId,
           });
         }
+
+        // Clear entire cache — sandbox is dead
+        cache.session = null;
+        cache.sandbox = null;
+        cache.gitToken = null;
+        cache.gitUser = null;
+        cache.repoReady = false;
 
         await ctx.emit("tool.call.completed", {
           toolName: "close_sandbox",
@@ -187,4 +500,12 @@ export function createCloseSandboxTool(ctx: ToolRuntimeContext) {
       }
     },
   });
+
+  return {
+    prepareSandboxTool,
+    cloneRepoTool,
+    codingAgentTool,
+    bashSandboxTool,
+    closeSandboxTool,
+  };
 }

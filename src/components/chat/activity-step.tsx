@@ -46,7 +46,7 @@ export function ActivityStep({
   if (entry.kind === "tool") {
     // Extract task brief for coding_agent tool to show as subtitle
     let taskBrief: string | null = null;
-    if (entry.title === "coding_agent" && entry.input.trim()) {
+    if (entry.title === "coding_agent_sandbox" && entry.input.trim()) {
       try {
         const parsed = JSON.parse(entry.input) as { taskBrief?: string };
         if (typeof parsed.taskBrief === "string" && parsed.taskBrief.trim()) {
