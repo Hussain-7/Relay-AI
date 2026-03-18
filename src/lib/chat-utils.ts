@@ -412,8 +412,11 @@ export function buildTimelineEntries(events: TimelineEventEnvelope[]) {
         if (existing) {
           existing.status = event.type === "tool.call.completed" ? "completed" : "failed";
           existing.output = completedOutput;
-          // Backfill input if the started event had empty input (e.g. after reload)
-          if (!existing.input.trim() && completedInput.trim()) {
+          // Backfill input if the started event had empty/stub input (e.g. after reload).
+          // Streaming tool_use blocks arrive with input: {} which persists as "{}".
+          const existingInputEmpty = !existing.input.trim() || existing.input.trim() === "{}";
+          const completedInputUseful = completedInput.trim() && completedInput.trim() !== "{}";
+          if (existingInputEmpty && completedInputUseful) {
             existing.input = completedInput;
           }
           // Update parent tool log for coding agent sub-tools

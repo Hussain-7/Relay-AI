@@ -617,6 +617,46 @@ export async function streamMainAgentRun(input: {
               }
             }
           }
+          // Backfill tool inputs into persisted events after each iteration.
+          // During streaming, tool_use blocks arrive with input: {} and the full
+          // input is only available after all input_json_delta events are processed.
+          if (toolUseInputs.size > 0) {
+            pendingWrites.push(
+              (async () => {
+                const startedEvents = await prisma.runEvent.findMany({
+                  where: { runId, type: "tool.call.started" },
+                });
+                const updates = startedEvents
+                  .filter((evt) => {
+                    const payload = evt.payloadJson as Record<string, unknown> | null;
+                    const toolUseId = payload?.toolUseId as string | undefined;
+                    return toolUseId && toolUseInputs.has(toolUseId);
+                  })
+                  .map((evt) => {
+                    const payload = evt.payloadJson as Record<string, unknown>;
+                    let parsedInput: unknown;
+                    try {
+                      parsedInput = JSON.parse(toolUseInputs.get(payload.toolUseId as string)!);
+                    } catch {
+                      parsedInput = toolUseInputs.get(payload.toolUseId as string);
+                    }
+                    return prisma.runEvent.update({
+                      where: { id: evt.id },
+                      data: {
+                        payloadJson: {
+                          ...payload,
+                          input: parsedInput,
+                        } as Prisma.InputJsonValue,
+                      },
+                    });
+                  });
+                if (updates.length > 0) {
+                  await prisma.$transaction(updates);
+                }
+              })().catch(() => {}),
+            );
+          }
+
           // Break outer loop immediately so the runner doesn't start
           // another API call before we can act on the stop flag
           if (stopped) {
