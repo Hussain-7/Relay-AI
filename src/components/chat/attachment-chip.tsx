@@ -28,14 +28,8 @@ function isImageMediaType(mediaType: string) {
 }
 
 function Thumbnail({ src, alt }: { src: string; alt: string }) {
-  return (
-    <img
-      src={src}
-      alt={alt}
-      className="absolute inset-0 h-full w-full object-cover"
-      draggable={false}
-    />
-  );
+  // eslint-disable-next-line @next/next/no-img-element -- src can be a blob: object URL which next/image doesn't support
+  return <img src={src} alt={alt} className="absolute inset-0 h-full w-full object-cover" draggable={false} />;
 }
 
 function FileIcon({ badge }: { badge: string }) {
