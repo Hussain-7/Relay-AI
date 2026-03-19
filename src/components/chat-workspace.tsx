@@ -28,6 +28,7 @@ import {
 import type { LiveRunState } from "@/lib/chat-utils";
 import {
   formatModelDisplayName,
+  formatRelativeDate,
   previewText,
   normalizeApiErrorMessage,
   resizeComposer,
@@ -1755,7 +1756,8 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                     handleSelectConversation(conversation.id);
                   }}
                 >
-                  <span className="overflow-hidden whitespace-nowrap text-ellipsis">{conversation.title}</span>
+                  <span className="flex-1 min-w-0 overflow-hidden whitespace-nowrap text-ellipsis">{conversation.title}</span>
+                  <span className="shrink-0 text-[0.72rem] text-[rgba(245,240,232,0.35)]">{formatRelativeDate(conversation.updatedAt)}</span>
                 </button>
               ))}
               {filteredConversations.length === 0 ? (
