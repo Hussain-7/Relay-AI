@@ -18,6 +18,7 @@ export const queryKeys = {
   preferences: ["preferences"] as const,
   mcpConnectors: ["mcp-connectors"] as const,
   repoBindings: ["repo-bindings"] as const,
+  repoSecrets: (repoBindingId: string) => ["repo-secrets", repoBindingId] as const,
 };
 
 export interface AuthUser {
@@ -723,6 +724,86 @@ export function useLinkRepoToConversation() {
       if (context?.previous) {
         queryClient.setQueryData(queryKeys.conversation(conversationId), context.previous);
       }
+    },
+  });
+}
+
+// ─── Repo Secrets ────────────────────────────────────────────────────────────
+
+export interface RepoSecretDto {
+  id: string;
+  key: string;
+  hasValue: boolean;
+  updatedAt: string;
+}
+
+export function useRepoSecrets(repoBindingId: string | null) {
+  return useQuery({
+    queryKey: queryKeys.repoSecrets(repoBindingId ?? ""),
+    queryFn: async () => {
+      const data = await api.get<{ secrets: RepoSecretDto[] }>(
+        `/api/repo-bindings/${repoBindingId}/secrets`,
+      );
+      return data.secrets;
+    },
+    enabled: repoBindingId !== null,
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useSaveRepoSecrets() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      repoBindingId,
+      secrets,
+    }: {
+      repoBindingId: string;
+      secrets: { key: string; value: string }[];
+    }) => {
+      const data = await api.put<{ secrets: RepoSecretDto[] }>(
+        `/api/repo-bindings/${repoBindingId}/secrets`,
+        { secrets },
+      );
+      return data.secrets;
+    },
+    onSuccess: (secrets, { repoBindingId }) => {
+      queryClient.setQueryData(queryKeys.repoSecrets(repoBindingId), secrets);
+    },
+  });
+}
+
+export function useDeleteRepoSecret() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      repoBindingId,
+      secretId,
+    }: {
+      repoBindingId: string;
+      secretId: string;
+    }) => {
+      await api.del(`/api/repo-bindings/${repoBindingId}/secrets/${secretId}`);
+      return { repoBindingId, secretId };
+    },
+    onMutate: async ({ repoBindingId, secretId }) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.repoSecrets(repoBindingId) });
+      const previous = queryClient.getQueryData<RepoSecretDto[]>(queryKeys.repoSecrets(repoBindingId));
+      queryClient.setQueryData<RepoSecretDto[]>(
+        queryKeys.repoSecrets(repoBindingId),
+        (old) => (old ?? []).filter((s) => s.id !== secretId),
+      );
+      return { previous };
+    },
+    onError: (_err, { repoBindingId }, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(queryKeys.repoSecrets(repoBindingId), context.previous);
+      }
+    },
+    onSettled: (_data, _err, { repoBindingId }) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.repoSecrets(repoBindingId) });
     },
   });
 }

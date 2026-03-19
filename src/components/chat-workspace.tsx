@@ -44,6 +44,7 @@ import {
   IconChevron,
   IconMore,
   IconGithub,
+  IconKey,
 } from "@/components/icons";
 import { SidebarMenuPortal } from "@/components/chat/sidebar-menu-portal";
 import { RenameModal } from "@/components/chat/rename-modal";
@@ -51,6 +52,7 @@ import { ComposerModelMenuPortal, type AgentPreferences } from "@/components/cha
 import { ComposerPlusMenuPortal } from "@/components/chat/composer-plus-menu";
 const McpConnectorModal = dynamic(() => import("@/components/chat/mcp-connector-modal").then(m => ({ default: m.McpConnectorModal })), { ssr: false });
 const RepoBindingModal = dynamic(() => import("@/components/chat/repo-binding-modal").then(m => ({ default: m.RepoBindingModal })), { ssr: false });
+const RepoSecretsModal = dynamic(() => import("@/components/chat/repo-secrets-modal").then(m => ({ default: m.RepoSecretsModal })), { ssr: false });
 import { AttachmentChip, type PendingFile } from "@/components/chat/attachment-chip";
 import { RunThread } from "@/components/chat/run-thread";
 import { setPendingMessage, peekPendingMessage, consumePendingMessage } from "@/lib/pending-message";
@@ -107,8 +109,10 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [liveRun, setLiveRunState] = useState<LiveRunState | null>(null);
-  // Keep ref in sync for hasPendingForThis (avoids declaration-order issues)
-  liveRunRef.current = liveRun !== null;
+  // Keep ref in sync for hasPendingForThis (avoids declaration-order issues).
+  // Only suppress detail fetch while the run is actively running — once completed/failed,
+  // allow the fetch so `runs` populates and the liveRun can be cleared.
+  liveRunRef.current = liveRun !== null && liveRun.status === "running";
   const setLiveRun = (v: LiveRunState | null | ((prev: LiveRunState | null) => LiveRunState | null)) => {
     setLiveRunState(v);
   };
@@ -129,6 +133,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   const [connectorModalOpen, setConnectorModalOpen] = useState(false);
   const [repoModalOpen, setRepoModalOpen] = useState(false);
   const [repoChipOpen, setRepoChipOpen] = useState(false);
+  const [secretsModalOpen, setSecretsModalOpen] = useState(false);
   const linkRepoMutation = useLinkRepoToConversation();
   const plusButtonRef = useRef<HTMLButtonElement | null>(null);
   const { preferences: userPreferences, savePreferences } = usePreferences();
@@ -1548,6 +1553,14 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                     <button
                       type="button"
                       className="inline-grid h-4 w-4 place-items-center border-0 bg-transparent text-[rgba(245,240,232,0.35)] cursor-pointer rounded-full p-0 transition-colors duration-140 hover:text-[rgba(245,240,232,0.7)]"
+                      onClick={() => setSecretsModalOpen(true)}
+                      aria-label="Manage environment variables"
+                    >
+                      <IconKey />
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-grid h-4 w-4 place-items-center border-0 bg-transparent text-[rgba(245,240,232,0.35)] cursor-pointer rounded-full p-0 transition-colors duration-140 hover:text-[rgba(245,240,232,0.7)]"
                       onClick={() => {
                         if (activeConversation) {
                           linkRepoMutation.mutate({ conversationId: activeConversation.id, repoBindingId: null });
@@ -1571,6 +1584,16 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                     <div className="min-[981px]:hidden absolute bottom-full left-0 mb-2 z-50">
                       <div className="rounded-[10px] border border-[rgba(255,255,255,0.1)] bg-[rgba(28,26,22,0.96)] shadow-[0_8px_24px_rgba(0,0,0,0.4)] backdrop-blur-xl px-3 py-2.5 whitespace-nowrap">
                         <div className="text-[0.78rem] text-[rgba(245,240,232,0.85)] font-medium">{activeConversation.repoBinding.repoFullName}</div>
+                        <button
+                          type="button"
+                          className="mt-2 w-full text-left text-[0.75rem] text-[rgba(245,240,232,0.6)] cursor-pointer border-0 bg-transparent p-0 hover:text-[rgba(245,240,232,0.9)]"
+                          onClick={() => {
+                            setSecretsModalOpen(true);
+                            setRepoChipOpen(false);
+                          }}
+                        >
+                          Manage env vars
+                        </button>
                         <button
                           type="button"
                           className="mt-2 w-full text-left text-[0.75rem] text-[rgba(243,199,180,0.8)] cursor-pointer border-0 bg-transparent p-0 hover:text-[rgba(243,199,180,1)]"
@@ -1696,6 +1719,14 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
       )}
 
       {connectorModalOpen && <McpConnectorModal onClose={() => setConnectorModalOpen(false)} />}
+
+      {secretsModalOpen && activeConversation?.repoBinding && (
+        <RepoSecretsModal
+          repoBindingId={activeConversation.repoBinding.id}
+          repoName={activeConversation.repoBinding.repoName}
+          onClose={() => setSecretsModalOpen(false)}
+        />
+      )}
 
       {repoModalOpen && (
         <RepoBindingModal

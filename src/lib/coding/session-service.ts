@@ -4,6 +4,7 @@ import { CodingSessionStatus } from "@/generated/prisma/client";
 import { appendRunEvent } from "@/lib/run-events";
 import { env, hasE2bConfig } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
+import { getDecryptedSecrets, buildDotEnvContent } from "@/lib/repo-secrets";
 
 /**
  * Format a compact summary of a tool call's input for display in the timeline.
@@ -397,7 +398,7 @@ export async function ensureRepoCloned(
   sandbox: Sandbox,
   session: {
     workspacePath: string | null;
-    repoBinding: { repoFullName: string } | null;
+    repoBinding: { id?: string; repoFullName: string } | null;
   },
   token: string,
   gitUser: { name: string; email: string },
@@ -421,6 +422,10 @@ export async function ensureRepoCloned(
     // Mark as safe directory (cloned as root, CLI runs as user)
     await safeRun(sandbox, `git config --global --add safe.directory '${session.workspacePath}'`);
     await safeRun(sandbox, `cd "${session.workspacePath}" && git remote set-url origin '${cloneUrl}'`);
+
+    // Write .env with repo secrets (refresh on every reconnect)
+    await writeRepoSecretsEnv(sandbox, session.workspacePath, session.repoBinding.id);
+
     return sandbox;
   }
 
@@ -468,9 +473,45 @@ export async function ensureRepoCloned(
   // Write CLAUDE.md after clone so the coding agent has project context
   await sandbox.files.write(`${session.workspacePath}/CLAUDE.md`, SANDBOX_CLAUDE_MD);
 
+  // Write .env with repo secrets
+  await writeRepoSecretsEnv(sandbox, session.workspacePath, session.repoBinding.id);
+
   log.info("Repo ready", { repoFullName, workspacePath: session.workspacePath });
 
   return sandbox;
+}
+
+/**
+ * Write decrypted repo secrets as a `.env` file in the workspace.
+ * Also ensures `.env` is listed in `.gitignore` to prevent accidental commits.
+ */
+async function writeRepoSecretsEnv(
+  sandbox: Sandbox,
+  workspacePath: string,
+  repoBindingId: string | undefined,
+) {
+  if (!repoBindingId) return;
+
+  try {
+    const secrets = await getDecryptedSecrets(repoBindingId);
+    if (secrets.length === 0) return;
+
+    const dotEnvContent = buildDotEnvContent(secrets);
+    await sandbox.files.write(`${workspacePath}/.env`, dotEnvContent);
+
+    // Ensure .env is in .gitignore
+    const check = await safeRun(sandbox, `grep -qxF '.env' "${workspacePath}/.gitignore" 2>/dev/null && echo exists || echo missing`);
+    if (check.stdout.trim() === "missing") {
+      await safeRun(sandbox, `printf '\\n.env\\n' >> "${workspacePath}/.gitignore"`);
+    }
+
+    log.info("Wrote .env with repo secrets", { repoBindingId, count: secrets.length });
+  } catch (err) {
+    log.warn("Failed to write repo secrets .env", {
+      repoBindingId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
 
 /**

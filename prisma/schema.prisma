@@ -154,9 +154,24 @@ model RepoBinding {
   conversations       Conversation[]
   codingSessions      CodingSession[]
   workspaceSnapshots  WorkspaceSnapshot[]
+  secrets             RepoSecret[]
 
   @@unique([userId, provider, repoFullName])
   @@index([userId, updatedAt])
+}
+
+model RepoSecret {
+  id              String      @id @default(uuid())
+  repoBindingId   String
+  key             String
+  encryptedValue  String
+  valueIv         String
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  repoBinding     RepoBinding @relation(fields: [repoBindingId], references: [id], onDelete: Cascade)
+
+  @@unique([repoBindingId, key])
+  @@index([repoBindingId])
 }
 
 model CodingSession {
