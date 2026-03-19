@@ -1,4 +1,3 @@
-import pg from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@/generated/prisma/client";
 
@@ -7,11 +6,10 @@ declare global {
 }
 
 function createPrismaClient(): PrismaClient {
-  // Use DIRECT_URL (bypasses PgBouncer) for the pg Pool —
-  // Prisma's prepared statements require a direct connection.
+  // Use DIRECT_URL (bypasses PgBouncer) — Prisma needs direct connections
+  // for prepared statements. Pass PoolConfig so PrismaPg manages the pool.
   const connectionString = process.env.DIRECT_URL || process.env.DATABASE_URL;
-  const pool = new pg.Pool({ connectionString });
-  const adapter = new PrismaPg(pool);
+  const adapter = new PrismaPg({ connectionString });
 
   return new PrismaClient({
     adapter,

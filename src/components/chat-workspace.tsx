@@ -1,6 +1,6 @@
 "use client";
 
-import { useDeferredValue, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useDeferredValue, useEffect, useEffectEvent, useMemo, useRef, useState, useCallback } from "react";
 import dynamic from "next/dynamic";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -71,9 +71,14 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
     [router],
   );
 
-  // Suppress detail fetch if we're about to create this conversation (pending message exists)
+  // Suppress detail fetch when: (1) a pending message is about to create this conversation,
+  // or (2) a liveRun is active (tracked via ref to avoid declaration-order issues).
+  const liveRunRef = useRef(false);
   const hasPendingForThis = Boolean(
-    activeConversationId && peekPendingMessage()?.conversationId === activeConversationId,
+    activeConversationId && (
+      peekPendingMessage()?.conversationId === activeConversationId ||
+      liveRunRef.current
+    ),
   );
 
   // TanStack Query hooks
@@ -101,7 +106,12 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   const [openConversationMenuId, setOpenConversationMenuId] = useState<string | null>(null);
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
-  const [liveRun, setLiveRun] = useState<LiveRunState | null>(null);
+  const [liveRun, setLiveRunState] = useState<LiveRunState | null>(null);
+  // Keep ref in sync for hasPendingForThis (avoids declaration-order issues)
+  liveRunRef.current = liveRun !== null;
+  const setLiveRun = (v: LiveRunState | null | ((prev: LiveRunState | null) => LiveRunState | null)) => {
+    setLiveRunState(v);
+  };
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [deletingConversationId, setDeletingConversationId] = useState<string | null>(null);
@@ -136,7 +146,6 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   const [showScrollDown, setShowScrollDown] = useState(false);
   const latestRunRef = useRef<HTMLDivElement | null>(null);
   const footerRef = useRef<HTMLElement | null>(null);
-  const savedScrollRef = useRef<number | null>(null);
   const modelButtonRef = useRef<HTMLButtonElement | null>(null);
   const wasLandingRef = useRef(true);
   const [animateComposerDock, setAnimateComposerDock] = useState(false);
@@ -198,24 +207,12 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   const hasLiveContent = Boolean(liveRun);
   const isLandingState = !hasLiveContent && (isNewChat || (!isLoadingDetail && runs.length === 0));
 
-  // Safety net: clear liveRun if the fetched runs already include it (e.g. after refetch)
+  // Clear liveRun once the fetched runs include it — seamless swap, no scroll manipulation.
   useEffect(() => {
     if (liveRun?.runId && runs.some((r) => r.id === liveRun.runId)) {
-      savedScrollRef.current = transcriptRef.current?.scrollTop ?? null;
       setLiveRun(null);
     }
   }, [runs, liveRun]);
-
-  // Restore scroll position synchronously before browser paints
-  // Prevents jump when the min-height live run wrapper is removed
-  useLayoutEffect(() => {
-    if (!liveRun && savedScrollRef.current !== null) {
-      if (transcriptRef.current) {
-        transcriptRef.current.scrollTop = savedScrollRef.current;
-      }
-      savedScrollRef.current = null;
-    }
-  }, [liveRun]);
 
   // Only animate the composer dock when going from the /chat/new landing to a conversation
   // (first message sent). Don't animate when switching between existing chats.
@@ -589,6 +586,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
         prompt,
         attachmentIds: allAttachments.map((attachment) => attachment.id),
         preferences: agentPreferences,
+        ...(isNew ? { isNew: true } : {}),
       });
 
       const reader = response.body!.getReader();
@@ -819,11 +817,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
             ),
         );
 
-        savedScrollRef.current = transcriptRef.current?.scrollTop ?? null;
-        setLiveRun(null);
-
-        // Background refetch for eventual server truth (don't refetch immediately
-        // to avoid overwriting the optimistic patch before the server has persisted)
+        // Keep liveRun rendered — it has all the data. Just mark stale for next navigation.
         void queryClient.invalidateQueries({
           queryKey: queryKeys.conversation(conversationId),
           refetchType: "none",

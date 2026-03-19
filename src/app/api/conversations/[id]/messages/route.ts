@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
 const createMessageSchema = z.object({
   prompt: z.string().trim().min(1),
   attachmentIds: z.array(z.string()).default([]),
+  isNew: z.boolean().optional(),
   preferences: z.object({
     thinking: z.boolean().default(false),
     effort: z.enum(["low", "medium", "high"]).default("low"),
@@ -25,10 +26,14 @@ export async function POST(
     const { id } = await params;
     const body = createMessageSchema.parse(await request.json());
 
-    await ensureConversationForUser({
-      conversationId: id,
-      userId: user.userId,
-    });
+    // Skip the extra find query when the client just created this conversation —
+    // the runtime's findUniqueOrThrow will still verify ownership.
+    if (!body.isNew) {
+      await ensureConversationForUser({
+        conversationId: id,
+        userId: user.userId,
+      });
+    }
 
     const run = await streamMainAgentRun({
       conversationId: id,
