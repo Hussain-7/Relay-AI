@@ -212,38 +212,10 @@ export function RunThread({
                 </Streamdown>
               </div>
               {outputAttachments.length > 0 ? (() => {
-                const imageOutputs = outputAttachments.filter((a) => a.kind === "IMAGE");
+                // Images are already rendered inline via markdown by the model — skip them here
                 const fileOutputs = outputAttachments.filter((a) => a.kind !== "IMAGE");
                 return (
                   <>
-                    {imageOutputs.length > 0 ? (
-                      <div className="mt-3 flex flex-col gap-3">
-                        {imageOutputs.map((img) => {
-                          const publicUrl = (img.metadataJson as Record<string, unknown> | null)?.publicUrl as string | undefined;
-                          const imgSrc = publicUrl || `/api/images/${img.id}`;
-                          return (
-                          <div key={img.id} className="group/img relative inline-block max-w-[512px] rounded-[12px] overflow-hidden border border-[rgba(255,255,255,0.08)]">
-                            <img
-                              src={imgSrc}
-                              alt={img.filename}
-                              className="block w-full h-auto rounded-[12px]"
-                              loading="lazy"
-                            />
-                            <a
-                              href={imgSrc}
-                              download={img.filename}
-                              className="absolute top-2 right-2 flex items-center justify-center w-8 h-8 rounded-[8px] bg-[rgba(0,0,0,0.6)] border border-[rgba(255,255,255,0.15)] opacity-0 group-hover/img:opacity-100 transition-opacity duration-150 hover:bg-[rgba(0,0,0,0.8)]"
-                              title="Download image"
-                            >
-                              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-[rgba(245,240,232,0.9)]">
-                                <path d="M8 2v9m0 0-3-3m3 3 3-3M3 13h10" />
-                              </svg>
-                            </a>
-                          </div>
-                          );
-                        })}
-                      </div>
-                    ) : null}
                     {fileOutputs.length > 0 ? (
                       <div className="mt-3 flex flex-wrap gap-2">
                         {fileOutputs.map((file) => (

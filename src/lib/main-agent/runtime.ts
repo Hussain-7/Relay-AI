@@ -144,14 +144,26 @@ export async function streamMainAgentRun(input: {
               },
             });
 
+        const attachmentBlocks = buildAttachmentBlocks(
+          attachments.map((attachment) => ({
+            anthropicFileId: attachment.anthropicFileId,
+            kind: attachment.kind,
+            filename: attachment.filename,
+          })),
+        );
+
+        // Tell the agent the real DB IDs so tools (e.g. image_generation) can reference them
+        const attachmentIdBlock: BetaContentBlockParam[] =
+          attachments.length > 0
+            ? [{
+                type: "text" as const,
+                text: `[Attached files: ${attachments.map((a) => `${a.filename} (id: ${a.id})`).join(", ")}]`,
+              }]
+            : [];
+
         const userContent: BetaContentBlockParam[] = [
-          ...buildAttachmentBlocks(
-            attachments.map((attachment) => ({
-              anthropicFileId: attachment.anthropicFileId,
-              kind: attachment.kind,
-              filename: attachment.filename,
-            })),
-          ),
+          ...attachmentBlocks,
+          ...attachmentIdBlock,
           {
             type: "text",
             text: input.prompt,

@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
-import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@supabase/supabase-js";
 
 import { env, hasGoogleAiConfig } from "@/lib/env";
@@ -42,13 +41,16 @@ const inputSchema = z.object({
 async function resolveInputImage(attachmentId: string, userId: string) {
   const attachment = await prisma.attachment.findUnique({
     where: { id: attachmentId },
-    include: {
+    select: {
+      id: true,
+      content: true,
+      mediaType: true,
       conversation: { select: { userId: true } },
       run: { select: { userId: true } },
     },
   });
 
-  if (!attachment?.anthropicFileId) {
+  if (!attachment?.content) {
     throw new Error(`Attachment ${attachmentId} not found.`);
   }
 
@@ -57,15 +59,8 @@ async function resolveInputImage(attachmentId: string, userId: string) {
     throw new Error("You do not have access to this attachment.");
   }
 
-  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
-  const fileContent = await client.beta.files.download(
-    attachment.anthropicFileId,
-    { betas: ["files-api-2025-04-14"] },
-  );
-
-  const buffer = Buffer.from(await fileContent.arrayBuffer());
   return {
-    base64: buffer.toString("base64"),
+    base64: Buffer.from(attachment.content).toString("base64"),
     mimeType: attachment.mediaType,
   };
 }
