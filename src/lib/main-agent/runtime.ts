@@ -47,6 +47,8 @@ export async function streamMainAgentRun(input: {
       let titleUpdatePromise: Promise<string> | null = null;
       const pendingWrites: Promise<unknown>[] = [];
       let eventSeq = 0;
+      // Hoisted so the catch block can access partial text on error
+      let serverPartialText = "";
 
       // All events: send SSE to client immediately, persist to DB in background.
       // This eliminates DB round-trip latency from the streaming path.
@@ -308,7 +310,6 @@ export async function streamMainAgentRun(input: {
         });
 
         let stopped = false;
-        let serverPartialText = "";
         let stopCheckCounter = 0;
         const emittedMcpToolIds = new Set<string>();
 
@@ -966,28 +967,38 @@ export async function streamMainAgentRun(input: {
 
         emit("run.failed", "system", { error: message });
 
-        // Generate a user-friendly error response so the user sees
-        // a final assistant message instead of a blank chat.
-        // Uses OpenAI gpt-4o-mini first (different provider, unaffected by Anthropic issues),
-        // falls back to Anthropic Haiku, then a static message.
-        const errorFinalText = await generateErrorResponse(
-          hasAnthropicApiKey() ? getAnthropicClient() : null,
-          input.prompt,
-          message,
-        );
+        // Preserve any partial text that was streamed before the error.
+        // If the model already produced content, keep it — only fall back
+        // to a generated error recovery message when there's nothing.
+        const partialText = serverPartialText.trim();
+        let finalText: string;
+
+        if (partialText) {
+          // Keep everything the model streamed — the user already saw it
+          finalText = partialText;
+        } else {
+          // Nothing was streamed yet — generate a user-friendly fallback.
+          // Uses OpenAI gpt-4o-mini first (different provider, unaffected by Anthropic issues),
+          // falls back to Anthropic Haiku, then a static message.
+          finalText = await generateErrorResponse(
+            hasAnthropicApiKey() ? getAnthropicClient() : null,
+            input.prompt,
+            message,
+          );
+        }
 
         emit("assistant.message.completed", "main_agent", {
-          text: errorFinalText,
-          stopReason: "error_recovery",
+          text: finalText,
+          stopReason: partialText ? "error_with_partial" : "error_recovery",
         });
 
-        // Persist the error recovery message so it shows on reload
+        // Persist so the message shows on reload
         pendingWrites.push(
           prisma.message.create({
             data: {
               conversationId: input.conversationId,
               role: "ASSISTANT",
-              contentJson: [{ type: "text", text: errorFinalText }] as unknown as Prisma.InputJsonValue,
+              contentJson: [{ type: "text", text: finalText }] as unknown as Prisma.InputJsonValue,
             },
           }).catch(() => {}),
         );
@@ -999,7 +1010,7 @@ export async function streamMainAgentRun(input: {
           where: { id: runId },
           data: {
             status: RunStatus.FAILED,
-            finalText: errorFinalText,
+            finalText,
             metadataJson: {
               error: message,
             } as Prisma.InputJsonValue,

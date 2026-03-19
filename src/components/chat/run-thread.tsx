@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Streamdown } from "streamdown";
 import { code } from "@streamdown/code";
@@ -22,6 +22,50 @@ function getFileTypeBadge(filename: string): string {
     case "png": case "jpg": case "jpeg": case "gif": case "webp": return "Image";
     default: return ext?.toUpperCase() ?? "File";
   }
+}
+
+/** Max collapsed height in px — roughly 10 lines of text */
+const COLLAPSE_THRESHOLD = 240;
+
+function CollapsibleText({ text }: { text: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [needsCollapse, setNeedsCollapse] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el) setNeedsCollapse(el.scrollHeight > COLLAPSE_THRESHOLD);
+  }, [text]);
+
+  const toggle = useCallback(() => setExpanded((v) => !v), []);
+
+  const collapsed = needsCollapse && !expanded;
+
+  return (
+    <div>
+      <div className="relative">
+        <div
+          ref={ref}
+          className="text-[0.98rem] leading-[1.52] [overflow-wrap:anywhere] break-words text-[rgba(245,240,232,0.96)] whitespace-pre-wrap transition-[max-height] duration-200 ease-out"
+          style={collapsed ? { maxHeight: COLLAPSE_THRESHOLD, overflow: "hidden" } : undefined}
+        >
+          {text}
+        </div>
+        {collapsed && (
+          <div className="absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t from-[rgba(14,13,12,1)] via-[rgba(14,13,12,0.85)] to-transparent pointer-events-none" />
+        )}
+      </div>
+      {needsCollapse && (
+        <button
+          type="button"
+          onClick={toggle}
+          className="relative z-10 mt-0.5 text-[0.82rem] text-[rgba(236,230,219,0.5)] hover:text-[rgba(236,230,219,0.8)] transition-colors cursor-pointer"
+        >
+          {expanded ? "Show less" : "Show more"}
+        </button>
+      )}
+    </div>
+  );
 }
 
 export function RunThread({
@@ -114,7 +158,7 @@ export function RunThread({
       <div className="message-row flex w-full min-w-0 justify-end">
         <div className="group/msg flex flex-col max-w-[min(66%,40rem)] min-w-0 items-end max-[980px]:max-w-[min(84%,32rem)]">
           <div className="inline-flex min-w-0 flex-col items-start rounded-[.75rem] px-4 py-3 bg-[linear-gradient(180deg,rgba(19,18,16,0.94),rgba(14,13,12,0.96))] border border-[rgba(255,255,255,0.06)] shadow-[0_2px_8px_rgba(0,0,0,0.12)]" aria-label="User message">
-            <div className="text-[0.98rem] leading-[1.52] [overflow-wrap:anywhere] break-words text-[rgba(245,240,232,0.96)] whitespace-pre-wrap">{userPrompt}</div>
+            <CollapsibleText text={userPrompt} />
             {attachments.length ? (
               <div className="mt-3 flex flex-wrap gap-2">
                 {attachments.map((attachment) => (
