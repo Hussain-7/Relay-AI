@@ -58,19 +58,22 @@ export async function POST(request: Request) {
       apiKey: env.ANTHROPIC_API_KEY,
     });
 
+    const fileBuffer = Buffer.from(await file.arrayBuffer());
+
     const uploaded = await client.beta.files.upload({
-      file: await toFile(await file.arrayBuffer(), file.name, { type: file.type }),
+      file: await toFile(fileBuffer, file.name, { type: file.type }),
       betas: ["files-api-2025-04-14"],
     });
 
     const attachment = await prisma.attachment.create({
       data: {
-        conversationId,
+        conversation: { connect: { id: conversationId } },
         filename: file.name,
         mediaType: file.type || "application/octet-stream",
         sizeBytes: file.size,
         kind: inferAttachmentKind(file.type || "application/octet-stream"),
         anthropicFileId: uploaded.id,
+        content: fileBuffer,
         metadataJson: {
           downloadable: uploaded.downloadable ?? false,
         },

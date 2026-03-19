@@ -6,7 +6,7 @@ export interface PendingFile {
   clientId: string;
   file: File;
   previewUrl: string | null;
-  status: "uploading" | "done" | "error";
+  status: "staged" | "uploading" | "done" | "error";
   attachment?: AttachmentDto;
   error?: string;
 }

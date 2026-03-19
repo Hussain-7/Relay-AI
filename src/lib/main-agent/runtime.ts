@@ -107,6 +107,11 @@ export async function streamMainAgentRun(input: {
                   id: { in: input.attachmentIds },
                   conversationId: input.conversationId,
                 },
+                select: {
+                  id: true, conversationId: true, runId: true, kind: true,
+                  filename: true, mediaType: true, sizeBytes: true,
+                  anthropicFileId: true, metadataJson: true, createdAt: true,
+                },
                 orderBy: { createdAt: "asc" },
               })
             : Promise.resolve([]),

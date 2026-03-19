@@ -80,6 +80,7 @@ export function RunThread({
   isLast,
   isInterrupted,
   onRetry,
+  previewUrls,
 }: {
   runId?: string | null;
   userPrompt: string;
@@ -92,6 +93,8 @@ export function RunThread({
   isLast?: boolean;
   isInterrupted?: boolean;
   onRetry?: () => void;
+  /** Local object URLs for image previews (keyed by attachment ID). */
+  previewUrls?: Map<string, string>;
 }) {
   const entries = useMemo(() => buildTimelineEntries(events), [events]);
   const showPendingDot = isLive && entries.length === 0 && !finalText;
@@ -162,7 +165,7 @@ export function RunThread({
             {attachments.length ? (
               <div className="mt-3 flex flex-wrap gap-2">
                 {attachments.map((attachment) => (
-                  <AttachmentChip key={attachment.id} attachment={attachment} />
+                  <AttachmentChip key={attachment.id} attachment={attachment} previewUrl={previewUrls?.get(attachment.id)} />
                 ))}
               </div>
             ) : null}

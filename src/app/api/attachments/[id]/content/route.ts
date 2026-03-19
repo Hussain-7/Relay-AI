@@ -1,6 +1,3 @@
-import Anthropic from "@anthropic-ai/sdk";
-
-import { env } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 import { requireRequestUser } from "@/lib/server-auth";
 
@@ -13,13 +10,16 @@ export async function GET(
 
   const attachment = await prisma.attachment.findUnique({
     where: { id },
-    include: {
+    select: {
+      content: true,
+      mediaType: true,
+      filename: true,
       conversation: { select: { userId: true } },
       run: { select: { userId: true } },
     },
   });
 
-  if (!attachment?.anthropicFileId) {
+  if (!attachment?.content) {
     return Response.json({ error: "Not found" }, { status: 404 });
   }
 
@@ -28,17 +28,15 @@ export async function GET(
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
-  const fileContent = await client.beta.files.download(
-    attachment.anthropicFileId,
-    { betas: ["files-api-2025-04-14"] },
-  );
+  // Convert Prisma Buffer to Uint8Array for Response compatibility
+  const bytes = new Uint8Array(attachment.content);
 
-  return new Response(fileContent.body as ReadableStream, {
+  return new Response(bytes, {
     headers: {
       "Content-Type": attachment.mediaType,
       "Content-Disposition": `inline; filename="${attachment.filename}"`,
       "Cache-Control": "private, max-age=3600",
+      "Content-Length": String(bytes.byteLength),
     },
   });
 }

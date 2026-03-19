@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { api } from "@/lib/api-client";
 import type { RenderTimelineEntry } from "@/lib/chat-utils";
 
 type ApprovalEntry = Extract<RenderTimelineEntry, { kind: "approval" }>;
@@ -21,14 +22,10 @@ export function ApprovalCard({ entry }: { entry: ApprovalEntry }) {
         responseJson.answer = freeformText.trim();
       }
 
-      await fetch(`/api/agent/runs/${entry.runId}/approve`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          approvalId: entry.approvalId,
-          status: "APPROVED",
-          responseJson,
-        }),
+      await api.post(`/api/agent/runs/${entry.runId}/approve`, {
+        approvalId: entry.approvalId,
+        status: "APPROVED",
+        responseJson,
       });
     } catch {
       setSubmitting(false);
@@ -38,14 +35,10 @@ export function ApprovalCard({ entry }: { entry: ApprovalEntry }) {
   async function handleDismiss() {
     setSubmitting(true);
     try {
-      await fetch(`/api/agent/runs/${entry.runId}/approve`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          approvalId: entry.approvalId,
-          status: "REJECTED",
-          responseJson: { reason: "dismissed" },
-        }),
+      await api.post(`/api/agent/runs/${entry.runId}/approve`, {
+        approvalId: entry.approvalId,
+        status: "REJECTED",
+        responseJson: { reason: "dismissed" },
       });
     } catch {
       setSubmitting(false);

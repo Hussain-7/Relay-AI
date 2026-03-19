@@ -657,32 +657,6 @@ export function getFileTypeBadge(attachment: AttachmentDto) {
   return "FILE";
 }
 
-export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
-  });
-
-  if (!response.ok) {
-    let message = "Request failed.";
-
-    try {
-      const body = (await response.json()) as { error?: string };
-      if (body.error) {
-        message = body.error;
-      }
-    } catch {
-      // ignore
-    }
-
-    throw new Error(message);
-  }
-
-  return response.json() as Promise<T>;
-}
 
 export const landingSuggestions = [
   "Plan a product MVP",

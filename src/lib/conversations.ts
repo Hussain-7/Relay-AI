@@ -3,10 +3,25 @@ import { Prisma, type Attachment, type CodingSession, type Conversation, type Ma
 import type { AttachmentDto, CodingSessionDto, ConversationDetailDto, ConversationSummaryDto, MessageDto, RunDto, TimelineEventEnvelope } from "@/lib/contracts";
 import { prisma } from "@/lib/prisma";
 
+/** Select all Attachment columns except `content` (large binary blob). */
+const attachmentFieldsWithoutContent = {
+  id: true,
+  conversationId: true,
+  runId: true,
+  kind: true,
+  filename: true,
+  mediaType: true,
+  sizeBytes: true,
+  anthropicFileId: true,
+  metadataJson: true,
+  createdAt: true,
+} satisfies Prisma.AttachmentSelect;
+
 const conversationDetailInclude = Prisma.validator<Prisma.ConversationInclude>()({
   mainAgentSession: true,
   repoBinding: true,
   attachments: {
+    select: attachmentFieldsWithoutContent,
     orderBy: { createdAt: "asc" },
   },
   messages: {
@@ -16,6 +31,7 @@ const conversationDetailInclude = Prisma.validator<Prisma.ConversationInclude>()
     orderBy: { createdAt: "asc" },
     include: {
       attachments: {
+        select: attachmentFieldsWithoutContent,
         orderBy: { createdAt: "asc" },
       },
       approvals: {
@@ -40,14 +56,16 @@ const conversationDetailInclude = Prisma.validator<Prisma.ConversationInclude>()
   },
 });
 
+type AttachmentWithoutContent = Omit<Attachment, "content">;
+
 type ConversationDetailRecord = Conversation & {
   mainAgentSession: MainAgentSession | null;
   repoBinding: RepoBinding | null;
-  attachments: Attachment[];
+  attachments: AttachmentWithoutContent[];
   messages: Message[];
   runs: Array<
     AgentRun & {
-      attachments: Attachment[];
+      attachments: AttachmentWithoutContent[];
       approvals: RunApproval[];
       events: RunEvent[];
       codingSession: (CodingSession & {
@@ -66,7 +84,7 @@ function toJsonRecord(value: unknown) {
   return (value ?? null) as Record<string, unknown> | null;
 }
 
-function mapAttachment(attachment: Attachment): AttachmentDto {
+function mapAttachment(attachment: AttachmentWithoutContent): AttachmentDto {
   return {
     id: attachment.id,
     kind: attachment.kind,

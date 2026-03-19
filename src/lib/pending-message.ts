@@ -1,9 +1,20 @@
 import type { AttachmentDto } from "@/lib/contracts";
 
+/** A File staged in the UI that hasn't been uploaded to the API yet. */
+export interface StagedFile {
+  clientId: string;
+  file: File;
+  previewUrl: string | null;
+}
+
 interface PendingMessage {
   conversationId: string;
   prompt: string;
   attachments: AttachmentDto[];
+  /** Files that still need to be uploaded before streaming. */
+  stagedFiles?: StagedFile[];
+  /** Repo binding to link after conversation creation. */
+  stagedRepoBindingId?: string | null;
   isNew?: boolean;
 }
 

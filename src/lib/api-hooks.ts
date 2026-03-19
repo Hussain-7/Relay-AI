@@ -7,7 +7,7 @@ import type {
   ConversationSummaryDto,
   ModelCatalogDto,
 } from "@/lib/contracts";
-import { fetchJson } from "@/lib/chat-utils";
+import { api } from "@/lib/api-client";
 
 export const queryKeys = {
   user: ["user"] as const,
@@ -31,7 +31,7 @@ export function useUser() {
   return useQuery({
     queryKey: queryKeys.user,
     queryFn: async () => {
-      const data = await fetchJson<{ user: AuthUser | null }>("/api/user");
+      const data = await api.get<{ user: AuthUser | null }>("/api/user");
       return data.user;
     },
     staleTime: 5 * 60 * 1000,
@@ -42,7 +42,7 @@ export function useUser() {
 export function useModelCatalog() {
   return useQuery({
     queryKey: queryKeys.models,
-    queryFn: () => fetchJson<ModelCatalogDto>("/api/models"),
+    queryFn: () => api.get<ModelCatalogDto>("/api/models"),
     staleTime: Infinity,
   });
 }
@@ -66,7 +66,7 @@ export function usePreferences() {
   const query = useQuery({
     queryKey: queryKeys.preferences,
     queryFn: async () => {
-      const data = await fetchJson<{ preferences: UserPreferences }>("/api/preferences");
+      const data = await api.get<{ preferences: UserPreferences }>("/api/preferences");
       return data.preferences;
     },
     staleTime: Infinity,
@@ -74,10 +74,7 @@ export function usePreferences() {
 
   const mutation = useMutation({
     mutationFn: async (prefs: Partial<UserPreferences>) => {
-      const data = await fetchJson<{ preferences: UserPreferences }>("/api/preferences", {
-        method: "PATCH",
-        body: JSON.stringify(prefs),
-      });
+      const data = await api.patch<{ preferences: UserPreferences }>("/api/preferences", prefs);
       return data.preferences;
     },
     onSuccess: (prefs) => {
@@ -96,7 +93,7 @@ export function useGithubStatus() {
   return useQuery({
     queryKey: queryKeys.githubStatus,
     queryFn: () =>
-      fetchJson<{ configured: boolean; installed: boolean; installUrl?: string }>(
+      api.get<{ configured: boolean; installed: boolean; installUrl?: string }>(
         "/api/github/status",
       ),
     staleTime: 60 * 1000,
@@ -109,7 +106,7 @@ export function useDisconnectGithub() {
 
   return useMutation({
     mutationFn: async () => {
-      await fetchJson("/api/github/status", { method: "DELETE" });
+      await api.del("/api/github/status");
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.githubStatus });
@@ -122,7 +119,7 @@ export function useConversations() {
   return useQuery({
     queryKey: queryKeys.conversations,
     queryFn: async () => {
-      const data = await fetchJson<{ conversations: ConversationSummaryDto[] }>(
+      const data = await api.get<{ conversations: ConversationSummaryDto[] }>(
         "/api/conversations",
       );
       return data.conversations;
@@ -136,7 +133,7 @@ export function useConversationDetail(id: string | null) {
   return useQuery({
     queryKey: queryKeys.conversation(id ?? ""),
     queryFn: async () => {
-      const data = await fetchJson<{ conversation: ConversationDetailDto }>(
+      const data = await api.get<{ conversation: ConversationDetailDto }>(
         `/api/conversations/${id}`,
       );
       return data.conversation;
@@ -168,9 +165,9 @@ export function useCreateConversation() {
 
   return useMutation({
     mutationFn: async (vars?: { id?: string }) => {
-      const data = await fetchJson<{ conversation: ConversationDetailDto }>(
+      const data = await api.post<{ conversation: ConversationDetailDto }>(
         "/api/conversations",
-        { method: "POST", body: JSON.stringify({ id: vars?.id }) },
+        { id: vars?.id },
       );
       return data.conversation;
     },
@@ -231,7 +228,7 @@ export function useDeleteConversation() {
 
   return useMutation({
     mutationFn: async (id: string) => {
-      await fetchJson(`/api/conversations/${id}`, { method: "DELETE" });
+      await api.del(`/api/conversations/${id}`);
       return id;
     },
     onMutate: async (id) => {
@@ -266,9 +263,9 @@ export function useToggleConversationStar() {
 
   return useMutation({
     mutationFn: async ({ id, isStarred }: { id: string; isStarred: boolean }) => {
-      const data = await fetchJson<{ conversation: ConversationDetailDto }>(
+      const data = await api.patch<{ conversation: ConversationDetailDto }>(
         `/api/conversations/${id}`,
-        { method: "PATCH", body: JSON.stringify({ isStarred }) },
+        { isStarred },
       );
       return data.conversation;
     },
@@ -313,9 +310,9 @@ export function useRenameConversation() {
 
   return useMutation({
     mutationFn: async ({ id, title }: { id: string; title: string }) => {
-      const data = await fetchJson<{ conversation: ConversationDetailDto }>(
+      const data = await api.patch<{ conversation: ConversationDetailDto }>(
         `/api/conversations/${id}`,
-        { method: "PATCH", body: JSON.stringify({ title }) },
+        { title },
       );
       return data.conversation;
     },
@@ -364,9 +361,9 @@ export function useUpdateConversationModel() {
       id: string;
       model: string;
     }) => {
-      const data = await fetchJson<{ conversation: ConversationDetailDto }>(
+      const data = await api.patch<{ conversation: ConversationDetailDto }>(
         `/api/conversations/${id}`,
-        { method: "PATCH", body: JSON.stringify({ mainAgentModel: model }) },
+        { mainAgentModel: model },
       );
       return data.conversation;
     },
@@ -420,7 +417,7 @@ export function useMcpConnectors() {
   return useQuery({
     queryKey: queryKeys.mcpConnectors,
     queryFn: async () => {
-      const data = await fetchJson<{ connectors: McpConnectorDto[] }>("/api/mcp-connectors");
+      const data = await api.get<{ connectors: McpConnectorDto[] }>("/api/mcp-connectors");
       return data.connectors;
     },
     staleTime: 60 * 1000,
@@ -432,13 +429,10 @@ export function useCreateMcpConnector() {
 
   return useMutation({
     mutationFn: async (vars: { name: string; url: string; authorizationToken?: string; clientId?: string }) => {
-      const data = await fetchJson<{
+      const data = await api.post<{
         connector: McpConnectorDto;
         needsAuth?: boolean;
-      }>("/api/mcp-connectors", {
-        method: "POST",
-        body: JSON.stringify(vars),
-      });
+      }>("/api/mcp-connectors", vars);
       return data;
     },
     onSuccess: () => {
@@ -452,7 +446,7 @@ export function useDeleteMcpConnector() {
 
   return useMutation({
     mutationFn: async (id: string) => {
-      await fetchJson(`/api/mcp-connectors/${id}`, { method: "DELETE" });
+      await api.del(`/api/mcp-connectors/${id}`);
       return id;
     },
     onMutate: async (id) => {
@@ -480,9 +474,9 @@ export function useToggleMcpConnector() {
 
   return useMutation({
     mutationFn: async ({ id, enabled }: { id: string; enabled: boolean }) => {
-      const data = await fetchJson<{ connector: McpConnectorDto }>(
+      const data = await api.patch<{ connector: McpConnectorDto }>(
         `/api/mcp-connectors/${id}`,
-        { method: "PATCH", body: JSON.stringify({ enabled }) },
+        { enabled },
       );
       return data.connector;
     },
@@ -501,15 +495,12 @@ export function useToggleMcpConnector() {
 export function useTestMcpConnection() {
   return useMutation({
     mutationFn: async (vars: { url: string; authorizationToken?: string }) => {
-      return fetchJson<{
+      return api.post<{
         success: boolean;
         needsAuth: boolean;
         error?: string;
         serverName?: string;
-      }>("/api/mcp-connectors/test", {
-        method: "POST",
-        body: JSON.stringify(vars),
-      });
+      }>("/api/mcp-connectors/test", vars);
     },
   });
 }
@@ -544,7 +535,7 @@ export function useRepoBindings() {
   return useQuery({
     queryKey: queryKeys.repoBindings,
     queryFn: async () => {
-      const data = await fetchJson<RepoBindingsData>("/api/repo-bindings");
+      const data = await api.get<RepoBindingsData>("/api/repo-bindings");
       return data;
     },
     staleTime: 30 * 60 * 1000, // 30 min — backed by server-side Redis cache
@@ -556,7 +547,7 @@ export function useRefreshRepoBindings() {
 
   return useMutation({
     mutationFn: async () => {
-      const data = await fetchJson<RepoBindingsData>("/api/repo-bindings?refresh=true");
+      const data = await api.get<RepoBindingsData>("/api/repo-bindings?refresh=true");
       return data;
     },
     onSuccess: (data) => {
@@ -571,7 +562,7 @@ export function useOwnerRepos(owner: string | null) {
   return useQuery({
     queryKey: ["repo-bindings", "owner", owner] as const,
     queryFn: async () => {
-      const data = await fetchJson<{ repos: GithubRepoSearchResult[] }>(
+      const data = await api.get<{ repos: GithubRepoSearchResult[] }>(
         `/api/repo-bindings?owner=${encodeURIComponent(owner!)}`,
       );
       return data.repos;
@@ -584,9 +575,9 @@ export function useOwnerRepos(owner: string | null) {
 export function useSearchGithubRepos() {
   return useMutation({
     mutationFn: async (query: string) => {
-      const data = await fetchJson<{ repos: GithubRepoSearchResult[] }>(
+      const data = await api.post<{ repos: GithubRepoSearchResult[] }>(
         "/api/repo-bindings/search",
-        { method: "POST", body: JSON.stringify({ query }) },
+        { query },
       );
       return data.repos;
     },
@@ -598,9 +589,9 @@ export function useConnectRepo() {
 
   return useMutation({
     mutationFn: async (repoFullName: string) => {
-      const data = await fetchJson<{ binding: RepoBindingListItem }>(
+      const data = await api.post<{ binding: RepoBindingListItem }>(
         "/api/repo-bindings/connect",
-        { method: "POST", body: JSON.stringify({ repoFullName }) },
+        { repoFullName },
       );
       return data.binding;
     },
@@ -653,7 +644,7 @@ export function useDeleteRepoBinding() {
 
   return useMutation({
     mutationFn: async (id: string) => {
-      await fetchJson(`/api/repo-bindings/${id}`, { method: "DELETE" });
+      await api.del(`/api/repo-bindings/${id}`);
       return id;
     },
     onMutate: async (id) => {
@@ -685,9 +676,9 @@ export function useLinkRepoToConversation() {
 
   return useMutation({
     mutationFn: async ({ conversationId, repoBindingId }: { conversationId: string; repoBindingId: string | null }) => {
-      const data = await fetchJson<{ conversation: ConversationDetailDto }>(
+      const data = await api.patch<{ conversation: ConversationDetailDto }>(
         `/api/conversations/${conversationId}`,
-        { method: "PATCH", body: JSON.stringify({ repoBindingId }) },
+        { repoBindingId },
       );
       return data.conversation;
     },

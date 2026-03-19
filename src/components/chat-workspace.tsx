@@ -6,6 +6,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 
+import { api } from "@/lib/api-client";
 import type { AttachmentDto, ConversationDetailDto, ConversationSummaryDto, RunDto, TimelineEventEnvelope } from "@/lib/contracts";
 import {
   useModelCatalog,
@@ -107,12 +108,12 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   const renameMutation = useRenameConversation();
   const starMutation = useToggleConversationStar();
   const [isDraggingOver, setIsDraggingOver] = useState(false);
-  // Tracks conversation created silently during /chat/new uploads
-  const stagedConversationIdRef = useRef<string | null>(null);
-  // Optimistic file entries shown while uploading
+  // Files staged locally (not yet uploaded) — used on /chat/new where no conversation exists
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   // Maps attachment ID → local object URL for image previews (avoids round-trip to Anthropic API)
   const previewUrlMapRef = useRef<Map<string, string>>(new Map());
+  // Repo binding selected on /chat/new before conversation exists
+  const [stagedRepoBindingId, setStagedRepoBindingId] = useState<string | null>(null);
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
   const [connectorModalOpen, setConnectorModalOpen] = useState(false);
   const [repoModalOpen, setRepoModalOpen] = useState(false);
@@ -232,27 +233,29 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
     wasLandingRef.current = isNewChat;
   }, [isLandingState, isNewChat]);
 
-  // Reset staged upload state on navigation
+  // Reset staged state on navigation
   useEffect(() => {
-    stagedConversationIdRef.current = null;
     setPendingFiles((prev) => {
       for (const pf of prev) {
         if (pf.previewUrl) URL.revokeObjectURL(pf.previewUrl);
       }
       return [];
     });
-    // Revoke all cached preview URLs
     for (const url of previewUrlMapRef.current.values()) {
       URL.revokeObjectURL(url);
     }
     previewUrlMapRef.current.clear();
+    setStagedRepoBindingId(null);
   }, [activeConversationId]);
 
   // Auto-send pending message when navigating to a new chat page
   const handlePendingMessage = useEffectEvent((convId: string) => {
     const pending = consumePendingMessage();
     if (pending && pending.conversationId === convId) {
-      void startStream(convId, pending.prompt, pending.attachments, pending.isNew ?? true);
+      void startStream(convId, pending.prompt, pending.attachments, pending.isNew ?? true, {
+        stagedFiles: pending.stagedFiles,
+        stagedRepoBindingId: pending.stagedRepoBindingId,
+      });
     }
   });
 
@@ -408,28 +411,29 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
     }
   }
 
-  async function handleUpload(files: FileList | null) {
+  function handleUpload(files: FileList | null) {
     if (!files?.length) return;
 
-    // Need a conversation ID to upload.
-    let convId = activeConversation?.id ?? activeConversationId ?? stagedConversationIdRef.current;
+    const convId = activeConversation?.id ?? activeConversationId;
 
     if (!convId) {
-      // On /chat/new — create ONE conversation silently, store in ref
-      // Set ref BEFORE the await to prevent concurrent pastes from racing
-      const newId = crypto.randomUUID();
-      stagedConversationIdRef.current = newId;
-      convId = newId;
-      try {
-        await createMutation.mutateAsync({ id: newId });
-      } catch {
-        stagedConversationIdRef.current = null;
-        setErrorMessage("Failed to create conversation for upload.");
-        return;
-      }
+      // /chat/new — no conversation exists. Stage files locally, upload on send.
+      const newEntries: PendingFile[] = Array.from(files).map((file) => ({
+        clientId: crypto.randomUUID(),
+        file,
+        previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : null,
+        status: "staged" as const,
+      }));
+      setPendingFiles((prev) => [...prev, ...newEntries]);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
     }
 
-    // Create optimistic pending entries immediately
+    // Existing conversation — upload immediately
+    void uploadFiles(files, convId);
+  }
+
+  async function uploadFiles(files: FileList | File[], convId: string) {
     const fileArray = Array.from(files);
     const newPending: PendingFile[] = fileArray.map((file) => ({
       clientId: crypto.randomUUID(),
@@ -439,29 +443,16 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
     }));
     setPendingFiles((prev) => [...prev, ...newPending]);
 
-    // Upload all files in parallel
     const results = await Promise.allSettled(
       newPending.map(async (pf) => {
         const formData = new FormData();
         formData.append("conversationId", convId);
         formData.append("file", pf.file);
-
-        const response = await fetch("/api/uploads", {
-          method: "POST",
-          body: formData,
-        });
-
-        if (!response.ok) {
-          const body = (await response.json()) as { error?: string };
-          throw new Error(body.error ?? "Upload failed.");
-        }
-
-        const body = (await response.json()) as { attachment: AttachmentDto };
+        const body = await api.upload<{ attachment: AttachmentDto }>("/api/uploads", formData);
         return { clientId: pf.clientId, attachment: body.attachment };
       }),
     );
 
-    // Process results: update pending entries and collect successful attachments
     const successAttachments: AttachmentDto[] = [];
     const updatedStatuses = new Map<string, Partial<PendingFile>>();
 
@@ -470,13 +461,11 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
         const { clientId, attachment } = result.value;
         successAttachments.push(attachment);
         updatedStatuses.set(clientId, { status: "done", attachment });
-        // Preserve the local object URL for image preview (avoids Anthropic API round-trip)
         const pf = newPending.find((p) => p.clientId === clientId);
         if (pf?.previewUrl) {
           previewUrlMapRef.current.set(attachment.id, pf.previewUrl);
         }
       } else {
-        // Find the matching pending file for this error
         const idx = results.indexOf(result);
         const pf = newPending[idx];
         if (pf) {
@@ -488,18 +477,15 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
       }
     }
 
-    // Update pending file statuses
     setPendingFiles((prev) =>
       prev
         .map((pf) => {
           const update = updatedStatuses.get(pf.clientId);
           return update ? { ...pf, ...update } : pf;
         })
-        // Remove completed entries (keep errors so user can dismiss)
         .filter((pf) => pf.status !== "done"),
     );
 
-    // Add successful uploads to composer attachments (deduplicate by ID)
     if (successAttachments.length > 0) {
       setComposerAttachments((existing) => {
         const existingIds = new Set(existing.map((a) => a.id));
@@ -508,9 +494,9 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
       });
     }
 
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
+    if (fileInputRef.current) fileInputRef.current.value = "";
+
+    return successAttachments;
   }
 
   function updateConversationTitle(conversationId: string, title: string) {
@@ -526,16 +512,24 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
     );
   }
 
-  async function startStream(conversationId: string, prompt: string, attachments: AttachmentDto[], isNew: boolean) {
+  async function startStream(
+    conversationId: string,
+    prompt: string,
+    attachments: AttachmentDto[],
+    isNew: boolean,
+    opts?: {
+      stagedFiles?: Array<{ clientId: string; file: File; previewUrl: string | null }>;
+      stagedRepoBindingId?: string | null;
+    },
+  ) {
     setIsSending(true);
     setErrorMessage(null);
     setComposerValue("");
     setComposerAttachments([]);
-    // Clean up preview URLs — attachments are now part of the run
-    for (const url of previewUrlMapRef.current.values()) {
-      URL.revokeObjectURL(url);
-    }
-    previewUrlMapRef.current.clear();
+    setPendingFiles([]);
+    // NOTE: preview URLs are NOT revoked here — the run thread still needs them.
+    // They are revoked on navigation (activeConversationId effect).
+    setStagedRepoBindingId(null);
     setLiveRun({
       runId: null,
       userPrompt: prompt,
@@ -553,24 +547,50 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
         await createMutation.mutateAsync({ id: conversationId });
       }
 
-      const response = await fetch(`/api/conversations/${conversationId}/messages`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          prompt,
-          attachmentIds: attachments.map((attachment) => attachment.id),
-          preferences: agentPreferences,
-        }),
-      });
-
-      if (!response.ok || !response.body) {
-        const body = (await response.json().catch(() => ({ error: "Failed to start stream." }))) as { error?: string };
-        throw new Error(normalizeApiErrorMessage(body.error ?? "Failed to start stream."));
+      // Link repo binding if staged
+      if (opts?.stagedRepoBindingId) {
+        linkRepoMutation.mutate({ conversationId, repoBindingId: opts.stagedRepoBindingId });
       }
 
-      const reader = response.body.getReader();
+      // Upload staged files now that conversation exists
+      let uploadedAttachments: AttachmentDto[] = [];
+      if (opts?.stagedFiles?.length) {
+        const stagedCount = opts.stagedFiles.length;
+        const results = await Promise.allSettled(
+          opts.stagedFiles.map(async (sf) => {
+            const formData = new FormData();
+            formData.append("conversationId", conversationId);
+            formData.append("file", sf.file);
+            const body = await api.upload<{ attachment: AttachmentDto }>("/api/uploads", formData);
+            if (sf.previewUrl) {
+              previewUrlMapRef.current.set(body.attachment.id, sf.previewUrl);
+            }
+            return body.attachment;
+          }),
+        );
+        uploadedAttachments = results
+          .filter((r): r is PromiseFulfilledResult<AttachmentDto> => r.status === "fulfilled")
+          .map((r) => r.value);
+
+        if (uploadedAttachments.length === 0 && stagedCount > 0) {
+          throw new Error("All file uploads failed.");
+        }
+      }
+
+      const allAttachments = [...attachments, ...uploadedAttachments];
+
+      // Update the live run to include the uploaded attachments
+      if (uploadedAttachments.length > 0) {
+        setLiveRun((prev) => prev ? { ...prev, attachments: allAttachments } : prev);
+      }
+
+      const response = await api.stream(`/api/conversations/${conversationId}/messages`, {
+        prompt,
+        attachmentIds: allAttachments.map((attachment) => attachment.id),
+        preferences: agentPreferences,
+      });
+
+      const reader = response.body!.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
       let lastRunId: string | null = null;
@@ -848,7 +868,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
 
   function handleSend() {
     if (!composerValue.trim() || isSending) return;
-    // Block send while any files are still uploading
+    // Block send while any files are actively uploading (on existing conversations)
     if (pendingFiles.some((pf) => pf.status === "uploading")) return;
 
     const prompt = composerValue.trim();
@@ -857,16 +877,20 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
     if (activeConversation) {
       // Existing chat — stream directly
       void startStream(activeConversation.id, prompt, attachments, false);
-    } else if (stagedConversationIdRef.current) {
-      // Conversation was pre-created by upload — reuse it
-      const stagedId = stagedConversationIdRef.current;
-      stagedConversationIdRef.current = null;
-      setPendingMessage({ conversationId: stagedId, prompt, attachments, isNew: false });
-      router.push(`/chat/${stagedId}`);
     } else {
-      // New chat — generate UUID, store pending message, navigate instantly
+      // /chat/new — carry staged files + repo binding through navigation
+      const stagedFiles = pendingFiles
+        .filter((pf) => pf.status === "staged")
+        .map(({ clientId, file, previewUrl }) => ({ clientId, file, previewUrl }));
+
       const newId = crypto.randomUUID();
-      setPendingMessage({ conversationId: newId, prompt, attachments });
+      setPendingMessage({
+        conversationId: newId,
+        prompt,
+        attachments,
+        stagedFiles: stagedFiles.length > 0 ? stagedFiles : undefined,
+        stagedRepoBindingId: stagedRepoBindingId ?? undefined,
+      });
       router.push(`/chat/${newId}`);
     }
   }
@@ -874,7 +898,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   async function handleStop() {
     const runId = liveRun?.runId;
     if (!runId) return;
-    await fetch(`/api/agent/runs/${runId}/stop`, { method: "POST" }).catch(() => {});
+    await api.post(`/api/agent/runs/${runId}/stop`).catch(() => {});
   }
 
   function handleSelectMainModel(modelId: string) {
@@ -1360,6 +1384,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                       createdAt={new Date().toISOString()}
                       isLive={liveRun.status === "running"}
                       isInterrupted={liveRun.status === "interrupted" || liveRun.status === "failed"}
+                      previewUrls={previewUrlMapRef.current}
                     />
                   </div>
                 ) : null}
@@ -1428,7 +1453,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                       }
                       setComposerAttachments((prev) => prev.filter((a) => a.id !== attachment.id));
                       // Delete from Anthropic Files API + DB (fire-and-forget)
-                      void fetch(`/api/attachments/${attachment.id}`, { method: "DELETE" });
+                      void api.del(`/api/attachments/${attachment.id}`);
                     }}
                   />
                 ))}
@@ -1436,7 +1461,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                   <AttachmentChip
                     key={pf.clientId}
                     pendingFile={pf}
-                    onRemove={pf.status === "error" ? () => {
+                    onRemove={pf.status !== "uploading" ? () => {
                       setPendingFiles((prev) => {
                         const removed = prev.find((p) => p.clientId === pf.clientId);
                         if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl);
@@ -1688,11 +1713,14 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
       {repoModalOpen && (
         <RepoBindingModal
           onClose={() => setRepoModalOpen(false)}
-          currentRepoBindingId={activeConversation?.repoBinding?.id ?? null}
+          currentRepoBindingId={activeConversation?.repoBinding?.id ?? stagedRepoBindingId}
           onSelect={(binding) => {
             setRepoModalOpen(false);
             if (activeConversation) {
               linkRepoMutation.mutate({ conversationId: activeConversation.id, repoBindingId: binding.id });
+            } else {
+              // /chat/new — stage for later
+              setStagedRepoBindingId(binding.id);
             }
           }}
         />
