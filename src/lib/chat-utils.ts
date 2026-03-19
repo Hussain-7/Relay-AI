@@ -158,6 +158,8 @@ function summarizeToolAction(name: string) {
       return "Checked saved memory";
     case "code_execution":
       return "Ran code";
+    case "image_generation":
+      return "Generated an image";
     case "tool_search":
     case "tool_search_tool_regex":
       return "Looked for tools";

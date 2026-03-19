@@ -208,26 +208,62 @@ export function RunThread({
                   {finalText}
                 </Streamdown>
               </div>
-              {outputAttachments.length > 0 ? (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {outputAttachments.map((file) => (
-                    <a
-                      key={file.id}
-                      href={`/api/attachments/${file.id}/download`}
-                      download={file.filename}
-                      className="group/dl flex items-center gap-2 min-w-[120px] max-w-[240px] border border-[rgba(255,255,255,0.1)] rounded-[12px] bg-[rgba(255,255,255,0.04)] px-3 py-2.5 no-underline transition-[border-color,background] duration-[140ms] ease-linear hover:border-[rgba(181,103,69,0.4)] hover:bg-[rgba(181,103,69,0.06)]"
-                    >
-                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-[rgba(245,240,232,0.5)] group-hover/dl:text-[rgba(212,112,73,0.8)]">
-                        <path d="M8 2v9m0 0-3-3m3 3 3-3M3 13h10" />
-                      </svg>
-                      <div className="flex flex-col min-w-0 flex-1">
-                        <span className="text-[0.8rem] leading-[1.3] text-[rgba(245,240,232,0.86)] overflow-hidden text-ellipsis whitespace-nowrap">{file.filename}</span>
-                        <span className="text-[0.65rem] text-[rgba(245,240,232,0.5)] uppercase tracking-[0.04em]">{getFileTypeBadge(file.filename)}</span>
+              {outputAttachments.length > 0 ? (() => {
+                const imageOutputs = outputAttachments.filter((a) => a.kind === "IMAGE");
+                const fileOutputs = outputAttachments.filter((a) => a.kind !== "IMAGE");
+                return (
+                  <>
+                    {imageOutputs.length > 0 ? (
+                      <div className="mt-3 flex flex-col gap-3">
+                        {imageOutputs.map((img) => {
+                          const publicUrl = (img.metadataJson as Record<string, unknown> | null)?.publicUrl as string | undefined;
+                          const imgSrc = publicUrl || `/api/images/${img.id}`;
+                          return (
+                          <div key={img.id} className="group/img relative inline-block max-w-[512px] rounded-[12px] overflow-hidden border border-[rgba(255,255,255,0.08)]">
+                            <img
+                              src={imgSrc}
+                              alt={img.filename}
+                              className="block w-full h-auto rounded-[12px]"
+                              loading="lazy"
+                            />
+                            <a
+                              href={imgSrc}
+                              download={img.filename}
+                              className="absolute top-2 right-2 flex items-center justify-center w-8 h-8 rounded-[8px] bg-[rgba(0,0,0,0.6)] border border-[rgba(255,255,255,0.15)] opacity-0 group-hover/img:opacity-100 transition-opacity duration-150 hover:bg-[rgba(0,0,0,0.8)]"
+                              title="Download image"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-[rgba(245,240,232,0.9)]">
+                                <path d="M8 2v9m0 0-3-3m3 3 3-3M3 13h10" />
+                              </svg>
+                            </a>
+                          </div>
+                          );
+                        })}
                       </div>
-                    </a>
-                  ))}
-                </div>
-              ) : null}
+                    ) : null}
+                    {fileOutputs.length > 0 ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {fileOutputs.map((file) => (
+                          <a
+                            key={file.id}
+                            href={`/api/attachments/${file.id}/download`}
+                            download={file.filename}
+                            className="group/dl flex items-center gap-2 min-w-[120px] max-w-[240px] border border-[rgba(255,255,255,0.1)] rounded-[12px] bg-[rgba(255,255,255,0.04)] px-3 py-2.5 no-underline transition-[border-color,background] duration-[140ms] ease-linear hover:border-[rgba(181,103,69,0.4)] hover:bg-[rgba(181,103,69,0.06)]"
+                          >
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-[rgba(245,240,232,0.5)] group-hover/dl:text-[rgba(212,112,73,0.8)]">
+                              <path d="M8 2v9m0 0-3-3m3 3 3-3M3 13h10" />
+                            </svg>
+                            <div className="flex flex-col min-w-0 flex-1">
+                              <span className="text-[0.8rem] leading-[1.3] text-[rgba(245,240,232,0.86)] overflow-hidden text-ellipsis whitespace-nowrap">{file.filename}</span>
+                              <span className="text-[0.65rem] text-[rgba(245,240,232,0.5)] uppercase tracking-[0.04em]">{getFileTypeBadge(file.filename)}</span>
+                            </div>
+                          </a>
+                        ))}
+                      </div>
+                    ) : null}
+                  </>
+                );
+              })() : null}
               {isLive && !isInterrupted ? <div className="mt-2.5 text-muted text-[0.76rem]">Streaming</div> : null}
               {isInterrupted ? (
                 <div className="mt-3 flex items-center justify-between gap-3 rounded-[12px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-3.5 py-2.5">

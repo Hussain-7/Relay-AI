@@ -1,16 +1,16 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
-const PUBLIC_ROUTES = new Set(["/login", "/auth/callback"]);
-
 const ALLOWED_EMAILS = new Set([
   "hussain2000.rizvi@gmail.com",
 ]);
 
+const PUBLIC_ROUTES = new Set(["/login", "/auth/callback", "/waitlist"]);
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Skip auth check for public routes and API routes (API routes handle their own auth)
+  // Skip auth for public routes and API routes (API routes handle their own auth)
   if (PUBLIC_ROUTES.has(pathname) || pathname.startsWith("/api/")) {
     return NextResponse.next();
   }
@@ -42,19 +42,28 @@ export async function middleware(request: NextRequest) {
     },
   });
 
-  // This refreshes the session if needed and checks auth
   const { data: { user } } = await supabase.auth.getUser();
 
-  if (!user || !user.email || !ALLOWED_EMAILS.has(user.email.toLowerCase())) {
-    // Sign out unauthorized users so they don't get stuck in a redirect loop
-    if (user && user.email && !ALLOWED_EMAILS.has(user.email.toLowerCase())) {
-      await supabase.auth.signOut();
-    }
+  // Not authenticated → redirect to login
+  if (!user) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/login";
+    url.searchParams.set("next", pathname);
+    return NextResponse.redirect(url);
+  }
 
-    const loginUrl = request.nextUrl.clone();
-    loginUrl.pathname = "/login";
-    loginUrl.searchParams.set("next", pathname);
-    return NextResponse.redirect(loginUrl);
+  // Authenticated but not on the allowlist → redirect to waitlist
+  if (!user.email || !ALLOWED_EMAILS.has(user.email.toLowerCase())) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/waitlist";
+    return NextResponse.redirect(url);
+  }
+
+  // Authenticated + allowed user on /login → redirect to chat
+  if (pathname === "/login") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/chat/new";
+    return NextResponse.redirect(url);
   }
 
   return response;
@@ -62,7 +71,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    // Match all routes except static files and Next.js internals
     "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

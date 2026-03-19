@@ -129,7 +129,10 @@ function mapRun(conversationId: string, run: ConversationDetailRecord["runs"][nu
     },
   );
   const outputAttachments = run.attachments.filter(
-    (a) => (a.metadataJson as Record<string, unknown> | null)?.source === "skill_output",
+    (a) => {
+      const source = (a.metadataJson as Record<string, unknown> | null)?.source;
+      return source === "skill_output" || source === "image_generation";
+    },
   );
 
   return {

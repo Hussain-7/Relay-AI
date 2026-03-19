@@ -28,6 +28,7 @@ const envSchema = z.object({
   GITHUB_APP_CLIENT_SECRET: z.string().optional(),
   GITHUB_STATE_SECRET: z.string().optional(),
   ALLOW_INSECURE_USER_HEADER: booleanLike,
+  GOOGLE_AI_API_KEY: z.string().optional(),
   UPSTASH_REDIS_REST_URL: z.string().optional(),
   UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
 });
@@ -48,6 +49,10 @@ export function hasSupabaseAuth() {
 
 export function hasE2bConfig() {
   return Boolean(env.E2B_API_KEY);
+}
+
+export function hasGoogleAiConfig() {
+  return Boolean(env.GOOGLE_AI_API_KEY);
 }
 
 export function hasGitHubAppConfig() {

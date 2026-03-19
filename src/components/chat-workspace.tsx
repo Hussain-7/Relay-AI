@@ -734,13 +734,14 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
       }
     } catch (error) {
       const message = error instanceof Error ? normalizeApiErrorMessage(error.message) : "Failed to send prompt.";
-      setErrorMessage(message);
+      // Show error inline in the run response, not as a top banner
       setLiveRun((current) =>
         current
           ? {
               ...current,
               status: "failed",
               error: message,
+              partialText: current.partialText || `Something went wrong: ${message}`,
               events: current.events.some((event) => event.type === "run.failed")
                 ? current.events
                 : [
@@ -1269,8 +1270,8 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                       events={liveRun.events}
                       finalText={liveRun.partialText || null}
                       createdAt={new Date().toISOString()}
-                      isLive={liveRun.status !== "interrupted"}
-                      isInterrupted={liveRun.status === "interrupted"}
+                      isLive={liveRun.status === "running"}
+                      isInterrupted={liveRun.status === "interrupted" || liveRun.status === "failed"}
                     />
                   </div>
                 ) : null}
