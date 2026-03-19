@@ -128,7 +128,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   // Maps attachment ID → local object URL for image previews (avoids round-trip to Anthropic API)
   const previewUrlMapRef = useRef<Map<string, string>>(new Map());
   // Repo binding selected on /chat/new before conversation exists
-  const [stagedRepoBindingId, setStagedRepoBindingId] = useState<string | null>(null);
+  const [stagedRepoBinding, setStagedRepoBinding] = useState<{ id: string; repoFullName: string } | null>(null);
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
   const [connectorModalOpen, setConnectorModalOpen] = useState(false);
   const [repoModalOpen, setRepoModalOpen] = useState(false);
@@ -248,7 +248,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
       URL.revokeObjectURL(url);
     }
     previewUrlMapRef.current.clear();
-    setStagedRepoBindingId(null);
+    setStagedRepoBinding(null);
   }, [activeConversationId]);
 
   // Auto-send pending message when navigating to a new chat page
@@ -521,7 +521,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
     setPendingFiles([]);
     // NOTE: preview URLs are NOT revoked here — the run thread still needs them.
     // They are revoked on navigation (activeConversationId effect).
-    setStagedRepoBindingId(null);
+    setStagedRepoBinding(null);
     setLiveRun({
       runId: null,
       userPrompt: prompt,
@@ -539,9 +539,9 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
         await createMutation.mutateAsync({ id: conversationId });
       }
 
-      // Link repo binding if staged
+      // Link repo binding if staged — await so the detail query sees it immediately
       if (opts?.stagedRepoBindingId) {
-        linkRepoMutation.mutate({ conversationId, repoBindingId: opts.stagedRepoBindingId });
+        await linkRepoMutation.mutateAsync({ conversationId, repoBindingId: opts.stagedRepoBindingId });
       }
 
       // Upload staged files now that conversation exists
@@ -881,7 +881,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
         prompt,
         attachments,
         stagedFiles: stagedFiles.length > 0 ? stagedFiles : undefined,
-        stagedRepoBindingId: stagedRepoBindingId ?? undefined,
+        stagedRepoBindingId: stagedRepoBinding?.id ?? undefined,
       });
       router.push(`/chat/${newId}`);
     }
@@ -1261,7 +1261,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                 <div className="h-[14px] w-[140px] rounded-[4px] bg-[rgba(255,255,255,0.08)] animate-pulse" />
               </div>
             ) : (
-              <div className="min-w-0 flex-[0_1_auto] py-1.5 px-2.5 text-[0.96rem] font-[430] leading-[1.2] whitespace-nowrap overflow-hidden text-ellipsis" style={{ opacity: 0.4 }}>New chat</div>
+              <div className="invisible min-w-0 flex-[0_1_auto] py-1.5 px-2.5 text-[0.96rem] font-[430] leading-[1.2] whitespace-nowrap overflow-hidden text-ellipsis">New chat</div>
             )}
           </div>
         </header>
@@ -1528,7 +1528,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
               {plusMenuOpen && (
                 <ComposerPlusMenuPortal
                   anchor={plusButtonRef.current}
-                  hasLinkedRepo={Boolean(activeConversation?.repoBinding)}
+                  hasLinkedRepo={Boolean(activeConversation?.repoBinding || stagedRepoBinding)}
                   onAddFiles={() => {
                     setPlusMenuOpen(false);
                     fileInputRef.current?.click();
@@ -1544,12 +1544,17 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                 />
               )}
 
-              {activeConversation?.repoBinding && (
+              {(() => {
+                const displayedRepo = activeConversation?.repoBinding ?? (stagedRepoBinding ? { id: stagedRepoBinding.id, repoFullName: stagedRepoBinding.repoFullName, repoName: stagedRepoBinding.repoFullName.split("/")[1] } : null);
+                if (!displayedRepo) return null;
+                const isStaged = !activeConversation?.repoBinding;
+                return (
                 <div className="relative min-w-0 shrink">
                   {/* Desktop: full chip with name + × */}
-                  <div className="hidden min-[981px]:inline-flex items-center gap-1.5 rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-2.5 py-1 text-[0.78rem] text-[rgba(245,240,232,0.65)]" title={activeConversation.repoBinding.repoFullName}>
+                  <div className="hidden min-[981px]:inline-flex items-center gap-1.5 rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-2.5 py-1 text-[0.78rem] text-[rgba(245,240,232,0.65)]" title={displayedRepo.repoFullName}>
                     <IconGithub />
-                    <span className="max-w-[160px] truncate">{activeConversation.repoBinding.repoName}</span>
+                    <span className="max-w-[160px] truncate">{displayedRepo.repoName}</span>
+                    {!isStaged && (
                     <button
                       type="button"
                       className="inline-grid h-4 w-4 place-items-center border-0 bg-transparent text-[rgba(245,240,232,0.35)] cursor-pointer rounded-full p-0 transition-colors duration-140 hover:text-[rgba(245,240,232,0.7)]"
@@ -1558,11 +1563,14 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                     >
                       <IconKey />
                     </button>
+                    )}
                     <button
                       type="button"
                       className="inline-grid h-4 w-4 place-items-center border-0 bg-transparent text-[rgba(245,240,232,0.35)] cursor-pointer rounded-full p-0 transition-colors duration-140 hover:text-[rgba(245,240,232,0.7)]"
                       onClick={() => {
-                        if (activeConversation) {
+                        if (isStaged) {
+                          setStagedRepoBinding(null);
+                        } else if (activeConversation) {
                           linkRepoMutation.mutate({ conversationId: activeConversation.id, repoBindingId: null });
                         }
                       }}
@@ -1576,14 +1584,15 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                     type="button"
                     className="min-[981px]:hidden inline-grid h-8 w-8 place-items-center rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] text-[rgba(245,240,232,0.65)] cursor-pointer p-0 transition-colors duration-140 hover:bg-[rgba(255,255,255,0.06)]"
                     onClick={() => setRepoChipOpen((v) => !v)}
-                    aria-label={`Linked repo: ${activeConversation.repoBinding.repoFullName}`}
+                    aria-label={`Linked repo: ${displayedRepo.repoFullName}`}
                   >
                     <IconGithub />
                   </button>
                   {repoChipOpen && (
                     <div className="min-[981px]:hidden absolute bottom-full left-0 mb-2 z-50">
                       <div className="rounded-[10px] border border-[rgba(255,255,255,0.1)] bg-[rgba(28,26,22,0.96)] shadow-[0_8px_24px_rgba(0,0,0,0.4)] backdrop-blur-xl px-3 py-2.5 whitespace-nowrap">
-                        <div className="text-[0.78rem] text-[rgba(245,240,232,0.85)] font-medium">{activeConversation.repoBinding.repoFullName}</div>
+                        <div className="text-[0.78rem] text-[rgba(245,240,232,0.85)] font-medium">{displayedRepo.repoFullName}</div>
+                        {!isStaged && (
                         <button
                           type="button"
                           className="mt-2 w-full text-left text-[0.75rem] text-[rgba(245,240,232,0.6)] cursor-pointer border-0 bg-transparent p-0 hover:text-[rgba(245,240,232,0.9)]"
@@ -1594,11 +1603,14 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                         >
                           Manage env vars
                         </button>
+                        )}
                         <button
                           type="button"
                           className="mt-2 w-full text-left text-[0.75rem] text-[rgba(243,199,180,0.8)] cursor-pointer border-0 bg-transparent p-0 hover:text-[rgba(243,199,180,1)]"
                           onClick={() => {
-                            if (activeConversation) {
+                            if (isStaged) {
+                              setStagedRepoBinding(null);
+                            } else if (activeConversation) {
                               linkRepoMutation.mutate({ conversationId: activeConversation.id, repoBindingId: null });
                             }
                             setRepoChipOpen(false);
@@ -1610,7 +1622,8 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                     </div>
                   )}
                 </div>
-              )}
+                );
+              })()}
 
               {activeMcpCount > 0 && (
                 <div className="group/mcp relative">
@@ -1731,14 +1744,14 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
       {repoModalOpen && (
         <RepoBindingModal
           onClose={() => setRepoModalOpen(false)}
-          currentRepoBindingId={activeConversation?.repoBinding?.id ?? stagedRepoBindingId}
+          currentRepoBindingId={activeConversation?.repoBinding?.id ?? stagedRepoBinding?.id}
           onSelect={(binding) => {
             setRepoModalOpen(false);
             if (activeConversation) {
               linkRepoMutation.mutate({ conversationId: activeConversation.id, repoBindingId: binding.id });
             } else {
               // /chat/new — stage for later
-              setStagedRepoBindingId(binding.id);
+              setStagedRepoBinding({ id: binding.id, repoFullName: binding.repoFullName });
             }
           }}
         />

@@ -95,6 +95,8 @@ function SecretRowInput({
   onPasteMultiLine: (index: number, entries: { key: string; value: string }[]) => void;
 }) {
   const [showValue, setShowValue] = useState(false);
+  const [editing, setEditing] = useState(!row.isExisting);
+  const maskedAndUntouched = row.isExisting && !row.value && !editing;
 
   const handleKeyPaste = useCallback(
     (e: React.ClipboardEvent<HTMLInputElement>) => {
@@ -122,22 +124,38 @@ function SecretRowInput({
         className="flex-1 min-w-0 rounded-[8px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-2.5 py-1.5 text-[0.82rem] text-[rgba(245,240,232,0.9)] placeholder:text-[rgba(245,240,232,0.25)] font-mono outline-none focus:border-[rgba(255,255,255,0.18)] transition-colors"
       />
       <div className="flex-1 min-w-0 relative">
-        <input
-          type={showValue ? "text" : "password"}
-          value={row.value}
-          onChange={(e) => onChange(index, "value", e.target.value)}
-          placeholder={row.isExisting ? "••••••••" : "value"}
-          spellCheck={false}
-          className="w-full rounded-[8px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-2.5 py-1.5 pr-8 text-[0.82rem] text-[rgba(245,240,232,0.9)] placeholder:text-[rgba(245,240,232,0.25)] font-mono outline-none focus:border-[rgba(255,255,255,0.18)] transition-colors"
-        />
-        <button
-          type="button"
-          onClick={() => setShowValue((v) => !v)}
-          className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 text-[rgba(245,240,232,0.3)] hover:text-[rgba(245,240,232,0.6)] transition-colors border-0 bg-transparent cursor-pointer"
-          aria-label={showValue ? "Hide value" : "Show value"}
-        >
-          {showValue ? <IconEyeOff /> : <IconEye />}
-        </button>
+        {maskedAndUntouched ? (
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="w-full text-left rounded-[8px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-2.5 py-1.5 text-[0.82rem] font-mono cursor-text transition-colors hover:border-[rgba(255,255,255,0.18)]"
+          >
+            <span className="text-[rgba(245,240,232,0.35)]">••••••••</span>
+            <span className="ml-2 text-[0.68rem] text-[rgba(245,240,232,0.2)]">click to replace</span>
+          </button>
+        ) : (
+          <>
+            <input
+              type={showValue ? "text" : "password"}
+              value={row.value}
+              onChange={(e) => onChange(index, "value", e.target.value)}
+              placeholder={row.isExisting ? "enter new value" : "value"}
+              autoFocus={row.isExisting && editing}
+              spellCheck={false}
+              className="w-full rounded-[8px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-2.5 py-1.5 pr-8 text-[0.82rem] text-[rgba(245,240,232,0.9)] placeholder:text-[rgba(245,240,232,0.25)] font-mono outline-none focus:border-[rgba(255,255,255,0.18)] transition-colors"
+            />
+            {row.value && (
+              <button
+                type="button"
+                onClick={() => setShowValue((v) => !v)}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 text-[rgba(245,240,232,0.3)] hover:text-[rgba(245,240,232,0.6)] transition-colors border-0 bg-transparent cursor-pointer"
+                aria-label={showValue ? "Hide value" : "Show value"}
+              >
+                {showValue ? <IconEyeOff /> : <IconEye />}
+              </button>
+            )}
+          </>
+        )}
       </div>
       <button
         type="button"
