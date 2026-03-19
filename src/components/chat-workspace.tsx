@@ -311,17 +311,6 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveRun?.runId]);
 
-  // Scroll to bottom only when switching to a different conversation
-  useEffect(() => {
-    requestAnimationFrame(() => {
-      transcriptRef.current?.scrollTo({
-        top: transcriptRef.current.scrollHeight,
-        behavior: "instant",
-      });
-      syncScrollShadows();
-    });
-  }, [activeConversationId]);
-
   // Recalculate scroll button visibility when content changes (e.g. after page refresh, data load)
   // Double rAF ensures DOM has painted the new content before measuring
   useEffect(() => {
@@ -817,7 +806,10 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
             ),
         );
 
-        // Keep liveRun rendered — it has all the data. Just mark stale for next navigation.
+        // Mark liveRun as completed (stops cursor/spinner) but keep it rendered.
+        setLiveRun((prev) => prev ? { ...prev, status: "completed" } : prev);
+
+        // Mark stale for next navigation.
         void queryClient.invalidateQueries({
           queryKey: queryKeys.conversation(conversationId),
           refetchType: "none",
