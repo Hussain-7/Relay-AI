@@ -62,12 +62,10 @@ export async function appendRunEvent(input: {
   const supabase = getSupabaseServerClient();
 
   if (supabase) {
-    // Fire-and-forget: don't block event persistence on Supabase broadcast latency
-    supabase.channel(`conversation:${input.conversationId}`).send({
-      type: "broadcast",
-      event: "run_event",
-      payload: envelope,
-    }).catch(() => {});
+    // Fire-and-forget: use httpSend for server-side REST delivery (no WebSocket needed)
+    supabase.channel(`conversation:${input.conversationId}`)
+      .httpSend("run_event", envelope)
+      .catch(() => {});
   }
 
   return envelope;

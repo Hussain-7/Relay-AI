@@ -331,10 +331,8 @@ export async function streamMainAgentRun(input: {
         const emittedMcpToolIds = new Set<string>();
 
         for await (const assistantIteration of runner) {
-          console.log(`[stop-debug] [${runId}] outer loop: new iteration yielded`);
           // Check stop flag between tool runner iterations
           if (await checkStopFlag(runId)) {
-            console.log(`[stop-debug] [${runId}] outer loop: stop flag detected at iteration start`);
             stopped = true;
             break;
           }
@@ -355,9 +353,7 @@ export async function streamMainAgentRun(input: {
             // Check stop flag every ~10 events to avoid Redis spam
             if (++stopCheckCounter % 10 === 0) {
               const flagValue = await checkStopFlag(runId);
-              console.log(`[stop-debug] [${runId}] inner loop: check #${stopCheckCounter}, flag=${flagValue}`);
               if (flagValue) {
-                console.log(`[stop-debug] [${runId}] inner loop: breaking inner loop`);
                 stopped = true;
                 break;
               }
@@ -678,17 +674,13 @@ export async function streamMainAgentRun(input: {
           // Break outer loop immediately so the runner doesn't start
           // another API call before we can act on the stop flag
           if (stopped) {
-            console.log(`[stop-debug] [${runId}] breaking outer loop after inner loop exit`);
             break;
           }
-          console.log(`[stop-debug] [${runId}] inner loop ended naturally, continuing outer loop`);
         }
 
-        console.log(`[stop-debug] [${runId}] exited loop. stopped=${stopped}`);
 
         // If stopped by client via Redis flag, save partial state and close gracefully
         if (stopped) {
-          console.log(`[stop-debug] [${runId}] saving partial state and closing stream`);
           await clearStopFlag(runId);
 
           const partialText = serverPartialText.trim() || null;

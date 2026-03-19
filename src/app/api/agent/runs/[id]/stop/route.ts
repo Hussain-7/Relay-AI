@@ -31,9 +31,7 @@ export async function POST(
       return Response.json({ error: "Run is not active" }, { status: 409 });
     }
 
-    console.log(`[stop-debug] [${runId}] POST /stop — setting flag`);
     await setStopFlag(runId);
-    console.log(`[stop-debug] [${runId}] POST /stop — flag set`);
 
     return Response.json({ ok: true });
   } catch (error) {
