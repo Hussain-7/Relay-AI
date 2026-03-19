@@ -1,4 +1,4 @@
-import { type RunEvent } from "@prisma/client";
+import { type RunEvent } from "@/generated/prisma/client";
 import { createClient } from "@supabase/supabase-js";
 
 import type { TimelineEventEnvelope, TimelineEventType, TimelineSource } from "@/lib/contracts";

@@ -1,4 +1,4 @@
-import type { McpConnector } from "@prisma/client";
+import type { McpConnector } from "@/generated/prisma/client";
 
 import { env } from "@/lib/env";
 import { decryptToken, encryptToken } from "@/lib/mcp-token-crypto";

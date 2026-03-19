@@ -1,4 +1,4 @@
-import type { ApprovalStatus, AttachmentKind, CodingSessionStatus, ConversationMode, MessageRole, RunStatus } from "@prisma/client";
+import type { ApprovalStatus, AttachmentKind, CodingSessionStatus, ConversationMode, MessageRole, RunStatus } from "@/generated/prisma/client";
 
 export type TimelineSource = "user" | "main_agent" | "coding_agent" | "system";
 

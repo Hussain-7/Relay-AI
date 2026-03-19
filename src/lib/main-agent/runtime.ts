@@ -3,7 +3,7 @@ import type {
   BetaMessage,
   BetaRawMessageStreamEvent,
 } from "@anthropic-ai/sdk/resources/beta/messages/messages";
-import { type AttachmentKind, Prisma, RunStatus } from "@prisma/client";
+import { type AttachmentKind, Prisma, RunStatus } from "@/generated/prisma/client";
 
 import { type AttachmentDto, type TimelineEventEnvelope } from "@/lib/contracts";
 import { env, hasAnthropicApiKey } from "@/lib/env";

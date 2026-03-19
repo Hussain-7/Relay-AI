@@ -1,4 +1,4 @@
-import { RunStatus } from "@prisma/client";
+import { RunStatus } from "@/generated/prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { setStopFlag } from "@/lib/run-stop";

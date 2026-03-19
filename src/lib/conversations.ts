@@ -1,4 +1,4 @@
-import { Prisma, type Attachment, type CodingSession, type Conversation, type MainAgentSession, type Message, type RepoBinding, type RunApproval, type RunEvent, type AgentRun } from "@prisma/client";
+import { Prisma, type Attachment, type CodingSession, type Conversation, type MainAgentSession, type Message, type RepoBinding, type RunApproval, type RunEvent, type AgentRun } from "@/generated/prisma/client";
 
 import type { AttachmentDto, CodingSessionDto, ConversationDetailDto, ConversationSummaryDto, MessageDto, RunDto, TimelineEventEnvelope } from "@/lib/contracts";
 import { prisma } from "@/lib/prisma";
@@ -17,28 +17,28 @@ const attachmentFieldsWithoutContent = {
   createdAt: true,
 } satisfies Prisma.AttachmentSelect;
 
-const conversationDetailInclude = Prisma.validator<Prisma.ConversationInclude>()({
+const conversationDetailInclude = {
   mainAgentSession: true,
   repoBinding: true,
   attachments: {
     select: attachmentFieldsWithoutContent,
-    orderBy: { createdAt: "asc" },
+    orderBy: { createdAt: "asc" as const },
   },
   messages: {
-    orderBy: { createdAt: "asc" },
+    orderBy: { createdAt: "asc" as const },
   },
   runs: {
-    orderBy: { createdAt: "asc" },
+    orderBy: { createdAt: "asc" as const },
     include: {
       attachments: {
         select: attachmentFieldsWithoutContent,
-        orderBy: { createdAt: "asc" },
+        orderBy: { createdAt: "asc" as const },
       },
       approvals: {
-        orderBy: { createdAt: "asc" },
+        orderBy: { createdAt: "asc" as const },
       },
       events: {
-        orderBy: [{ ts: "asc" }, { id: "asc" }],
+        orderBy: [{ ts: "asc" as const }, { id: "asc" as const }],
       },
       codingSession: {
         include: {
@@ -48,13 +48,13 @@ const conversationDetailInclude = Prisma.validator<Prisma.ConversationInclude>()
     },
   },
   codingSessions: {
-    orderBy: { updatedAt: "desc" },
+    orderBy: { updatedAt: "desc" as const },
     take: 1,
     include: {
       repoBinding: true,
     },
   },
-});
+} satisfies Prisma.ConversationInclude;
 
 type AttachmentWithoutContent = Omit<Attachment, "content">;
 

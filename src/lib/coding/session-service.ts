@@ -1,5 +1,5 @@
 import { Sandbox } from "@e2b/code-interpreter";
-import { CodingSessionStatus } from "@prisma/client";
+import { CodingSessionStatus } from "@/generated/prisma/client";
 
 import { appendRunEvent } from "@/lib/run-events";
 import { env, hasE2bConfig } from "@/lib/env";
