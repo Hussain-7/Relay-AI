@@ -4,6 +4,7 @@ interface PendingMessage {
   conversationId: string;
   prompt: string;
   attachments: AttachmentDto[];
+  isNew?: boolean;
 }
 
 let pending: PendingMessage | null = null;

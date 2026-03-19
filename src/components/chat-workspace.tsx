@@ -49,7 +49,7 @@ import { ComposerModelMenuPortal, type AgentPreferences } from "@/components/cha
 import { ComposerPlusMenuPortal } from "@/components/chat/composer-plus-menu";
 const McpConnectorModal = dynamic(() => import("@/components/chat/mcp-connector-modal").then(m => ({ default: m.McpConnectorModal })), { ssr: false });
 const RepoBindingModal = dynamic(() => import("@/components/chat/repo-binding-modal").then(m => ({ default: m.RepoBindingModal })), { ssr: false });
-import { AttachmentChip } from "@/components/chat/attachment-chip";
+import { AttachmentChip, type PendingFile } from "@/components/chat/attachment-chip";
 import { RunThread } from "@/components/chat/run-thread";
 import { setPendingMessage, peekPendingMessage, consumePendingMessage } from "@/lib/pending-message";
 
@@ -107,6 +107,12 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   const renameMutation = useRenameConversation();
   const starMutation = useToggleConversationStar();
   const [isDraggingOver, setIsDraggingOver] = useState(false);
+  // Tracks conversation created silently during /chat/new uploads
+  const stagedConversationIdRef = useRef<string | null>(null);
+  // Optimistic file entries shown while uploading
+  const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
+  // Maps attachment ID → local object URL for image previews (avoids round-trip to Anthropic API)
+  const previewUrlMapRef = useRef<Map<string, string>>(new Map());
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
   const [connectorModalOpen, setConnectorModalOpen] = useState(false);
   const [repoModalOpen, setRepoModalOpen] = useState(false);
@@ -226,11 +232,27 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
     wasLandingRef.current = isNewChat;
   }, [isLandingState, isNewChat]);
 
+  // Reset staged upload state on navigation
+  useEffect(() => {
+    stagedConversationIdRef.current = null;
+    setPendingFiles((prev) => {
+      for (const pf of prev) {
+        if (pf.previewUrl) URL.revokeObjectURL(pf.previewUrl);
+      }
+      return [];
+    });
+    // Revoke all cached preview URLs
+    for (const url of previewUrlMapRef.current.values()) {
+      URL.revokeObjectURL(url);
+    }
+    previewUrlMapRef.current.clear();
+  }, [activeConversationId]);
+
   // Auto-send pending message when navigating to a new chat page
   const handlePendingMessage = useEffectEvent((convId: string) => {
     const pending = consumePendingMessage();
     if (pending && pending.conversationId === convId) {
-      void startStream(convId, pending.prompt, pending.attachments, true);
+      void startStream(convId, pending.prompt, pending.attachments, pending.isNew ?? true);
     }
   });
 
@@ -390,29 +412,39 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
     if (!files?.length) return;
 
     // Need a conversation ID to upload.
-    let convId = activeConversation?.id ?? activeConversationId;
+    let convId = activeConversation?.id ?? activeConversationId ?? stagedConversationIdRef.current;
 
     if (!convId) {
-      // On /chat/new — create conversation silently (don't navigate yet)
+      // On /chat/new — create ONE conversation silently, store in ref
+      // Set ref BEFORE the await to prevent concurrent pastes from racing
+      const newId = crypto.randomUUID();
+      stagedConversationIdRef.current = newId;
+      convId = newId;
       try {
-        const newId = crypto.randomUUID();
-        const created = await createMutation.mutateAsync({ id: newId });
-        convId = created.id;
-        // Update URL without remounting so attachments aren't lost
-        window.history.replaceState(null, "", `/chat/${convId}`);
+        await createMutation.mutateAsync({ id: newId });
       } catch {
+        stagedConversationIdRef.current = null;
         setErrorMessage("Failed to create conversation for upload.");
         return;
       }
     }
 
-    try {
-      const uploaded: AttachmentDto[] = [];
+    // Create optimistic pending entries immediately
+    const fileArray = Array.from(files);
+    const newPending: PendingFile[] = fileArray.map((file) => ({
+      clientId: crypto.randomUUID(),
+      file,
+      previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : null,
+      status: "uploading" as const,
+    }));
+    setPendingFiles((prev) => [...prev, ...newPending]);
 
-      for (const file of Array.from(files)) {
+    // Upload all files in parallel
+    const results = await Promise.allSettled(
+      newPending.map(async (pf) => {
         const formData = new FormData();
         formData.append("conversationId", convId);
-        formData.append("file", file);
+        formData.append("file", pf.file);
 
         const response = await fetch("/api/uploads", {
           method: "POST",
@@ -425,16 +457,59 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
         }
 
         const body = (await response.json()) as { attachment: AttachmentDto };
-        uploaded.push(body.attachment);
-      }
+        return { clientId: pf.clientId, attachment: body.attachment };
+      }),
+    );
 
-      setComposerAttachments((existing) => [...existing, ...uploaded]);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to upload attachment.");
-    } finally {
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
+    // Process results: update pending entries and collect successful attachments
+    const successAttachments: AttachmentDto[] = [];
+    const updatedStatuses = new Map<string, Partial<PendingFile>>();
+
+    for (const result of results) {
+      if (result.status === "fulfilled") {
+        const { clientId, attachment } = result.value;
+        successAttachments.push(attachment);
+        updatedStatuses.set(clientId, { status: "done", attachment });
+        // Preserve the local object URL for image preview (avoids Anthropic API round-trip)
+        const pf = newPending.find((p) => p.clientId === clientId);
+        if (pf?.previewUrl) {
+          previewUrlMapRef.current.set(attachment.id, pf.previewUrl);
+        }
+      } else {
+        // Find the matching pending file for this error
+        const idx = results.indexOf(result);
+        const pf = newPending[idx];
+        if (pf) {
+          updatedStatuses.set(pf.clientId, {
+            status: "error",
+            error: result.reason instanceof Error ? result.reason.message : "Upload failed.",
+          });
+        }
       }
+    }
+
+    // Update pending file statuses
+    setPendingFiles((prev) =>
+      prev
+        .map((pf) => {
+          const update = updatedStatuses.get(pf.clientId);
+          return update ? { ...pf, ...update } : pf;
+        })
+        // Remove completed entries (keep errors so user can dismiss)
+        .filter((pf) => pf.status !== "done"),
+    );
+
+    // Add successful uploads to composer attachments (deduplicate by ID)
+    if (successAttachments.length > 0) {
+      setComposerAttachments((existing) => {
+        const existingIds = new Set(existing.map((a) => a.id));
+        const newOnes = successAttachments.filter((a) => !existingIds.has(a.id));
+        return [...existing, ...newOnes];
+      });
+    }
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
     }
   }
 
@@ -456,6 +531,11 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
     setErrorMessage(null);
     setComposerValue("");
     setComposerAttachments([]);
+    // Clean up preview URLs — attachments are now part of the run
+    for (const url of previewUrlMapRef.current.values()) {
+      URL.revokeObjectURL(url);
+    }
+    previewUrlMapRef.current.clear();
     setLiveRun({
       runId: null,
       userPrompt: prompt,
@@ -768,6 +848,8 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
 
   function handleSend() {
     if (!composerValue.trim() || isSending) return;
+    // Block send while any files are still uploading
+    if (pendingFiles.some((pf) => pf.status === "uploading")) return;
 
     const prompt = composerValue.trim();
     const attachments = composerAttachments;
@@ -775,6 +857,12 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
     if (activeConversation) {
       // Existing chat — stream directly
       void startStream(activeConversation.id, prompt, attachments, false);
+    } else if (stagedConversationIdRef.current) {
+      // Conversation was pre-created by upload — reuse it
+      const stagedId = stagedConversationIdRef.current;
+      stagedConversationIdRef.current = null;
+      setPendingMessage({ conversationId: stagedId, prompt, attachments, isNew: false });
+      router.push(`/chat/${stagedId}`);
     } else {
       // New chat — generate UUID, store pending message, navigate instantly
       const newId = crypto.randomUUID();
@@ -1324,13 +1412,37 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
               }
             }}
           >
-            {composerAttachments.length ? (
+            {(composerAttachments.length > 0 || pendingFiles.length > 0) ? (
               <div className="flex flex-wrap gap-2 mb-2">
                 {composerAttachments.map((attachment) => (
                   <AttachmentChip
                     key={attachment.id}
                     attachment={attachment}
-                    onRemove={() => setComposerAttachments((prev) => prev.filter((a) => a.id !== attachment.id))}
+                    previewUrl={previewUrlMapRef.current.get(attachment.id)}
+                    onRemove={() => {
+                      // Revoke cached preview URL when removing
+                      const cached = previewUrlMapRef.current.get(attachment.id);
+                      if (cached) {
+                        URL.revokeObjectURL(cached);
+                        previewUrlMapRef.current.delete(attachment.id);
+                      }
+                      setComposerAttachments((prev) => prev.filter((a) => a.id !== attachment.id));
+                      // Delete from Anthropic Files API + DB (fire-and-forget)
+                      void fetch(`/api/attachments/${attachment.id}`, { method: "DELETE" });
+                    }}
+                  />
+                ))}
+                {pendingFiles.map((pf) => (
+                  <AttachmentChip
+                    key={pf.clientId}
+                    pendingFile={pf}
+                    onRemove={pf.status === "error" ? () => {
+                      setPendingFiles((prev) => {
+                        const removed = prev.find((p) => p.clientId === pf.clientId);
+                        if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl);
+                        return prev.filter((p) => p.clientId !== pf.clientId);
+                      });
+                    } : undefined}
                   />
                 ))}
               </div>
@@ -1538,7 +1650,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                       void handleSend();
                     }
                   }}
-                  disabled={liveRun?.status !== "running" && (!composerValue.trim() || isSending)}
+                  disabled={liveRun?.status !== "running" && (!composerValue.trim() || isSending || pendingFiles.some((pf) => pf.status === "uploading"))}
                   aria-label={liveRun?.status === "running" ? "Stop response" : "Send message"}
                 >
                   {liveRun?.status === "running" ? (
