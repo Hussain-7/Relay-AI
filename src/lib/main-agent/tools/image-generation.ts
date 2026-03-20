@@ -45,12 +45,13 @@ async function resolveInputImage(attachmentId: string, userId: string) {
       id: true,
       content: true,
       mediaType: true,
+      metadataJson: true,
       conversation: { select: { userId: true } },
       run: { select: { userId: true } },
     },
   });
 
-  if (!attachment?.content) {
+  if (!attachment) {
     throw new Error(`Attachment ${attachmentId} not found.`);
   }
 
@@ -59,8 +60,29 @@ async function resolveInputImage(attachmentId: string, userId: string) {
     throw new Error("You do not have access to this attachment.");
   }
 
+  // If content bytes are stored in DB, use them directly
+  if (attachment.content) {
+    return {
+      base64: Buffer.from(attachment.content).toString("base64"),
+      mimeType: attachment.mediaType,
+    };
+  }
+
+  // Fall back to downloading from publicUrl (generated images are stored in Supabase Storage)
+  const meta = attachment.metadataJson as Record<string, unknown> | null;
+  const publicUrl = meta?.publicUrl as string | undefined;
+  if (!publicUrl) {
+    throw new Error(`Attachment ${attachmentId} has no content and no public URL.`);
+  }
+
+  console.log(`[image_generation] Downloading input image from public URL: ${publicUrl}`);
+  const response = await fetch(publicUrl);
+  if (!response.ok) {
+    throw new Error(`Failed to download image from ${publicUrl}: ${response.status}`);
+  }
+  const buffer = Buffer.from(await response.arrayBuffer());
   return {
-    base64: Buffer.from(attachment.content).toString("base64"),
+    base64: buffer.toString("base64"),
     mimeType: attachment.mediaType,
   };
 }
@@ -81,7 +103,11 @@ async function generateWithImagen(prompt: string, modelId: string, aspectRatio: 
   const imageBytes = response.generatedImages?.[0]?.image?.imageBytes;
   if (!imageBytes) {
     console.error("[image_generation] Imagen returned no image data. Response:", JSON.stringify(response).slice(0, 500));
-    throw new Error("Imagen returned no image data.");
+    throw new Error(
+      "Imagen returned no image data. This usually means the prompt was blocked by the safety filter " +
+      "(e.g. references to real people, celebrities, copyrighted characters, or violent/sensitive content). " +
+      "Try rephrasing without real names or identifiable individuals.",
+    );
   }
 
   console.log(`[image_generation] Imagen returned image: ${imageBytes.length} chars base64`);

@@ -118,9 +118,13 @@ export function ApprovalCard({ entry }: { entry: ApprovalEntry }) {
             type="button"
             disabled={submitting || !freeformText.trim()}
             onClick={() => handleSubmit()}
-            className="rounded-lg bg-[rgba(255,255,255,0.08)] px-3.5 py-1.5 text-[0.88rem] text-[rgba(245,240,232,0.85)] transition-colors hover:bg-[rgba(255,255,255,0.12)] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            className="inline-grid place-items-center rounded-lg bg-[rgba(255,255,255,0.08)] px-3.5 py-1.5 text-[0.88rem] text-[rgba(245,240,232,0.85)] transition-colors hover:bg-[rgba(255,255,255,0.12)] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
           >
-            Send
+            {submitting ? (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3.5 8.5l3 3 6-7" />
+              </svg>
+            ) : "Send"}
           </button>
         </div>
       ) : null}
@@ -134,9 +138,6 @@ export function ApprovalCard({ entry }: { entry: ApprovalEntry }) {
         >
           Dismiss
         </button>
-        {submitting ? (
-          <span className="text-[0.78rem] text-[rgba(232,210,162,0.6)] activity-shimmer">Sending…</span>
-        ) : null}
       </div>
     </div>
   );

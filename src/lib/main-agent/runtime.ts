@@ -87,7 +87,7 @@ export async function streamMainAgentRun(input: {
         const anthropic = hasAnthropicApiKey() ? getAnthropicClient() : null;
 
         // All independent reads in parallel — single DB round-trip
-        const [conversationWithSession, attachments, messageHistory, configuredMcpServers, activeCodingSession] = await Promise.all([
+        const [conversationWithSession, attachments, messageHistory, configuredMcpServers, activeCodingSession, priorOutputImages] = await Promise.all([
           prisma.conversation.findUniqueOrThrow({
             where: { id: input.conversationId },
             include: {
@@ -131,6 +131,18 @@ export async function streamMainAgentRun(input: {
             orderBy: { updatedAt: "desc" },
             select: { id: true, status: true, sandboxId: true, workspacePath: true, branch: true },
           }),
+          // Output attachments from previous runs (generated images, skill outputs)
+          // so the agent can reference them by ID for editing/follow-up
+          prisma.attachment.findMany({
+            where: {
+              conversationId: input.conversationId,
+              metadataJson: { path: ["source"], not: "user_upload" },
+              kind: "IMAGE",
+            },
+            select: { id: true, filename: true, mediaType: true, metadataJson: true },
+            orderBy: { createdAt: "desc" },
+            take: 10,
+          }),
         ]);
 
         const conversation = conversationWithSession;
@@ -161,9 +173,22 @@ export async function streamMainAgentRun(input: {
               }]
             : [];
 
+        // Include output images from previous runs so the agent can reference them for editing
+        const outputAttachmentBlock: BetaContentBlockParam[] =
+          priorOutputImages.length > 0
+            ? [{
+                type: "text" as const,
+                text: `[Previously generated images in this conversation: ${priorOutputImages.map((a) => {
+                  const meta = a.metadataJson as Record<string, unknown> | null;
+                  return `${a.filename} (id: ${a.id}, model: ${meta?.model ?? "unknown"})`;
+                }).join(", ")}. Use these IDs with imageAttachmentId to edit them.]`,
+              }]
+            : [];
+
         const userContent: BetaContentBlockParam[] = [
           ...attachmentBlocks,
           ...attachmentIdBlock,
+          ...outputAttachmentBlock,
           {
             type: "text",
             text: input.prompt,
