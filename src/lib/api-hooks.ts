@@ -225,12 +225,10 @@ export function useCreateConversation() {
         queryClient.setQueryData(queryKeys.conversations, context.previous);
       }
     },
-    onSettled: () => {
-      // Mark stale but don't refetch immediately — an eager refetch races with the
-      // SSE title update: it hits the server before the title is generated, returns
-      // "New chat", and overwrites the correct title patched by the streaming event.
-      void queryClient.invalidateQueries({ queryKey: queryKeys.conversations, refetchType: "none" });
-    },
+    // No onSettled invalidation — the optimistic update (onMutate/onSuccess) already has
+    // correct data, and the SSE title event patches both caches. An eager refetch here
+    // races with the title generation (returns "New chat" and overwrites the patched title)
+    // and can return stale data for fresh users. staleTime (30s) handles natural refresh.
   });
 }
 
