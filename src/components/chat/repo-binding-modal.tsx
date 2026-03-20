@@ -146,7 +146,7 @@ export function RepoBindingModal({
       onClick={onClose}
     >
       <div
-        className="w-[min(560px,92vw)] h-[min(75vh,620px)] flex flex-col border border-[rgba(255,255,255,0.08)] rounded-[20px] bg-[rgba(30,28,24,0.98)] shadow-[0_24px_64px_rgba(0,0,0,0.55)] overflow-hidden"
+        className={`w-[min(560px,92vw)] flex flex-col border border-[rgba(255,255,255,0.08)] rounded-[20px] bg-[rgba(30,28,24,0.98)] shadow-[0_24px_64px_rgba(0,0,0,0.55)] overflow-hidden ${isGithubInstalled ? "h-[min(75vh,620px)]" : ""}`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -155,15 +155,17 @@ export function RepoBindingModal({
             Connect repository
           </h2>
           <div className="flex items-center gap-1">
-            <button
-              type="button"
-              className="inline-grid h-7 w-7 place-items-center border-0 bg-transparent text-[rgba(236,230,219,0.4)] cursor-pointer rounded-[8px] transition-[background,color] duration-140 hover:bg-[rgba(255,255,255,0.06)] hover:text-[rgba(247,242,233,0.8)] disabled:opacity-30 disabled:cursor-not-allowed"
-              title="Refresh repos"
-              disabled={refreshMutation.isPending}
-              onClick={() => refreshMutation.mutate()}
-            >
-              <IconRefresh spinning={refreshMutation.isPending} />
-            </button>
+            {isGithubInstalled && (
+              <button
+                type="button"
+                className="inline-grid h-7 w-7 place-items-center border-0 bg-transparent text-[rgba(236,230,219,0.4)] cursor-pointer rounded-[8px] transition-[background,color] duration-140 hover:bg-[rgba(255,255,255,0.06)] hover:text-[rgba(247,242,233,0.8)] disabled:opacity-30 disabled:cursor-not-allowed"
+                title="Refresh repos"
+                disabled={refreshMutation.isPending}
+                onClick={() => refreshMutation.mutate()}
+              >
+                <IconRefresh spinning={refreshMutation.isPending} />
+              </button>
+            )}
             <button
               type="button"
               className="inline-grid h-7 w-7 place-items-center border-0 bg-transparent text-[rgba(236,230,219,0.4)] cursor-pointer rounded-[8px] transition-[background,color] duration-140 hover:bg-[rgba(255,255,255,0.06)] hover:text-[rgba(247,242,233,0.8)]"
@@ -175,7 +177,7 @@ export function RepoBindingModal({
         </div>
 
         {!isGithubInstalled ? (
-          <div className="flex flex-col items-center justify-center py-10 px-5 gap-3">
+          <div className="flex flex-col items-center justify-center py-12 px-5 gap-3">
             <span className="text-[rgba(245,240,232,0.5)]"><IconGithub /></span>
             <span className="text-[rgba(245,240,232,0.5)] text-[0.88rem]">GitHub App not installed</span>
             <span className="text-[rgba(245,240,232,0.3)] text-[0.8rem] text-center">

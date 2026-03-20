@@ -78,7 +78,7 @@ export function ComposerPlusMenuPortal({
         <span className="inline-grid shrink-0 place-items-center text-[rgba(245,240,232,0.56)]">
           <IconGithub />
         </span>
-        {hasLinkedRepo ? "Repo connected" : "Connect repo"}
+        {hasLinkedRepo ? "Repository connected" : "Select a repository"}
       </button>
     </div>,
     document.body,
