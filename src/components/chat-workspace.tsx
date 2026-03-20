@@ -865,10 +865,17 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
               codingSession: null,
             };
 
+            // Replace the run if it already exists (background refetch may have added it
+            // while still RUNNING), otherwise append.
+            const existingIndex = old.runs.findIndex((r) => r.id === newRun.id);
+            const updatedRuns = existingIndex >= 0
+              ? old.runs.map((r) => r.id === newRun.id ? newRun : r)
+              : [...old.runs, newRun];
+
             return {
               ...old,
               updatedAt: now,
-              runs: [...old.runs, newRun],
+              runs: updatedRuns,
             };
           },
         );
