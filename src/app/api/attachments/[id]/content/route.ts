@@ -31,10 +31,15 @@ export async function GET(
   // Convert Prisma Buffer to Uint8Array for Response compatibility
   const bytes = new Uint8Array(attachment.content);
 
+  // Sanitize filename for Content-Disposition: ASCII fallback + RFC 5987 UTF-8 variant
+  const rawFilename = attachment.filename;
+  const asciiFilename = rawFilename.replace(/[^\x20-\x7E]/g, "_");
+  const encodedFilename = encodeURIComponent(rawFilename).replace(/'/g, "%27");
+
   return new Response(bytes, {
     headers: {
       "Content-Type": attachment.mediaType,
-      "Content-Disposition": `inline; filename="${attachment.filename}"`,
+      "Content-Disposition": `inline; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`,
       "Cache-Control": "private, max-age=3600",
       "Content-Length": String(bytes.byteLength),
     },

@@ -73,11 +73,19 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
     [router],
   );
 
-  // Suppress detail fetch when: (1) a pending message is about to create this conversation,
-  // or (2) a liveRun is active (tracked via ref to avoid declaration-order issues).
+  // Suppress detail fetch only for genuinely new conversations that haven't been created yet.
+  // If cached data exists (existing conversation), keep the query active so previous runs
+  // remain visible while a new liveRun streams. The liveRunRef bridges the gap between
+  // pending-message consumption and createMutation resolution for new conversations.
   const liveRunRef = useRef(false);
+  // Tracks which conversation has had startStream() called — set inside the effect chain
+  // so it's visible to Strict Mode's second effect run (unlike liveRunRef which is render-time).
+  const streamStartedForRef = useRef<string | null>(null);
+  const cachedDetail = activeConversationId
+    ? queryClient.getQueryData<ConversationDetailDto>(queryKeys.conversation(activeConversationId))
+    : null;
   const hasPendingForThis = Boolean(
-    activeConversationId && (
+    activeConversationId && !cachedDetail && (
       peekPendingMessage()?.conversationId === activeConversationId ||
       liveRunRef.current
     ),
@@ -212,9 +220,11 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   const hasLiveContent = Boolean(liveRun);
   const isLandingState = !hasLiveContent && (isNewChat || (!isLoadingDetail && runs.length === 0));
 
-  // Clear liveRun once the fetched runs include it — seamless swap, no scroll manipulation.
+  // Clear liveRun once the fetched runs include a *completed* version — seamless swap.
+  // The status check prevents premature clearing if a background refetch returns
+  // the run while it's still RUNNING on the server.
   useEffect(() => {
-    if (liveRun?.runId && runs.some((r) => r.id === liveRun.runId)) {
+    if (liveRun?.runId && runs.some((r) => r.id === liveRun.runId && r.status !== "RUNNING")) {
       setLiveRun(null);
     }
   }, [runs, liveRun]);
@@ -236,8 +246,16 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
     wasLandingRef.current = isNewChat;
   }, [isLandingState, isNewChat]);
 
-  // Reset staged state on navigation
+  // Reset staged state on navigation — skip if a pending message targets this
+  // conversation (the sibling effect will consume pending state), or if startStream
+  // already ran for this conversation (guards against React Strict Mode's second
+  // effect run where the pending message was consumed but blob URLs must survive).
   useEffect(() => {
+    const pendingForThis = activeConversationId
+      && peekPendingMessage()?.conversationId === activeConversationId;
+    const streamForThis = streamStartedForRef.current === activeConversationId;
+    if (pendingForThis || streamForThis) return;
+
     setPendingFiles((prev) => {
       for (const pf of prev) {
         if (pf.previewUrl) URL.revokeObjectURL(pf.previewUrl);
@@ -251,10 +269,21 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
     setStagedRepoBinding(null);
   }, [activeConversationId]);
 
+  // Clear staged repo binding once the real linked binding arrives
+  useEffect(() => {
+    if (activeConversation?.repoBinding && stagedRepoBinding) {
+      setStagedRepoBinding(null);
+    }
+  }, [activeConversation?.repoBinding, stagedRepoBinding]);
+
   // Auto-send pending message when navigating to a new chat page
   const handlePendingMessage = useEffectEvent((convId: string) => {
     const pending = consumePendingMessage();
     if (pending && pending.conversationId === convId) {
+      // Restore staged repo binding so the chip shows immediately (before mutation resolves)
+      if (pending.stagedRepoBindingId && pending.stagedRepoFullName) {
+        setStagedRepoBinding({ id: pending.stagedRepoBindingId, repoFullName: pending.stagedRepoFullName });
+      }
       void startStream(convId, pending.prompt, pending.attachments, pending.isNew ?? true, {
         stagedFiles: pending.stagedFiles,
         stagedRepoBindingId: pending.stagedRepoBindingId,
@@ -330,13 +359,21 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   }, [activeConversationId]);
 
   const filteredConversations = useMemo(() => {
+    // Deduplicate — optimistic updates + concurrent invalidations can briefly produce duplicates
+    const seen = new Set<string>();
+    const deduped = conversations.filter((c) => {
+      if (seen.has(c.id)) return false;
+      seen.add(c.id);
+      return true;
+    });
+
     const query = deferredSidebarQuery.trim().toLowerCase();
 
     if (!query) {
-      return conversations;
+      return deduped;
     }
 
-    return conversations.filter((conversation) => {
+    return deduped.filter((conversation) => {
       return (
         conversation.title.toLowerCase().includes(query) ||
         previewText(conversation.latestSnippet).toLowerCase().includes(query)
@@ -518,14 +555,43 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
     setErrorMessage(null);
     setComposerValue("");
     setComposerAttachments([]);
+    // Mark this conversation so the cleanup effect skips revocation (survives Strict Mode re-runs)
+    streamStartedForRef.current = conversationId;
     setPendingFiles([]);
     // NOTE: preview URLs are NOT revoked here — the run thread still needs them.
     // They are revoked on navigation (activeConversationId effect).
-    setStagedRepoBinding(null);
+    // NOTE: stagedRepoBinding is NOT cleared here — it bridges the gap until
+    // activeConversation.repoBinding is populated by the link mutation.
+    // Build placeholder AttachmentDtos from staged files so chips show immediately
+    // (before the upload round-trip completes). They'll be replaced with real ones after upload.
+    const placeholderAttachments: AttachmentDto[] = (opts?.stagedFiles ?? []).map((sf) => {
+      const mt = sf.file.type || "application/octet-stream";
+      const kind: AttachmentDto["kind"] = mt.startsWith("image/")
+        ? "IMAGE"
+        : mt === "application/pdf"
+          ? "PDF"
+          : "OTHER";
+      return {
+        id: sf.clientId,
+        kind,
+        filename: sf.file.name,
+        mediaType: mt,
+        sizeBytes: sf.file.size,
+        anthropicFileId: null,
+        createdAt: new Date().toISOString(),
+        metadataJson: sf.previewUrl ? { localPreviewUrl: sf.previewUrl } : null,
+      };
+    });
+    // Seed previewUrlMap with placeholder IDs so image thumbnails render during upload
+    for (const sf of opts?.stagedFiles ?? []) {
+      if (sf.previewUrl) {
+        previewUrlMapRef.current.set(sf.clientId, sf.previewUrl);
+      }
+    }
     setLiveRun({
       runId: null,
       userPrompt: prompt,
-      attachments,
+      attachments: [...attachments, ...placeholderAttachments],
       outputAttachments: [],
       events: [],
       partialText: "",
@@ -534,13 +600,14 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
     });
 
     try {
-      // Create the conversation in DB if this is a new chat
+      // Create the conversation in DB if this is a new chat (atomically with repo binding)
       if (isNew) {
-        await createMutation.mutateAsync({ id: conversationId });
-      }
-
-      // Link repo binding if staged — await so the detail query sees it immediately
-      if (opts?.stagedRepoBindingId) {
+        await createMutation.mutateAsync({
+          id: conversationId,
+          repoBindingId: opts?.stagedRepoBindingId ?? undefined,
+        });
+      } else if (opts?.stagedRepoBindingId) {
+        // Existing conversation — link repo binding separately
         await linkRepoMutation.mutateAsync({ conversationId, repoBindingId: opts.stagedRepoBindingId });
       }
 
@@ -780,7 +847,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
               updatedAt: now,
               completedAt: completedEvent || cancelledEvent ? now : null,
               cancelledAt: cancelledEvent ? now : null,
-              attachments: attachments,
+              attachments: allAttachments,
               outputAttachments: patchOutputAttachments,
               approvals: [],
               events: allEvents.filter((e) => e.runId === lastRunId),
@@ -814,11 +881,12 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
         // Mark liveRun as completed (stops cursor/spinner) but keep it rendered.
         setLiveRun((prev) => prev ? { ...prev, status: "completed" } : prev);
 
-        // Mark stale for next navigation.
-        void queryClient.invalidateQueries({
-          queryKey: queryKeys.conversation(conversationId),
-          refetchType: "none",
-        });
+        // Mark the conversations list stale for next navigation.
+        // NOTE: Do NOT invalidate the detail query here — the cache was just patched
+        // with the completed run. Invalidating would trigger a background refetch when
+        // the detail query re-enables (hasPendingForThis goes false), and if the server
+        // hasn't persisted the run yet, the refetch overwrites the patch and the run
+        // disappears. staleTime (30s) handles natural refresh on subsequent navigations.
         void queryClient.invalidateQueries({
           queryKey: queryKeys.conversations,
           refetchType: "none",
@@ -882,7 +950,9 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
         attachments,
         stagedFiles: stagedFiles.length > 0 ? stagedFiles : undefined,
         stagedRepoBindingId: stagedRepoBinding?.id ?? undefined,
+        stagedRepoFullName: stagedRepoBinding?.repoFullName ?? undefined,
       });
+      setIsSending(true);
       router.push(`/chat/${newId}`);
     }
   }
@@ -1706,6 +1776,8 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                       <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5" />
                       <rect x="5.5" y="5.5" width="5" height="5" rx="0.5" fill="currentColor" />
                     </svg>
+                  ) : isSending ? (
+                    <div className="h-4 w-4 rounded-full border-2 border-[rgba(255,255,255,0.3)] border-t-white animate-spin" />
                   ) : (
                     <IconArrowUp />
                   )}

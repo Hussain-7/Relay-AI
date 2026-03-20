@@ -165,10 +165,10 @@ export function useCreateConversation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (vars?: { id?: string }) => {
+    mutationFn: async (vars?: { id?: string; repoBindingId?: string }) => {
       const data = await api.post<{ conversation: ConversationDetailDto }>(
         "/api/conversations",
-        { id: vars?.id },
+        { id: vars?.id, repoBindingId: vars?.repoBindingId },
       );
       return data.conversation;
     },
@@ -177,6 +177,13 @@ export function useCreateConversation() {
       const previous = queryClient.getQueryData<ConversationSummaryDto[]>(
         queryKeys.conversations,
       );
+
+      // Resolve repoFullName from cached repo bindings for the optimistic entry
+      let repoFullName: string | null = null;
+      if (vars?.repoBindingId) {
+        const repoData = queryClient.getQueryData<RepoBindingsData>(queryKeys.repoBindings);
+        repoFullName = repoData?.bindings.find((b) => b.id === vars.repoBindingId)?.repoFullName ?? null;
+      }
 
       const optimisticId = vars?.id ?? `temp-${Date.now()}`;
       const now = new Date().toISOString();
@@ -190,7 +197,7 @@ export function useCreateConversation() {
         latestRunStatus: null,
         latestSnippet: null,
         codingStatus: null,
-        repoFullName: null,
+        repoFullName,
       };
 
       queryClient.setQueryData<ConversationSummaryDto[]>(

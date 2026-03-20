@@ -15,6 +15,8 @@ interface PendingMessage {
   stagedFiles?: StagedFile[];
   /** Repo binding to link after conversation creation. */
   stagedRepoBindingId?: string | null;
+  /** Full name (owner/repo) for immediate chip display on the destination page. */
+  stagedRepoFullName?: string | null;
   isNew?: boolean;
 }
 

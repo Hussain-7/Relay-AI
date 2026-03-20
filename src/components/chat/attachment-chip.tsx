@@ -88,8 +88,11 @@ export function AttachmentChip(props: AttachmentCardProps) {
     badge = getFileTypeBadge(att);
     isImage = att.kind === "IMAGE" && isImageMediaType(att.mediaType);
     if (isImage) {
-      // Prefer local object URL (fast, no API round-trip) over Anthropic Files API download
-      thumbnailSrc = props.previewUrl ?? `/api/attachments/${att.id}/content`;
+      // Prefer local object URL (fast, no API round-trip) over Anthropic Files API download.
+      // localPreviewUrl in metadataJson is set by placeholder attachments (staged files during
+      // /chat/new → /chat/[id] transition) and avoids relying on the mutable previewUrlMap ref.
+      const localUrl = (att.metadataJson as Record<string, unknown> | null)?.localPreviewUrl as string | undefined;
+      thumbnailSrc = props.previewUrl ?? localUrl ?? `/api/attachments/${att.id}/content`;
     }
   }
 

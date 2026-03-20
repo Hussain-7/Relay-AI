@@ -7,6 +7,7 @@ import { getCached, invalidateCache } from "@/lib/server-cache";
 const createConversationSchema = z.object({
   id: z.string().uuid().optional(),
   title: z.string().trim().optional(),
+  repoBindingId: z.string().uuid().optional(),
 });
 
 export async function GET(request: Request) {
@@ -39,6 +40,7 @@ export async function POST(request: Request) {
       userId: user.userId,
       id: body.id,
       title: body.title,
+      repoBindingId: body.repoBindingId,
     });
     const detail = await getConversationDetail({
       conversationId: conversation.id,

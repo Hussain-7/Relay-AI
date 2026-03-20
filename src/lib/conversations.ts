@@ -218,12 +218,14 @@ export async function createConversationForUser(input: {
   userId: string;
   id?: string;
   title?: string;
+  repoBindingId?: string;
 }) {
   return prisma.conversation.create({
     data: {
       ...(input.id ? { id: input.id } : {}),
       userId: input.userId,
       title: input.title?.trim() || "New chat",
+      ...(input.repoBindingId ? { repoBindingId: input.repoBindingId } : {}),
       mainAgentSession: {
         create: {
           userId: input.userId,
