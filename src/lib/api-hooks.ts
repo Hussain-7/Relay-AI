@@ -226,7 +226,10 @@ export function useCreateConversation() {
       }
     },
     onSettled: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.conversations });
+      // Mark stale but don't refetch immediately — an eager refetch races with the
+      // SSE title update: it hits the server before the title is generated, returns
+      // "New chat", and overwrites the correct title patched by the streaming event.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.conversations, refetchType: "none" });
     },
   });
 }

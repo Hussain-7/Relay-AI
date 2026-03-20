@@ -125,7 +125,7 @@ export function getAssistantHistoryContent(content: unknown): BetaContentBlockPa
     return "";
   }
 
-  return content
+  const textBlocks = content
     .filter((block): block is BetaContentBlockParam => {
       return typeof block === "object" && block != null && "type" in block && block.type === "text";
     })
@@ -140,4 +140,12 @@ export function getAssistantHistoryContent(content: unknown): BetaContentBlockPa
       }
       return block;
     });
+
+  // If no text blocks survived (e.g. response was purely tool use), synthesize
+  // a placeholder so the message isn't dropped and conversation alternation is preserved.
+  if (textBlocks.length === 0) {
+    return [{ type: "text" as const, text: "[Previous response used tools without a text summary.]" }];
+  }
+
+  return textBlocks;
 }

@@ -220,14 +220,12 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   const hasLiveContent = Boolean(liveRun);
   const isLandingState = !hasLiveContent && (isNewChat || (!isLoadingDetail && runs.length === 0));
 
-  // Clear liveRun once the fetched runs include a *completed* version — seamless swap.
-  // The status check prevents premature clearing if a background refetch returns
-  // the run while it's still RUNNING on the server.
-  useEffect(() => {
-    if (liveRun?.runId && runs.some((r) => r.id === liveRun.runId && r.status !== "RUNNING")) {
-      setLiveRun(null);
-    }
-  }, [runs, liveRun]);
+  // No immediate liveRun clearing effect — the liveRun div is already suppressed by the
+  // render guard (`!runs.some(r => r.id === liveRun.runId)`) as soon as the fetched runs
+  // include it. Eagerly calling setLiveRun(null) caused a DOM swap between the liveRun
+  // wrapper and the fetched-run wrapper (different minHeights, different React nodes),
+  // triggering a browser layout shift that scrolled the page up.
+  // liveRun is cleaned up naturally on navigation (handleSelectConversation / new mount).
 
   // Only animate the composer dock when going from the /chat/new landing to a conversation
   // (first message sent). Don't animate when switching between existing chats.
@@ -1078,7 +1076,11 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                   className={`flex w-full items-center border-0 rounded-[10px] text-inherit cursor-pointer py-[9px] pr-[34px] pl-2.5 text-left transition-[background] duration-[140ms] ease-linear hover:bg-[#2f2f2d] ${isActive ? "bg-[#2f2f2d]" : "bg-transparent"}`}
                   onClick={() => handleSelectConversation(conversation.id)}
                 >
-                  <div className={`text-[0.88rem] font-[420] text-[rgba(242,237,229,0.82)] whitespace-nowrap overflow-hidden text-ellipsis ${isActive ? "text-[rgba(247,242,233,0.96)]" : "group-hover/row:text-[rgba(247,242,233,0.96)]"}`}>{conversation.title}</div>
+                  <div className={`text-[0.88rem] font-[420] text-[rgba(242,237,229,0.82)] whitespace-nowrap overflow-hidden text-ellipsis ${isActive ? "text-[rgba(247,242,233,0.96)]" : "group-hover/row:text-[rgba(247,242,233,0.96)]"}`}>
+                    {isActive && conversation.title === "New chat" && liveRun ? (
+                      <span className="inline-block w-[100px] h-[0.88em] rounded-[3px] bg-[rgba(255,255,255,0.08)] animate-pulse" />
+                    ) : conversation.title}
+                  </div>
                 </button>
 
                 <div className="absolute top-1/2 right-1 -translate-y-1/2" data-chat-action-menu>
@@ -1137,7 +1139,11 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                   className={`flex w-full items-center border-0 rounded-[10px] text-inherit cursor-pointer py-[9px] pr-[34px] pl-2.5 text-left transition-[background] duration-[140ms] ease-linear hover:bg-[#2f2f2d] ${isActive ? "bg-[#2f2f2d]" : "bg-transparent"}`}
                   onClick={() => handleSelectConversation(conversation.id)}
                 >
-                  <div className={`text-[0.88rem] font-[420] text-[rgba(242,237,229,0.82)] whitespace-nowrap overflow-hidden text-ellipsis ${isActive ? "text-[rgba(247,242,233,0.96)]" : "group-hover/row:text-[rgba(247,242,233,0.96)]"}`}>{conversation.title}</div>
+                  <div className={`text-[0.88rem] font-[420] text-[rgba(242,237,229,0.82)] whitespace-nowrap overflow-hidden text-ellipsis ${isActive ? "text-[rgba(247,242,233,0.96)]" : "group-hover/row:text-[rgba(247,242,233,0.96)]"}`}>
+                    {isActive && conversation.title === "New chat" && liveRun ? (
+                      <span className="inline-block w-[100px] h-[0.88em] rounded-[3px] bg-[rgba(255,255,255,0.08)] animate-pulse" />
+                    ) : conversation.title}
+                  </div>
                 </button>
 
                 <div className="absolute top-1/2 right-1 -translate-y-1/2" data-chat-action-menu>
@@ -1299,7 +1305,13 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                     setHeaderMenuOpen((current) => !current);
                   }}
                 >
-                  <span className="min-w-0 flex-[0_1_auto] p-0 text-[0.96rem] font-[430] leading-[1.2] whitespace-nowrap overflow-hidden text-ellipsis max-[980px]:text-[0.92rem] max-[980px]:p-0 max-[980px]:whitespace-nowrap">{activeConversation.title}</span>
+                  {activeConversation.title === "New chat" && liveRun ? (
+                    <span className="min-w-0 flex-[0_1_auto] p-0 text-[0.96rem] font-[430] leading-[1.2] whitespace-nowrap overflow-hidden text-ellipsis max-[980px]:text-[0.92rem]">
+                      <span className="inline-block w-[140px] h-[1em] rounded-[4px] bg-[rgba(255,255,255,0.08)] animate-pulse" />
+                    </span>
+                  ) : (
+                    <span className="min-w-0 flex-[0_1_auto] p-0 text-[0.96rem] font-[430] leading-[1.2] whitespace-nowrap overflow-hidden text-ellipsis max-[980px]:text-[0.92rem] max-[980px]:p-0 max-[980px]:whitespace-nowrap">{activeConversation.title}</span>
+                  )}
                   <span className="hidden" aria-hidden="true" />
                   <span className={`inline-grid w-auto place-items-center text-[rgba(245,240,232,0.54)] transition-[transform,color] duration-[180ms] ease-linear max-[980px]:w-auto ${headerMenuOpen ? "rotate-180 text-[rgba(245,240,232,0.9)]" : ""}`} aria-hidden="true">
                     <IconChevron />
@@ -1326,13 +1338,11 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                   />
                 ) : null}
               </div>
-            ) : isLoadingDetail ? (
-              <div className="min-w-0 flex-[0_1_auto] py-1.5 px-2.5">
-                <div className="h-[14px] w-[140px] rounded-[4px] bg-[rgba(255,255,255,0.08)] animate-pulse" />
+            ) : activeConversationId ? (
+              <div className="min-w-0 flex-[0_1_auto] py-1.5 px-2.5 text-[0.96rem] leading-[1.2]">
+                <span className="inline-block w-[140px] h-[1em] rounded-[4px] bg-[rgba(255,255,255,0.08)] animate-pulse align-middle" />
               </div>
-            ) : (
-              <div className="invisible min-w-0 flex-[0_1_auto] py-1.5 px-2.5 text-[0.96rem] font-[430] leading-[1.2] whitespace-nowrap overflow-hidden text-ellipsis">New chat</div>
-            )}
+            ) : null}
           </div>
         </header>
 
