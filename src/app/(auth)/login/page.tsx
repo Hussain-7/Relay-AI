@@ -106,6 +106,17 @@ const CAPABILITIES = [
   {
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6">
+        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+        <circle cx="8.5" cy="8.5" r="1.5" />
+        <polyline points="21 15 16 10 5 21" />
+      </svg>
+    ),
+    title: "Image Generation & Editing",
+    description: "Generate and edit images with Imagen 4 and Gemini models. Create visuals from text prompts, then iterate with follow-up edits in the same conversation.",
+  },
+  {
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6">
         <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
       </svg>
     ),
@@ -292,7 +303,7 @@ function LoginContent() {
                 </div>
               </div>
               <ul className="space-y-2.5">
-                {["Web search & fetch with citations", "File uploads & document analysis", "Code execution for quick analysis", "Document generation (xlsx, pptx, docx, pdf)", "MCP tool integrations", "Orchestrates coding sessions"].map((item) => (
+                {["Web search & fetch with citations", "File uploads & document analysis", "Image generation & editing (Imagen 4, Gemini)", "Code execution for quick analysis", "Document generation (xlsx, pptx, docx, pdf)", "MCP tool integrations", "Orchestrates coding sessions"].map((item) => (
                   <li key={item} className="flex items-start gap-2.5 text-[0.82rem] text-[rgba(245,240,232,0.55)]">
                     <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-accent shrink-0" />
                     {item}
