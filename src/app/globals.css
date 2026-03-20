@@ -56,6 +56,12 @@
     font-family: var(--font-primary-sans), "Segoe UI", sans-serif;
   }
 
+  /* Sonner toasts must escape overflow:hidden on html/body */
+  [data-sonner-toaster] {
+    position: fixed !important;
+    z-index: 9999 !important;
+  }
+
   pre,
   code {
     font-family: var(--font-primary-mono), "SFMono-Regular", Menlo, monospace;

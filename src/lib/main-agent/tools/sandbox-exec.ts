@@ -20,11 +20,13 @@ export function createSandboxExecTool(ctx: ToolRuntimeContext) {
   return betaZodTool({
     name: "sandbox_exec",
     description:
-      "Run a shell command in the ACTIVE E2B sandbox. Use this ONLY after a coding session is already running (via coding_agent). Good for: checking git status, running tests, listing files, installing packages, or verifying changes. Do NOT use this as the first tool — always start a coding session first. Do NOT confuse this with the built-in code_execution tool — code_execution runs short-lived scripts server-side, while sandbox_exec runs commands in the persistent E2B sandbox where the repo is cloned.",
+      "Run a shell command in the ACTIVE E2B sandbox. Use this ONLY after a coding session is already running (via coding_agent). Good for: checking git status, running tests, listing files, installing packages, starting dev servers, or verifying changes. Do NOT use this as the first tool — always start a coding session first. Do NOT confuse this with the built-in code_execution tool — code_execution runs short-lived scripts server-side, while sandbox_exec runs commands in the persistent E2B sandbox where the repo is cloned.\n" +
+      "For long-running processes (dev servers, watchers, etc.), set background=true — the command starts in the background and returns immediately without waiting for it to finish.",
     inputSchema: z.object({
       command: z.string().min(1).describe("The shell command to execute"),
       workspacePath: z.string().optional().describe("Working directory (defaults to the session workspace)"),
-      timeoutMs: z.number().optional().describe("Timeout in ms (default 30s)"),
+      timeoutMs: z.number().optional().describe("Timeout in ms (default 30s). Ignored when background=true."),
+      background: z.boolean().optional().describe("Run the command in the background (nohup). Use for long-running processes like dev servers. Returns immediately."),
     }),
     async run(input) {
       try {
@@ -52,7 +54,36 @@ export function createSandboxExecTool(ctx: ToolRuntimeContext) {
 
         const cwd = input.workspacePath ?? session.workspacePath ?? "/workspace";
 
-        // E2B SDK throws CommandExitError on non-zero exit — catch to capture stdout/stderr
+        // Background mode: start process with nohup and return immediately
+        if (input.background) {
+          const bgCmd = `cd "${cwd}" && nohup ${input.command} > /tmp/bg-cmd.log 2>&1 & echo $!`;
+          let pid = "";
+          try {
+            const result = await sandbox.commands.run(bgCmd, { timeoutMs: 5000 });
+            pid = result.stdout.trim();
+          } catch (cmdError) {
+            const err = cmdError as { stdout?: string; message?: string };
+            pid = err.stdout?.trim() ?? "";
+          }
+
+          const output = {
+            background: true,
+            pid,
+            logFile: "/tmp/bg-cmd.log",
+            message: `Command started in background (PID ${pid}). Check logs with: cat /tmp/bg-cmd.log`,
+          };
+
+          await ctx.emit("tool.call.completed", {
+            toolName: "sandbox_exec",
+            toolRuntime: "custom",
+            input,
+            result: JSON.stringify(output).slice(0, 2000),
+          });
+
+          return jsonResult(output);
+        }
+
+        // Foreground mode: run and wait for completion
         let stdout = "";
         let stderr = "";
         let exitCode = 0;
