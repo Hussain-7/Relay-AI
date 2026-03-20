@@ -299,6 +299,19 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
     const stage = stageRef.current;
     if (!el || !stage) return;
 
+    // Cap scroll: keep at least 200px of the last run's actual content visible.
+    // Uses the .run-thread element (not the min-height wrapper) to find the real content bottom.
+    const lastRunWrapper = latestRunRef.current;
+    if (lastRunWrapper) {
+      const runThread = lastRunWrapper.querySelector(".run-thread") ?? lastRunWrapper;
+      const containerTop = el.getBoundingClientRect().top;
+      const contentBottom = runThread.getBoundingClientRect().bottom - containerTop + el.scrollTop;
+      const maxScrollTop = contentBottom - 200;
+      if (maxScrollTop > 0 && el.scrollTop > maxScrollTop) {
+        el.scrollTop = maxScrollTop;
+      }
+    }
+
     const scrollTop = el.scrollTop;
     const scrollBottom = el.scrollHeight - el.clientHeight - scrollTop;
     stage.dataset.scrollTop = scrollTop > 8 ? "true" : "false";
@@ -1411,8 +1424,12 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                     const isLastCompleted = index === lastRunIndex && !isLiveRunSeparate;
 
                     if (isLastCompleted) {
+                      // Keep min-height only when liveRun just completed for this run (prevents
+                      // scroll jump during the liveRun→fetched swap). On page load or navigation
+                      // liveRun is null so no excessive scrollable space is created.
+                      const justStreamed = liveRun?.runId === run.id;
                       return (
-                        <div key={run.id} ref={latestRunRef} style={{ minHeight: "calc(100vh - 140px)" }}>
+                        <div key={run.id} ref={latestRunRef} style={justStreamed ? { minHeight: "calc(100vh - 140px)" } : undefined}>
                           <RunThread
                             runId={run.id}
                             userPrompt={run.userPrompt}
