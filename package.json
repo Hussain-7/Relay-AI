@@ -2,6 +2,30 @@
   "name": "relay-ai",
   "version": "0.1.0",
   "private": true,
+  "description": "An open-source AI workspace combining chat, research, image generation, document creation, and remote coding sessions — powered by Claude.",
+  "license": "MIT",
+  "author": "Hussain Rizvi",
+  "homepage": "https://relay-ai-delta.vercel.app",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Hussain-7/Relay-AI.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Hussain-7/Relay-AI/issues"
+  },
+  "keywords": [
+    "ai",
+    "claude",
+    "anthropic",
+    "coding-agent",
+    "ai-workspace",
+    "nextjs",
+    "e2b",
+    "github-integration",
+    "mcp",
+    "image-generation",
+    "claude-code"
+  ],
   "packageManager": "pnpm@10.5.2",
   "scripts": {
     "dev": "next dev",

@@ -41,6 +41,7 @@ Whether you need a quick AI chat, a deep research session, or a fully autonomous
 | **GitHub Integration** | Connect repositories, create branches, commit code, and open pull requests |
 | **File Generation & Editing** | Claude creates and modifies files directly inside the sandbox |
 | **Web Search & Fetch** | Built-in tools for real-time web search and URL fetching with citations |
+| **Image Generation & Editing** | Generate images with Imagen 4 and Gemini models, then iterate with edits in the same conversation |
 | **File Attachments** | Upload images, PDFs, and documents into any conversation |
 | **MCP Connector Support** | Extend Claude with custom Model Context Protocol servers and tools |
 | **Persistent Memory** | Per-user and per-conversation memory that carries across sessions |
