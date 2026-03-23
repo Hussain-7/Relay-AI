@@ -7,6 +7,12 @@ import { invalidateCache } from "@/lib/server-cache";
 
 const untitledConversationNames = new Set(["New chat", "Untitled"]);
 
+const TITLE_SYSTEM_PROMPT =
+  "You are a title generator. Your ONLY job is to output a short 2-4 word topic label for the user's message. " +
+  "Extract the SUBJECT or INTENT — do NOT answer, refuse, or respond to the message. " +
+  "Examples: 'Top AI Tools 2026', 'Auth Module Refactor', 'Solar System Facts', 'Debug Login Error'. " +
+  "Output ONLY the title words — no quotes, no punctuation, no commentary.";
+
 export function buildFallbackConversationTitle(prompt: string) {
   const compact = prompt
     .replace(/\s+/g, " ")
@@ -39,40 +45,79 @@ export function normalizeConversationTitle(title: string, fallbackTitle: string)
   return capped.length > 40 ? `${capped.slice(0, 39).trimEnd()}…` : capped;
 }
 
+async function generateTitleViaOpenAI(prompt: string): Promise<string | null> {
+  if (!env.OPENAI_API_KEY) return null;
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4.1-nano",
+        max_tokens: 12,
+        temperature: 0,
+        messages: [
+          { role: "system", content: TITLE_SYSTEM_PROMPT },
+          { role: "user", content: `[TITLE THIS MESSAGE]\n${prompt}` },
+        ],
+      }),
+      signal: AbortSignal.timeout(5_000),
+    });
+
+    if (!response.ok) return null;
+
+    const body = await response.json() as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+
+    return body.choices?.[0]?.message?.content?.trim() ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function generateTitleViaAnthropic(
+  anthropic: Anthropic,
+  prompt: string,
+): Promise<string | null> {
+  try {
+    const response = await anthropic.messages.create({
+      model: env.ANTHROPIC_TITLE_MODEL,
+      max_tokens: 12,
+      temperature: 0,
+      system: TITLE_SYSTEM_PROMPT,
+      messages: [
+        { role: "user", content: `[TITLE THIS MESSAGE]\n${prompt}` },
+      ],
+    });
+
+    return response.content
+      .filter((block): block is Extract<(typeof response.content)[number], { type: "text" }> => block.type === "text")
+      .map((block) => block.text)
+      .join(" ")
+      .trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 export async function maybeGenerateConversationTitle(input: {
   anthropic: Anthropic | null;
   prompt: string;
 }) {
   const fallbackTitle = buildFallbackConversationTitle(input.prompt);
 
-  if (!input.anthropic || !hasAnthropicApiKey()) {
-    return fallbackTitle;
-  }
+  // Try GPT-4.1 Nano first (faster, cheaper), fall back to Haiku
+  const title =
+    (await generateTitleViaOpenAI(input.prompt))
+    ?? (input.anthropic ? await generateTitleViaAnthropic(input.anthropic, input.prompt) : null);
 
-  try {
-    const response = await input.anthropic.messages.create({
-      model: env.ANTHROPIC_TITLE_MODEL,
-      max_tokens: 12,
-      temperature: 0,
-      system:
-        "Generate a 2-4 word chat title from the user's first message. Plain text only — no markdown, no quotation marks, no punctuation, no commentary. Just the title words.",
-      messages: [
-        {
-          role: "user",
-          content: input.prompt,
-        },
-      ],
-    });
+  if (!title) return fallbackTitle;
 
-    const suggestedTitle = response.content
-      .filter((block): block is Extract<(typeof response.content)[number], { type: "text" }> => block.type === "text")
-      .map((block) => block.text)
-      .join(" ");
-
-    return normalizeConversationTitle(suggestedTitle, fallbackTitle);
-  } catch {
-    return fallbackTitle;
-  }
+  return normalizeConversationTitle(title, fallbackTitle);
 }
 
 export async function maybeUpdateConversationTitle(input: {

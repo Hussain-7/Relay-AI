@@ -6,7 +6,7 @@ import { Streamdown } from "streamdown";
 import { code } from "@streamdown/code";
 
 import type { AttachmentDto, TimelineEventEnvelope } from "@/lib/contracts";
-import { buildTimelineEntries, formatShortTime } from "@/lib/chat-utils";
+import { buildTimelineEntries, groupEntriesIntoSegments, formatShortTime } from "@/lib/chat-utils";
 import { AttachmentChip } from "@/components/chat/attachment-chip";
 import { CopyButton } from "@/components/chat/copy-button";
 import { RunActivityAccordion } from "@/components/chat/activity-accordion";
@@ -97,6 +97,7 @@ export function RunThread({
   previewUrls?: Map<string, string>;
 }) {
   const entries = useMemo(() => buildTimelineEntries(events), [events]);
+  const segments = useMemo(() => groupEntriesIntoSegments(entries), [entries]);
   const showPendingDot = isLive && entries.length === 0 && !finalText;
   const hasAgentResponse = Boolean(finalText);
 
@@ -188,7 +189,25 @@ export function RunThread({
         </div>
       ) : null}
 
-      {entries.length > 0 ? <RunActivityAccordion runId={runId} entries={entries} isLive={isLive} /> : null}
+      {/* Interleaved text blocks and timeline accordions */}
+      {segments.map((segment) => {
+        if (segment.kind === "text") {
+          return (
+            <div key={segment.id} className="message-row flex w-full min-w-0 justify-start">
+              <div className="flex flex-col max-w-[min(100%,780px)] min-w-0 items-start max-[980px]:max-w-full">
+                <div className="agent-response w-[min(100%,780px)] min-w-0 max-w-full pt-0.5 max-[980px]:w-full max-[980px]:max-w-full">
+                  <div className="chat-markdown mt-0 min-w-0 max-w-full">
+                    <Streamdown mode="streaming" isAnimating={false} caret="block" linkSafety={{ enabled: false }} plugins={{ code }}>
+                      {segment.text}
+                    </Streamdown>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        }
+        return <RunActivityAccordion key={segment.id} runId={runId} segmentId={segment.id} entries={segment.entries} isLive={isLive} />;
+      })}
 
       {finalText ? (
         <div className="message-row flex w-full min-w-0 justify-start">

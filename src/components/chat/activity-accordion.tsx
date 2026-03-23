@@ -16,19 +16,24 @@ const autoExpandedForApproval = new Set<string>();
 
 export function RunActivityAccordion({
   runId,
+  segmentId,
   entries,
   isLive,
 }: {
   runId?: string | null;
+  /** When multiple accordions exist per run, each needs a unique key for toggle state. */
+  segmentId?: string;
   entries: RenderTimelineEntry[];
   isLive?: boolean;
 }) {
+  // Composite key for toggle state — supports multiple accordions per run
+  const stateKey = segmentId ? `${runId}-${segmentId}` : runId;
   const hasPendingApproval = entries.some((e) => e.kind === "approval" && e.status === "pending");
 
   const [isExpanded, setIsExpanded] = useState(() => {
-    // If user previously toggled this run's accordion, respect that
-    if (runId && userToggledRuns.has(runId)) {
-      return userToggledRuns.get(runId)!;
+    // If user previously toggled this accordion, respect that
+    if (stateKey && userToggledRuns.has(stateKey)) {
+      return userToggledRuns.get(stateKey)!;
     }
     // Auto-expand if there's already a pending approval on mount
     if (hasPendingApproval) {
@@ -39,12 +44,9 @@ export function RunActivityAccordion({
   });
 
   // Auto-expand when a pending approval arrives after mount.
-  // We derive this as a one-way latch: once we detect a new pending approval
-  // for a run we haven't auto-expanded yet, we set state during render
-  // (React allows setState during render if it's the same component and conditional).
-  if (hasPendingApproval && runId && !autoExpandedForApproval.has(runId) && !isExpanded) {
-    autoExpandedForApproval.add(runId);
-    userToggledRuns.set(runId, true);
+  if (hasPendingApproval && stateKey && !autoExpandedForApproval.has(stateKey) && !isExpanded) {
+    autoExpandedForApproval.add(stateKey);
+    userToggledRuns.set(stateKey, true);
     setIsExpanded(true);
   }
 
@@ -53,8 +55,8 @@ export function RunActivityAccordion({
   function handleToggle() {
     setIsExpanded((current) => {
       const next = !current;
-      if (runId) {
-        userToggledRuns.set(runId, next);
+      if (stateKey) {
+        userToggledRuns.set(stateKey, next);
       }
       return next;
     });

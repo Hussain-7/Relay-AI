@@ -70,6 +70,63 @@ export type RenderTimelineEntry =
       actionUrl: string;
     };
 
+// ─── Segment grouping (interleaved text + timeline rendering) ──────────────
+
+export type TextSegment = { kind: "text"; id: string; text: string };
+export type TimelineSegment = { kind: "timeline"; id: string; entries: RenderTimelineEntry[] };
+export type RunSegment = TextSegment | TimelineSegment;
+
+/**
+ * Groups a flat array of timeline entries into alternating text and timeline segments.
+ * - `intermediate` entries → TextSegment (consecutive ones merge, joined with \n\n)
+ * - All other kinds → TimelineSegment (consecutive non-text entries group together)
+ */
+export function groupEntriesIntoSegments(entries: RenderTimelineEntry[]): RunSegment[] {
+  const segments: RunSegment[] = [];
+  let currentTimeline: RenderTimelineEntry[] = [];
+  let currentText: { id: string; text: string }[] = [];
+
+  const flushText = () => {
+    if (currentText.length > 0) {
+      segments.push({
+        kind: "text",
+        id: currentText[0].id,
+        text: currentText.map((t) => t.text).join("\n\n"),
+      });
+      currentText = [];
+    }
+  };
+
+  const flushTimeline = () => {
+    if (currentTimeline.length > 0) {
+      segments.push({
+        kind: "timeline",
+        id: currentTimeline[0].id,
+        entries: currentTimeline,
+      });
+      currentTimeline = [];
+    }
+  };
+
+  for (const entry of entries) {
+    if (entry.kind === "intermediate") {
+      flushTimeline();
+      currentText.push({ id: entry.id, text: entry.text });
+    } else {
+      flushText();
+      currentTimeline.push(entry);
+    }
+  }
+
+  // Flush remaining
+  flushTimeline();
+  flushText();
+
+  return segments;
+}
+
+// ─── Formatting helpers ────────────────────────────────────────────────────
+
 export function formatShortTime(iso: string) {
   return new Intl.DateTimeFormat(undefined, {
     month: "short",
