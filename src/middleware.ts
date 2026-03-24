@@ -1,9 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
-
-const ALLOWED_EMAILS = new Set([
-  "hussain2000.rizvi@gmail.com",
-]);
+import { ALLOWED_EMAILS } from "@/lib/allowed-emails";
 
 const PUBLIC_ROUTES = new Set(["/login", "/auth/callback", "/waitlist"]);
 

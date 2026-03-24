@@ -146,6 +146,10 @@ function LoginContent() {
   const searchParams = useSearchParams();
   const next = searchParams.get("next") ?? "/chat/new";
   const [isLoading, setIsLoading] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [showEmailForm, setShowEmailForm] = useState(false);
 
   async function handleGoogleSignIn() {
     setIsLoading(true);
@@ -156,6 +160,24 @@ function LoginContent() {
         redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
       },
     });
+  }
+
+  async function handleEmailSignIn(e: React.FormEvent) {
+    e.preventDefault();
+    if (!email.trim() || !password.trim()) return;
+    setIsLoading(true);
+    setAuthError(null);
+    const supabase = getSupabaseBrowserClient();
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password: password.trim(),
+    });
+    if (error) {
+      setAuthError(error.message);
+      setIsLoading(false);
+    } else {
+      window.location.href = next;
+    }
   }
 
   return (
@@ -178,7 +200,7 @@ function LoginContent() {
               An AI workspace that combines chat, deep research, file handling, document generation, and remote coding sessions — all powered by Claude.
             </p>
 
-            <div className="mt-10">
+            <div className="mt-10 flex flex-col gap-3">
               <button
                 type="button"
                 onClick={handleGoogleSignIn}
@@ -188,6 +210,53 @@ function LoginContent() {
                 <GoogleIcon />
                 {isLoading ? "Redirecting..." : "Continue with Google"}
               </button>
+
+              <div className="flex items-center gap-3 my-1">
+                <div className="flex-1 h-px bg-[rgba(255,255,255,0.08)]" />
+                <span className="text-[0.75rem] text-[rgba(245,240,232,0.25)]">or</span>
+                <div className="flex-1 h-px bg-[rgba(255,255,255,0.08)]" />
+              </div>
+
+              {!showEmailForm ? (
+                <button
+                  type="button"
+                  onClick={() => setShowEmailForm(true)}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-[rgba(255,255,255,0.08)] bg-transparent px-5 py-2.5 text-[0.85rem] text-[rgba(245,240,232,0.5)] transition-all duration-150 hover:bg-[rgba(255,255,255,0.04)] hover:text-[rgba(245,240,232,0.7)] cursor-pointer"
+                >
+                  Sign in with email
+                </button>
+              ) : (
+                <form onSubmit={handleEmailSignIn} className="flex flex-col gap-2.5">
+                  <input
+                    type="email"
+                    placeholder="Email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    autoComplete="email"
+                    required
+                    className="w-full rounded-xl border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.04)] px-4 py-2.5 text-[0.88rem] text-[rgba(245,240,232,0.92)] placeholder:text-[rgba(245,240,232,0.25)] outline-none focus:border-[rgba(212,112,73,0.4)] transition-colors"
+                  />
+                  <input
+                    type="password"
+                    placeholder="Password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    autoComplete="current-password"
+                    required
+                    className="w-full rounded-xl border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.04)] px-4 py-2.5 text-[0.88rem] text-[rgba(245,240,232,0.92)] placeholder:text-[rgba(245,240,232,0.25)] outline-none focus:border-[rgba(212,112,73,0.4)] transition-colors"
+                  />
+                  {authError && (
+                    <p className="text-[0.8rem] text-[rgba(220,80,80,0.85)] m-0">{authError}</p>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={isLoading || !email.trim() || !password.trim()}
+                    className="flex w-full items-center justify-center rounded-xl border border-[rgba(255,255,255,0.12)] bg-[rgba(255,255,255,0.06)] px-5 py-2.5 text-[0.88rem] font-medium text-[rgba(245,240,232,0.92)] transition-all duration-150 hover:bg-[rgba(255,255,255,0.1)] active:scale-[0.985] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    {isLoading ? "Signing in..." : "Sign in"}
+                  </button>
+                </form>
+              )}
             </div>
 
             <p className="mt-5 text-[0.78rem] text-[rgba(245,240,232,0.28)]">

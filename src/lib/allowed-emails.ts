@@ -4,6 +4,7 @@
  */
 export const ALLOWED_EMAILS = new Set([
   "hussain2000.rizvi@gmail.com",
+  "test@relay-ai.local",
 ]);
 
 export function isEmailAllowed(email: string): boolean {
