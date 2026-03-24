@@ -6,6 +6,8 @@ import { invalidateGithubRepoCache } from "@/lib/github/service";
 import { prisma } from "@/lib/prisma";
 import { requireRequestUser } from "@/lib/server-auth";
 
+// Octokit + createAppAuth are used by the DELETE handler for uninstalling
+
 export async function GET(request: Request) {
   try {
     const user = await requireRequestUser(request.headers);
@@ -14,56 +16,18 @@ export async function GET(request: Request) {
       return Response.json({ configured: false, installed: false });
     }
 
-    // Check GitHub API for installations and auto-link to current user
-    try {
-      const appClient = new Octokit({
-        authStrategy: createAppAuth,
-        auth: {
-          appId: env.GITHUB_APP_ID!,
-          privateKey: env.GITHUB_APP_PRIVATE_KEY!,
-        },
+    // Check if this user has a linked GitHub installation (created during the install callback)
+    const existing = await prisma.githubInstallation.findFirst({
+      where: { userId: user.userId },
+    });
+
+    if (existing) {
+      return Response.json({
+        configured: true,
+        installed: true,
+        account: existing.accountLogin ?? null,
+        installUrl: `/api/github/install`,
       });
-
-      const { data: installations } = await appClient.request("GET /app/installations");
-
-      if (installations.length > 0) {
-        const installationId = String(installations[0]!.id);
-        await prisma.githubInstallation.upsert({
-          where: {
-            userId_installationId: {
-              userId: user.userId,
-              installationId,
-            },
-          },
-          update: { updatedAt: new Date() },
-          create: {
-            userId: user.userId,
-            installationId,
-            accountLogin: installations[0]!.account?.login ?? null,
-          },
-        });
-
-        return Response.json({
-          configured: true,
-          installed: true,
-          account: installations[0]!.account?.login ?? null,
-          installUrl: `/api/github/install`,
-        });
-      }
-    } catch {
-      // GitHub API failed — fall back to DB
-      const existing = await prisma.githubInstallation.findFirst({
-        where: { userId: user.userId },
-      });
-
-      if (existing) {
-        return Response.json({
-          configured: true,
-          installed: true,
-          account: existing.accountLogin ?? null,
-          installUrl: `/api/github/install`,
-        });
-      }
     }
 
     return Response.json({

@@ -84,5 +84,5 @@ Required: `DATABASE_URL`, `ANTHROPIC_API_KEY`. See `.env.example` for all variab
 When using the Playwright MCP for UI flow testing:
 
 - **E2E test credentials**: `test@relay-ai.local` / `relay-test-2026` (email/password login via "Sign in with email" on `/login`)
-- **Cleanup after testing**: After testing is complete, delete all screenshot files (`*.png`) and Playwright console log files (`.playwright-mcp/console-*.log`) generated during the session. This ensures a clean repo state. Run: `rm -f *.png .playwright-mcp/console-*.log`
+- **Cleanup after testing**: After testing is complete, delete all screenshot files (`*.png`) created in the project root and any Playwright console log files. This ensures a clean repo state. Run: `rm -f *.png`
 - **Do not commit** test screenshots or console log artifacts
