@@ -1516,36 +1516,35 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
             </div>
           )}
 
-        {/* Scroll-to-bottom button */}
-        {showScrollDown && !isLandingState && (
-          <button
-            type="button"
-            aria-label="Scroll to bottom"
-            className="absolute z-4 left-1/2 -translate-x-1/2 bottom-[158px] max-[980px]:bottom-[128px] h-8 w-8 rounded-full border border-[rgba(255,255,255,0.1)] bg-[#30302e] shadow-[0_2px_8px_rgba(0,0,0,0.2)] flex items-center justify-center text-[rgba(236,230,219,0.5)] hover:text-[rgba(236,230,219,0.8)] hover:border-[rgba(255,255,255,0.18)] transition-all duration-150 cursor-pointer"
-            onClick={() => {
-              setShowScrollDown(false);
-              transcriptRef.current?.scrollTo({
-                top: transcriptRef.current.scrollHeight,
-                behavior: "smooth",
-              });
-            }}
-          >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M8 3v10M3 8.5l5 5 5-5" />
-            </svg>
-          </button>
-        )}
-
         <footer
           ref={footerRef}
           className={[
-            "absolute left-0 right-0 z-3 pb-1 transition-[transform,opacity] duration-[420ms] [transition-timing-function:cubic-bezier(0.2,0.9,0.2,1)]",
+            "absolute left-0 right-0 z-20 pb-1 transition-[transform,opacity] duration-[420ms] [transition-timing-function:cubic-bezier(0.2,0.9,0.2,1)]",
             isLandingState && isNewChat
               ? "bottom-1/2 px-[30px] translate-y-[182px] max-[980px]:bottom-0  max-[980px]:translate-y-0 max-[980px]:px-[18px]"
               : "bottom-0 px-[30px]  bg-background max-[980px]:px-[18px] ",
             animateComposerDock ? "composer-panel-animate-dock" : "",
           ].join(" ")}
         >
+          {/* Scroll-to-bottom button — anchored 12px above the composer shell */}
+          {showScrollDown && !isLandingState && (
+            <button
+              type="button"
+              aria-label="Scroll to bottom"
+              className="absolute left-1/2 -translate-x-1/2 -top-11 h-8 w-8 rounded-full border border-[rgba(255,255,255,0.1)] bg-[#30302e] shadow-[0_2px_8px_rgba(0,0,0,0.2)] flex items-center justify-center text-[rgba(236,230,219,0.5)] hover:text-[rgba(236,230,219,0.8)] hover:border-[rgba(255,255,255,0.18)] transition-all duration-150 cursor-pointer"
+              onClick={() => {
+                setShowScrollDown(false);
+                transcriptRef.current?.scrollTo({
+                  top: transcriptRef.current.scrollHeight,
+                  behavior: "smooth",
+                });
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M8 3v10M3 8.5l5 5 5-5" />
+              </svg>
+            </button>
+          )}
           <div
             className={`composer-shell flex max-w-3xl w-full min-w-0 min-h-[96px] flex-col gap-3 mx-auto border rounded-[22px] bg-[#30302e] pt-[14px] px-[18px] pb-3.5 shadow-[0_4px_16px_rgba(0,0,0,0.12)] max-[980px]:w-full max-[980px]:max-w-full max-[980px]:m-0 max-[980px]:min-h-0 max-[980px]:gap-2.5 max-[980px]:pt-3 max-[980px]:px-3.5 max-[980px]:pb-2.5 max-[980px]:rounded-[18px] transition-[border-color] duration-150 ${isDraggingOver ? "border-[rgba(212,112,73,0.6)]" : "border-[rgba(255,255,255,0.08)]"}`}
             onDragOver={(e) => {
