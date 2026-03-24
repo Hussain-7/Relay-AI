@@ -1738,8 +1738,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                         )}
                         <button
                           type="button"
-                          title="Disconnect repo"
-                          className="mt-2 inline-grid h-6 w-6 place-items-center rounded-[6px] text-[rgba(243,199,180,0.7)] cursor-pointer border-0 bg-transparent p-0 transition-colors hover:text-[rgba(243,199,180,1)] hover:bg-[rgba(243,199,180,0.08)]"
+                          className="mt-2 w-full text-left text-[0.75rem] text-[rgba(243,199,180,0.7)] cursor-pointer border-0 bg-transparent p-0 hover:text-[rgba(243,199,180,1)] flex items-center gap-1.5"
                           onClick={() => {
                             if (isStaged) {
                               setStagedRepoBinding(null);
@@ -1750,11 +1749,12 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                           }}
                           aria-label="Disconnect repo"
                         >
-                          <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                          <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M6 10l-1.5 1.5a2.121 2.121 0 0 1-3-3L4 7" />
                             <path d="M10 6l1.5-1.5a2.121 2.121 0 0 0-3-3L7 4" />
                             <path d="M2 2l12 12" />
                           </svg>
+                          Disconnect repo
                         </button>
                       </div>
                     </div>
