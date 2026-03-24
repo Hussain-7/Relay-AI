@@ -20,7 +20,7 @@ export async function GET(
     const { id } = await params;
     const conversation = await getCached(
       `conv:${id}`,
-      30,
+      120,
       () => getConversationDetail({ conversationId: id, userId: user.userId }),
     );
 

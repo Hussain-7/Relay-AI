@@ -1009,6 +1009,28 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
     setMobileSidebarOpen(false);
   }
 
+  // Prefetch a conversation's detail into TanStack cache (fire-and-forget, respects staleTime)
+  const prefetchConversation = useCallback((id: string) => {
+    queryClient.prefetchQuery({
+      queryKey: queryKeys.conversation(id),
+      queryFn: () => api.get<{ conversation: ConversationDetailDto }>(
+        `/api/conversations/${id}`,
+      ).then((d) => d.conversation),
+      staleTime: 30 * 1000,
+    });
+  }, [queryClient]);
+
+  // Proactively prefetch top 3 conversations on list load for instant switching
+  useEffect(() => {
+    if (!conversations.length) return;
+    const top = conversations
+      .filter((c) => c.id !== activeConversationId)
+      .slice(0, 3);
+    for (const c of top) {
+      prefetchConversation(c.id);
+    }
+  }, [conversations, activeConversationId, prefetchConversation]);
+
   const showCollapsedSidebar = sidebarCollapsed && !isMobileViewport;
 
   return (
@@ -1095,6 +1117,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                   type="button"
                   className={`flex w-full items-center border-0 rounded-[10px] text-inherit cursor-pointer py-[9px] pr-[34px] pl-2.5 text-left transition-[background] duration-[140ms] ease-linear hover:bg-[#2f2f2d] ${isActive ? "bg-[#2f2f2d]" : "bg-transparent"}`}
                   onClick={() => handleSelectConversation(conversation.id)}
+                  onMouseEnter={() => prefetchConversation(conversation.id)}
                 >
                   <div className={`text-[0.88rem] font-[420] text-[rgba(242,237,229,0.82)] whitespace-nowrap overflow-hidden text-ellipsis ${isActive ? "text-[rgba(247,242,233,0.96)]" : "group-hover/row:text-[rgba(247,242,233,0.96)]"}`}>
                     {isActive && conversation.title === "New chat" && liveRun ? (
@@ -1158,6 +1181,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                   type="button"
                   className={`flex w-full items-center border-0 rounded-[10px] text-inherit cursor-pointer py-[9px] pr-[34px] pl-2.5 text-left transition-[background] duration-[140ms] ease-linear hover:bg-[#2f2f2d] ${isActive ? "bg-[#2f2f2d]" : "bg-transparent"}`}
                   onClick={() => handleSelectConversation(conversation.id)}
+                  onMouseEnter={() => prefetchConversation(conversation.id)}
                 >
                   <div className={`text-[0.88rem] font-[420] text-[rgba(242,237,229,0.82)] whitespace-nowrap overflow-hidden text-ellipsis ${isActive ? "text-[rgba(247,242,233,0.96)]" : "group-hover/row:text-[rgba(247,242,233,0.96)]"}`}>
                     {isActive && conversation.title === "New chat" && liveRun ? (

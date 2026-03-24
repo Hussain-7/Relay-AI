@@ -15,7 +15,7 @@ export async function GET(request: Request) {
     const user = await requireRequestUser(request.headers);
     const conversations = await getCached(
       `convos:${user.userId}`,
-      60,
+      300,
       () => listConversationSummaries(user.userId),
     );
 
