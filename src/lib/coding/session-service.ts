@@ -438,12 +438,12 @@ export async function ensureRepoCloned(
     await safeRun(sandbox, `rm -rf "${session.workspacePath}"`, { user: "root" });
   }
 
-  log.info("Cloning repo (shallow)", { repoFullName, workspacePath: session.workspacePath });
+  log.info("Cloning repo", { repoFullName, workspacePath: session.workspacePath });
 
-  // Run as root to avoid permission issues in the sandbox
+  // Full clone (not shallow) so the agent can create branches, view history, etc.
   const cloneResult = await safeRun(sandbox,
-    `git clone --depth 1 '${cloneUrl}' '${session.workspacePath}' 2>&1; echo "===EXIT:$?"`,
-    { timeoutMs: 120000, user: "root" },
+    `git clone '${cloneUrl}' '${session.workspacePath}' 2>&1; echo "===EXIT:$?"`,
+    { timeoutMs: 180000, user: "root" },
   );
 
   // Parse exit code from output
@@ -465,6 +465,18 @@ export async function ensureRepoCloned(
   await safeRun(sandbox,
     `cd "${session.workspacePath}" && git config user.email '${gitUser.email}' && git config user.name '${gitUser.name}'`,
     { user: "root" },
+  );
+
+  // Configure git credential helper so all remotes authenticate with the token
+  await safeRun(sandbox,
+    `git config --global credential.helper '!f() { echo "username=x-access-token"; echo "password=${token}"; }; f'`,
+    { user: "root" },
+  );
+
+  // Ensure gh CLI is available (no-op if already installed in the E2B template)
+  await safeRun(sandbox,
+    `which gh > /dev/null 2>&1 || (curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg 2>/dev/null && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null && apt-get update -qq && apt-get install -y -qq gh > /dev/null 2>&1)`,
+    { user: "root", timeoutMs: 60000 },
   );
 
   // Make workspace writable by the sandbox user (for Claude Code CLI)
@@ -605,6 +617,7 @@ export async function runCodingTask(input: {
     };
     if (gitToken) {
       cliEnvs.GITHUB_TOKEN = gitToken;
+      cliEnvs.GH_TOKEN = gitToken; // gh CLI prefers GH_TOKEN in some versions
     }
 
     await safeRun(sandbox, cmd, {
