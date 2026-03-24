@@ -195,9 +195,9 @@ export function RepoBindingModal({
         ) : (
           <>
             {/* Owner dropdown + Search bar */}
-            <div className="flex items-stretch gap-2 mx-5 mb-3">
+            <div className="flex flex-wrap items-stretch gap-2 mx-5 mb-3">
               {/* Owner selector */}
-              <div className="relative" data-chat-action-menu>
+              <div className="relative shrink-0" data-chat-action-menu>
                 <button
                   type="button"
                   className="flex items-center gap-2 h-full rounded-[10px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-3 text-[rgba(245,240,232,0.85)] text-[0.84rem] cursor-pointer transition-colors hover:bg-[rgba(255,255,255,0.05)] whitespace-nowrap"
@@ -230,7 +230,7 @@ export function RepoBindingModal({
               </div>
 
               {/* Search */}
-              <div className="flex-1 flex items-center gap-2 px-3 py-2 rounded-[10px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] text-[rgba(245,240,232,0.5)] focus-within:border-[rgba(212,112,73,0.4)] transition-colors">
+              <div className="flex-1 min-w-0 flex items-center gap-2 px-3 py-2 rounded-[10px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] text-[rgba(245,240,232,0.5)] focus-within:border-[rgba(212,112,73,0.4)] transition-colors">
                 <IconSearch />
                 <input
                   ref={searchInputRef}
