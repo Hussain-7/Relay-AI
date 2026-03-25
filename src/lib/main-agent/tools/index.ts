@@ -1,7 +1,7 @@
 export type { ToolRuntimeContext, ToolCatalogEntry } from "./context";
 
 import type { ToolRuntimeContext } from "./context";
-import { createCodingTools, codingSessionCatalog } from "./coding-session";
+import { createCodingTools, codingSessionCatalog, type ActiveCodingSessionHint } from "./coding-session";
 import { createGithubCreateRepoTool, githubCatalog } from "./github";
 import { createAskUserTool, askUserCatalog } from "./ask-user";
 import { createImageGenerationTool, imageGenerationCatalog } from "./image-generation";
@@ -65,7 +65,7 @@ export const MAIN_AGENT_SERVER_TOOLS = [
 
 // ── Custom tools (executed on our server via toolRunner) ──
 
-export function getMainAgentTools(ctx: ToolRuntimeContext) {
+export function getMainAgentTools(ctx: ToolRuntimeContext, activeCodingSessionHint?: ActiveCodingSessionHint | null) {
   const {
     prepareSandboxTool,
     cloneRepoTool,
@@ -73,7 +73,7 @@ export function getMainAgentTools(ctx: ToolRuntimeContext) {
     bashSandboxTool,
     getSandboxUrlTool,
     closeSandboxTool,
-  } = createCodingTools(ctx);
+  } = createCodingTools(ctx, activeCodingSessionHint);
 
   return [
     prepareSandboxTool,

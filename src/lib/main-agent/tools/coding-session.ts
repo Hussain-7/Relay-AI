@@ -109,9 +109,23 @@ async function isSandboxAlive(sandbox: Sandbox): Promise<boolean> {
   }
 }
 
+// ── Active session hint (passed from runtime to skip redundant tool calls) ──
+
+/** Lightweight hint from runtime — just enough to know a session exists. */
+export interface ActiveCodingSessionHint {
+  id: string;
+  status: string;
+  sandboxId: string | null;
+  workspacePath: string | null;
+  branch: string | null;
+}
+
 // ── Combined factory: all coding tools share a single cache ──
 
-export function createCodingTools(ctx: ToolRuntimeContext) {
+export function createCodingTools(
+  ctx: ToolRuntimeContext,
+  activeCodingSessionHint?: ActiveCodingSessionHint | null,
+) {
   const cache: RunSandboxCache = {
     session: null,
     sandbox: null,
@@ -145,6 +159,70 @@ export function createCodingTools(ctx: ToolRuntimeContext) {
       name: userProfile?.fullName ?? "Relay AI User",
       email: userProfile?.email ?? `${ctx.userId}@users.noreply.github.com`,
     };
+  }
+
+  /**
+   * Auto-bootstrap: reconnect to an existing sandbox and ensure repo is cloned.
+   * Called lazily on first coding tool use when cache is empty but a session hint exists.
+   * Throws on failure — caller catches and falls through to manual setup.
+   */
+  async function autoBootstrapFromHint(): Promise<void> {
+    if (!activeCodingSessionHint?.sandboxId) return;
+
+    const okStatuses = ["READY", "RUNNING", "PAUSED"];
+    if (!okStatuses.includes(activeCodingSessionHint.status)) return;
+
+    // Fetch full session with repoBinding (hint only has narrow select)
+    const fullSession = await prisma.codingSession.findUnique({
+      where: { id: activeCodingSessionHint.id },
+      include: { repoBinding: true },
+    });
+    if (!fullSession?.sandboxId) return;
+
+    // Reconnect sandbox
+    const sandbox = await connectSandboxOrThrow(fullSession.sandboxId);
+    await sandbox.setTimeout(1000 * 60 * 60); // Refresh 60min TTL
+
+    // Verify sandbox is responsive
+    if (!(await isSandboxAlive(sandbox))) {
+      throw new Error("Sandbox is no longer reachable after reconnect.");
+    }
+
+    // Update session status
+    const session = await prisma.codingSession.update({
+      where: { id: fullSession.id },
+      data: { status: "READY", lastActiveAt: new Date() },
+      include: { repoBinding: true },
+    });
+
+    cache.session = session;
+    cache.sandbox = sandbox;
+
+    // Link coding session to current agent run
+    await prisma.agentRun.update({
+      where: { id: ctx.runId },
+      data: { codingSessionId: session.id },
+    }).catch(() => {}); // Non-fatal if run doesn't exist yet
+
+    // Auto-clone/refresh repo if bound
+    if (session.repoBinding) {
+      if (!cache.gitToken && hasGitHubAppConfig()) {
+        cache.gitToken = await getGitHubToken(ctx.userId);
+      }
+      if (!cache.gitUser) {
+        cache.gitUser = await fetchGitUser();
+      }
+      if (cache.gitToken && cache.gitUser) {
+        await ensureRepoCloned(
+          sandbox,
+          { workspacePath: session.workspacePath, repoBinding: session.repoBinding },
+          cache.gitToken,
+          cache.gitUser,
+        );
+      }
+    }
+
+    cache.repoReady = true;
   }
 
   // ── prepare_sandbox ──
@@ -303,12 +381,28 @@ export function createCodingTools(ctx: ToolRuntimeContext) {
   const codingAgentTool = betaZodTool({
     name: "coding_agent_sandbox",
     description:
-      "Run a coding task inside the sandbox using Claude Code. Reads, writes, and edits files, runs shell commands, manages git commits, and can push and create PRs. Requires prepare_sandbox (and clone_repo_sandbox if a repo is linked) to be called first. Can be called multiple times — each call reuses the same sandbox without re-provisioning.",
+      "Run a coding task inside the sandbox using Claude Code. Reads, writes, and edits files, runs shell commands, manages git commits, and can push and create PRs. " +
+      "If a coding session is already active (shown in system context), call this tool directly — it auto-reconnects to the existing sandbox and repo. " +
+      "Only call prepare_sandbox + clone_repo_sandbox first when starting a brand-new coding session. Can be called multiple times.",
     inputSchema: z.object({
       taskBrief: z.string().min(1).describe("Clear description of the coding task to perform"),
     }),
     async run(input) {
       try {
+        // Auto-bootstrap: if cache is empty but we know a session exists, reconnect automatically
+        if (!cache.session && !cache.sandbox && activeCodingSessionHint?.sandboxId) {
+          try {
+            await autoBootstrapFromHint();
+            ctx.emitProgress?.("coding.session.resumed", "system", {
+              codingSessionId: (cache as RunSandboxCache).session?.id,
+              sandboxId: activeCodingSessionHint.sandboxId,
+              autoBootstrapped: true,
+            });
+          } catch {
+            clearSandboxCache();
+          }
+        }
+
         if (!cache.session || !cache.sandbox) {
           throw new Error("No active sandbox. Call prepare_sandbox (and clone_repo_sandbox if a repo is linked) before coding_agent_sandbox.");
         }
@@ -392,7 +486,8 @@ export function createCodingTools(ctx: ToolRuntimeContext) {
   const bashSandboxTool = betaZodTool({
     name: "bash_sandbox",
     description:
-      "Run a shell command in the active sandbox. Use for quick operations: checking git status/log, running tests, listing files, installing packages, or verifying changes. Requires an active sandbox (call prepare_sandbox first). Do NOT confuse with code_execution — that is a temporary server-side sandbox with no repo access.",
+      "Run a shell command in the active sandbox. Use for quick operations: checking git status/log, running tests, listing files, installing packages, or verifying changes. " +
+      "Auto-reconnects to an existing sandbox if available. Do NOT confuse with code_execution — that is a temporary server-side sandbox with no repo access.",
     inputSchema: z.object({
       command: z.string().min(1).describe("The shell command to execute"),
       workspacePath: z.string().optional().describe("Working directory (defaults to the session workspace)"),
@@ -402,6 +497,15 @@ export function createCodingTools(ctx: ToolRuntimeContext) {
       try {
         if (!hasE2bConfig()) {
           throw new Error("E2B_API_KEY is required.");
+        }
+
+        // Auto-bootstrap if cache is empty but hint is available
+        if (!cache.sandbox && activeCodingSessionHint?.sandboxId) {
+          try {
+            await autoBootstrapFromHint();
+          } catch {
+            clearSandboxCache();
+          }
         }
 
         // Try to use cached sandbox first

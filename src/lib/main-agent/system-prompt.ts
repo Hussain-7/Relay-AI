@@ -39,9 +39,7 @@ No repository is linked. If the user wants to work on an existing repo, suggest 
   const sandboxReady = ctx.codingSession?.sandboxId && ["READY", "RUNNING", "PAUSED"].includes(ctx.codingSession.status);
   const codingSessionSection = ctx.codingSession
     ? `<coding_session status="${ctx.codingSession.status}"${ctx.codingSession.workspacePath ? ` workspace="${ctx.codingSession.workspacePath}"` : ""}${ctx.codingSession.branch ? ` branch="${ctx.codingSession.branch}"` : ""}>
-${sandboxReady
-  ? "Sandbox is connected and cached. Use bash_sandbox for quick checks or coding_agent_sandbox for new tasks (skip prepare_sandbox/clone_repo_sandbox)."
-  : "Sandbox exists but may need reconnection. Call prepare_sandbox to reconnect before coding_agent_sandbox."}
+Sandbox is active. Call coding_agent_sandbox or bash_sandbox directly — they auto-reconnect. No need for prepare_sandbox or clone_repo_sandbox.
 </coding_session>`
     : `<coding_session status="NONE">
 No sandbox is active. Start with prepare_sandbox, then clone_repo_sandbox (if a repo is linked), then coding_agent_sandbox.
@@ -87,8 +85,8 @@ ${codingSessionSection}
 <tool_routing>
 Follow this decision tree to pick the right tool:
 
-1. Task is about a linked repo (summarize, explore, read code, fix, implement)? → Use coding tools (prepare_sandbox → clone_repo_sandbox → coding_agent_sandbox). The coding agent has direct codebase access.
-2. Sandbox already active? → Use coding_agent_sandbox directly (skip setup).
+1. Task is about a linked repo (summarize, explore, read code, fix, implement)? → If sandbox is active (see coding_session above), call coding_agent_sandbox directly. Otherwise: prepare_sandbox → clone_repo_sandbox → coding_agent_sandbox.
+2. Sandbox already active? → Use coding_agent_sandbox directly — it auto-reconnects.
 3. Quick one-shot check in an active sandbox (git status, ls, cat)? → bash_sandbox.
 4. Multi-step work (install deps, start servers, debug errors)? → coding_agent_sandbox, not bash_sandbox.
 5. Need a URL for an app running in the sandbox? → Ensure app is started, then get_sandbox_url.
@@ -100,11 +98,13 @@ Key distinction: code_execution is a temporary disposable sandbox for quick anal
 </tool_routing>
 
 <coding_workflow>
-First coding request in a conversation: prepare_sandbox → clone_repo_sandbox (if repo linked) → coding_agent_sandbox. These are three separate sequential calls.
+If a coding session is already active (see coding_session context above): call coding_agent_sandbox directly — it auto-reconnects the sandbox and repo. No need for prepare_sandbox or clone_repo_sandbox.
 
-Follow-up coding tasks: just call coding_agent_sandbox — the sandbox is already prepared.
+First coding request in a NEW conversation (no active session): prepare_sandbox → clone_repo_sandbox (if repo linked) → coding_agent_sandbox.
 
-Running apps: delegate to coding_agent_sandbox, which can read project files, figure out the right commands, handle errors, and retry. Give it a clear taskBrief like: "Install dependencies and start the dev server. Figure out the package manager and start script from the project files."
+Follow-up tasks in the same message turn: just call coding_agent_sandbox — the sandbox is cached.
+
+Running apps: delegate to coding_agent_sandbox with a clear taskBrief. It reads project files, figures out commands, handles errors, and retries.
 
 After coding_agent_sandbox returns, trust and report its result directly.
 

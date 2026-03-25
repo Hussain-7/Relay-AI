@@ -241,7 +241,7 @@ export async function streamMainAgentRun(input: {
           emit: async (type: "tool.call.completed" | "tool.call.failed", payload: Record<string, unknown>) => emit(type, "main_agent", payload),
           emitProgress: (type: Parameters<typeof emit>[0], source: Parameters<typeof emit>[1], payload?: Record<string, unknown> | null) => emit(type, source, payload),
         };
-        const tools = getMainAgentTools(toolCtx);
+        const tools = getMainAgentTools(toolCtx, activeCodingSession);
 
         const activeModel = mainAgentSession.anthropicModel ?? env.ANTHROPIC_MAIN_MODEL;
         const prefs = input.preferences ?? {};
