@@ -733,10 +733,3 @@ export function formatRelativeDate(isoString: string): string {
   if (diffDays < 7) return `${diffDays}d ago`;
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
-
-export const landingSuggestions = [
-  "Plan a product MVP",
-  "Research a technical topic",
-  "Review an architecture idea",
-  "Map out a coding task",
-];

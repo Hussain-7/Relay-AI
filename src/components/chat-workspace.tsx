@@ -32,7 +32,6 @@ import {
   previewText,
   normalizeApiErrorMessage,
   resizeComposer,
-  landingSuggestions,
 } from "@/lib/chat-utils";
 import {
   IconClose,
@@ -1427,24 +1426,6 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
               <p className="max-w-[58rem] m-0 text-[rgba(245,240,232,0.6)] text-base leading-[1.7] max-[980px]:text-[0.88rem] max-[980px]:leading-[1.55]">
                 Ask questions, upload files, research ideas, and move from planning to execution in one conversation.
               </p>
-              <div className="flex flex-wrap justify-center gap-2.5 max-[980px]:gap-1.5" aria-label="Suggested prompts">
-                {landingSuggestions.map((suggestion) => (
-                  <button
-                    key={suggestion}
-                    type="button"
-                    className="border border-[rgba(255,255,255,0.08)] rounded-full bg-[rgba(255,255,255,0.03)] text-[rgba(245,240,232,0.65)] py-2 px-3 text-[0.82rem] cursor-pointer transition-[background,border-color,color,transform] duration-[180ms] ease-linear hover:bg-[rgba(255,255,255,0.06)] hover:border-[rgba(255,255,255,0.14)] hover:text-[rgba(245,240,232,0.9)] hover:-translate-y-px max-[980px]:text-[0.76rem] max-[980px]:py-1.5 max-[980px]:px-2.5"
-                    onClick={() => {
-                      setComposerValue(suggestion);
-                      window.requestAnimationFrame(() => {
-                        composerInputRef.current?.focus();
-                        resizeComposer(composerInputRef.current);
-                      });
-                    }}
-                  >
-                    {suggestion}
-                  </button>
-                ))}
-              </div>
             </section>
           ) : (
             <div className="chat-stage-inner h-full overflow-y-auto overflow-x-hidden overscroll-contain [overflow-anchor:none] pt-6 px-[30px] pb-[236px] min-w-0 max-[980px]:px-[6px] max-[980px]:w-full max-[980px]:max-w-full max-[980px]:pb-[180px]" ref={transcriptRef} onScroll={syncScrollShadows}>
@@ -1521,7 +1502,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
           className={[
             "absolute left-0 right-0 z-20 pb-1 transition-[transform,opacity] duration-[420ms] [transition-timing-function:cubic-bezier(0.2,0.9,0.2,1)]",
             isLandingState && isNewChat
-              ? "bottom-1/2 px-[30px] translate-y-[182px] max-[980px]:bottom-0  max-[980px]:translate-y-0 max-[980px]:px-[18px]"
+              ? "bottom-1/2 px-[30px] translate-y-[120px] max-[980px]:bottom-0  max-[980px]:translate-y-0 max-[980px]:px-[18px]"
               : "bottom-0 px-[30px]  bg-background max-[980px]:px-[18px] ",
             animateComposerDock ? "composer-panel-animate-dock" : "",
           ].join(" ")}
