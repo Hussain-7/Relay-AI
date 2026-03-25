@@ -16,7 +16,10 @@ export function getBot(): Chat {
     // Decode base64 credentials to avoid JSON escaping issues in env vars
     const credsBase64 = process.env.GOOGLE_CHAT_CREDENTIALS_BASE64;
     const gchatConfig = credsBase64
-      ? { credentials: JSON.parse(Buffer.from(credsBase64, "base64").toString("utf-8")) }
+      ? {
+          credentials: JSON.parse(Buffer.from(credsBase64, "base64").toString("utf-8")),
+          googleChatProjectNumber: process.env.GOOGLE_CHAT_PROJECT_NUMBER,
+        }
       : undefined;
 
     _bot = new Chat({
