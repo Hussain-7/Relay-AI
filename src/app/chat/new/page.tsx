@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { ChatWorkspace } from "@/components/chat-workspace";
 
 export const metadata: Metadata = {
-  title: "New chat — Relay AI",
+  title: "New chat",
 };
 
 export default function NewChatPage() {

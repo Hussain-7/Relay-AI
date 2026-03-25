@@ -14,7 +14,7 @@ export async function generateMetadata({
     select: { title: true },
   });
   return {
-    title: conv?.title ? `${conv.title} — Relay AI` : "Relay AI",
+    title: conv?.title ?? "Chat",
   };
 }
 

@@ -20,8 +20,51 @@ const primaryMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Relay AI",
-  description: "General-purpose AI workspace for chat, research, files, and remote coding",
+  title: {
+    default: "Relay AI — AI Workspace for Chat, Research & Coding",
+    template: "%s — Relay AI",
+  },
+  description:
+    "An open-source AI workspace combining chat, deep research, image generation, document creation, and remote coding sessions — powered by Claude.",
+  metadataBase: new URL(
+    process.env.APP_URL || "https://relay-ai-delta.vercel.app",
+  ),
+  keywords: [
+    "AI workspace",
+    "Claude",
+    "AI chat",
+    "coding agent",
+    "research assistant",
+    "image generation",
+    "GitHub integration",
+    "MCP",
+    "E2B sandbox",
+    "Anthropic",
+  ],
+  authors: [{ name: "Relay AI Contributors" }],
+  creator: "Relay AI",
+  openGraph: {
+    type: "website",
+    locale: "en_US",
+    siteName: "Relay AI",
+    title: "Relay AI — AI Workspace for Chat, Research & Coding",
+    description:
+      "Chat, research, generate images, create documents, and run code in cloud sandboxes — all in one AI workspace powered by Claude.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Relay AI — AI Workspace for Chat, Research & Coding",
+    description:
+      "Chat, research, generate images, create documents, and run code in cloud sandboxes — all in one AI workspace powered by Claude.",
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
+  icons: {
+    icon: "/icon.svg",
+    apple: "/apple-icon.svg",
+  },
 };
 
 export default function RootLayout({
