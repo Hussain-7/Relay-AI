@@ -4,6 +4,7 @@
  */
 export const ALLOWED_EMAILS = new Set([
   "hussain2000.rizvi@gmail.com",
+  "syed.rizvi@trilogy.com",
   "test@relay-ai.local",
 ]);
 
