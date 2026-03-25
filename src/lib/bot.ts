@@ -7,19 +7,27 @@ import { createConversationForUser } from "@/lib/conversations";
 import { isEmailAllowed } from "@/lib/allowed-emails";
 import { prisma } from "@/lib/prisma";
 
-// ─── Bot instance ────────────────────────────────────────────────────────────
+// ─── Bot instance (lazy — avoids initialization during build) ────────────────
 
-export const bot = new Chat({
-  userName: "relay-ai",
-  adapters: {
-    gchat: createGoogleChatAdapter(),
-  },
-  state: createRedisState({
-    url: process.env.CHAT_SDK_REDIS_URL,
-  }),
-  streamingUpdateIntervalMs: 1000,
-  fallbackStreamingPlaceholderText: "Thinking...",
-});
+let _bot: Chat | null = null;
+
+export function getBot(): Chat {
+  if (!_bot) {
+    _bot = new Chat({
+      userName: "relay-ai",
+      adapters: {
+        gchat: createGoogleChatAdapter(),
+      },
+      state: createRedisState({
+        url: process.env.CHAT_SDK_REDIS_URL,
+      }),
+      streamingUpdateIntervalMs: 1000,
+      fallbackStreamingPlaceholderText: "Thinking...",
+    });
+    registerHandlers(_bot);
+  }
+  return _bot;
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -30,7 +38,7 @@ async function resolveRelayUser(email: string) {
 }
 
 /** Extract sender email from a Chat SDK message (Google Chat adapter). */
-function getSenderEmail(message: Parameters<Parameters<typeof bot.onNewMention>[0]>[1]): string | null {
+function getSenderEmail(message: { author?: unknown; raw?: unknown; text: string }): string | null {
   // Chat SDK normalizes author info; fall back to raw payload
   const normalized = (message.author as { email?: string })?.email;
   if (normalized) return normalized;
@@ -99,6 +107,8 @@ async function runAgentAndGetFinalText(
 
 // ─── Event handlers ──────────────────────────────────────────────────────────
 
+function registerHandlers(bot: Chat) {
+
 bot.onNewMention(async (thread, message) => {
   const email = getSenderEmail(message);
   if (!email) {
@@ -137,3 +147,5 @@ bot.onSubscribedMessage(async (thread, message) => {
   const text = await runAgentAndGetFinalText(state.conversationId, user.userId, message.text);
   await thread.post(text);
 });
+
+} // end registerHandlers
