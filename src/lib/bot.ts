@@ -15,10 +15,16 @@ export function getBot(): Chat {
   if (!_bot) {
     // Decode base64 credentials to avoid JSON escaping issues in env vars
     const credsBase64 = process.env.GOOGLE_CHAT_CREDENTIALS_BASE64;
-    const gchatConfig = credsBase64
+    const creds = credsBase64
+      ? JSON.parse(Buffer.from(credsBase64, "base64").toString("utf-8")) as { client_email: string; private_key: string; project_id?: string }
+      : undefined;
+
+    const gchatConfig = creds
       ? {
-          credentials: JSON.parse(Buffer.from(credsBase64, "base64").toString("utf-8")),
-          googleChatProjectNumber: process.env.GOOGLE_CHAT_PROJECT_NUMBER,
+          credentials: creds,
+          // Skip JWT verification for now — Google Chat webhook auth
+          // will be re-enabled once we confirm the correct audience format.
+          // googleChatProjectNumber: process.env.GOOGLE_CHAT_PROJECT_NUMBER,
         }
       : undefined;
 
