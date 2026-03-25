@@ -7,8 +7,8 @@ const PUBLIC_ROUTES = new Set(["/login", "/auth/callback", "/waitlist"]);
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Skip auth for public routes and API routes (API routes handle their own auth)
-  if (PUBLIC_ROUTES.has(pathname) || pathname.startsWith("/api/")) {
+  // Skip auth for public routes, API routes, and static assets
+  if (PUBLIC_ROUTES.has(pathname) || pathname.startsWith("/api/") || pathname.endsWith(".webmanifest") || pathname.endsWith(".svg") || pathname === "/icon.svg" || pathname === "/apple-icon.svg") {
     return NextResponse.next();
   }
 

@@ -121,6 +121,9 @@ function SecretRowInput({
         onPaste={handleKeyPaste}
         placeholder="KEY_NAME"
         spellCheck={false}
+        autoComplete="off"
+        data-1p-ignore
+        data-lpignore="true"
         className="flex-1 min-w-0 rounded-[8px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-2.5 py-1.5 text-[0.82rem] text-[rgba(245,240,232,0.9)] placeholder:text-[rgba(245,240,232,0.25)] font-mono outline-none focus:border-[rgba(255,255,255,0.18)] transition-colors"
       />
       <div className="flex-1 min-w-0 relative">
@@ -136,12 +139,16 @@ function SecretRowInput({
         ) : (
           <>
             <input
-              type={showValue ? "text" : "password"}
+              type="text"
               value={row.value}
               onChange={(e) => onChange(index, "value", e.target.value)}
               placeholder={row.isExisting ? "enter new value" : "value"}
               autoFocus={row.isExisting && editing}
               spellCheck={false}
+              autoComplete="off"
+              data-1p-ignore
+              data-lpignore="true"
+              style={showValue ? undefined : { WebkitTextSecurity: "disc" } as React.CSSProperties}
               className="w-full rounded-[8px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-2.5 py-1.5 pr-8 text-[0.82rem] text-[rgba(245,240,232,0.9)] placeholder:text-[rgba(245,240,232,0.25)] font-mono outline-none focus:border-[rgba(255,255,255,0.18)] transition-colors"
             />
             {row.value && (

@@ -583,6 +583,9 @@ export async function runCodingTask(input: {
       ? ` --resume ${session.claudeSdkSessionId}`
       : "";
 
+    // Refresh .env before each task (picks up secrets saved after the sandbox started)
+    await writeRepoSecretsEnv(sandbox, session.workspacePath ?? DEFAULT_WORKSPACE_ROOT, session.repoBinding?.id);
+
     // Verify claude CLI is available
     const claudeCheck = await safeRun(sandbox, "which claude && claude --version 2>&1 || echo 'claude not found'");
     log.info("Claude CLI check", { stdout: claudeCheck.stdout.trim(), exitCode: claudeCheck.exitCode });

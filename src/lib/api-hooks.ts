@@ -810,8 +810,7 @@ export function useDeleteRepoSecret() {
         queryClient.setQueryData(queryKeys.repoSecrets(repoBindingId), context.previous);
       }
     },
-    onSettled: (_data, _err, { repoBindingId }) => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.repoSecrets(repoBindingId) });
-    },
+    // No onSettled invalidation — the optimistic update already removed the secret
+    // from cache. An eager refetch here can race with the delete and return stale data.
   });
 }
