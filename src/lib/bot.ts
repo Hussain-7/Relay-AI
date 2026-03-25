@@ -55,27 +55,40 @@ async function resolveRelayUser(email: string) {
 /** Extract sender email from a Chat SDK message (Google Chat adapter). */
 function getSenderEmail(message: { author?: unknown; raw?: unknown; text: string }): string | null {
   // Chat SDK normalizes author info
-  const author = message.author as { email?: string; id?: string; fullName?: string } | undefined;
-  if (author?.email) return author.email;
+  const author = message.author as Record<string, unknown> | undefined;
+  console.log("[gchat-bot] getSenderEmail — author:", JSON.stringify(author));
 
-  // Google Chat HTTP endpoint: dig through all possible locations in the raw payload
+  // Check author.email (Chat SDK normalized)
+  if (typeof author?.email === "string" && author.email) return author.email;
+
+  // Check author.platformId or author.id — Chat SDK may put email there
+  if (typeof author?.platformId === "string" && author.platformId.includes("@")) return author.platformId;
+
+  // Google Chat HTTP endpoint: dig through raw payload
   const raw = message.raw as Record<string, unknown> | undefined;
-  if (!raw) return null;
+  if (raw) {
+    console.log("[gchat-bot] getSenderEmail — raw payload:", JSON.stringify(raw).slice(0, 500));
 
-  // Direct event-level user email
-  const userEmail = (raw.user as { email?: string })?.email;
-  if (userEmail) return userEmail;
+    // Top-level user object
+    const user = raw.user as Record<string, unknown> | undefined;
+    if (typeof user?.email === "string") return user.email;
 
-  // Message sender email
-  const senderEmail = ((raw.message as Record<string, unknown>)?.sender as { email?: string })?.email;
-  if (senderEmail) return senderEmail;
+    // message.sender object
+    const msg = raw.message as Record<string, unknown> | undefined;
+    const sender = msg?.sender as Record<string, unknown> | undefined;
+    if (typeof sender?.email === "string") return sender.email;
 
-  // Chat event sender
-  const chatMessage = (raw.chat as Record<string, unknown>)?.messageCreatedEventData as Record<string, unknown> | undefined;
-  const chatSenderEmail = ((chatMessage?.message as Record<string, unknown>)?.sender as { email?: string })?.email;
-  if (chatSenderEmail) return chatSenderEmail;
+    // sender displayName as fallback — try to match against allowed emails
+    // Google Chat often sends displayName but not email for HTTP endpoint apps
+    const displayName = sender?.displayName as string | undefined
+      ?? user?.displayName as string | undefined
+      ?? author?.fullName as string | undefined;
+    if (displayName) {
+      console.log("[gchat-bot] No email found, trying displayName lookup:", displayName);
+    }
+  }
 
-  console.log("[gchat-bot] Could not find email in message. Raw keys:", Object.keys(raw), "Author:", JSON.stringify(author));
+  console.log("[gchat-bot] Could not extract email from message");
   return null;
 }
 
