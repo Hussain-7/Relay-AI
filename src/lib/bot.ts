@@ -46,49 +46,49 @@ export function getBot(): Chat {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/** Resolve a Google Chat sender email → Relay AI UserProfile. Returns null if not allowed. */
-async function resolveRelayUser(email: string) {
-  if (!isEmailAllowed(email)) return null;
-  return prisma.userProfile.findUnique({ where: { email: email.toLowerCase() } });
-}
 
-/** Extract sender email from a Chat SDK message (Google Chat adapter). */
-function getSenderEmail(message: { author?: unknown; raw?: unknown; text: string }): string | null {
-  // Chat SDK normalizes author info
+/**
+ * Resolve the sender's Relay AI user from a Chat SDK message.
+ * Google Chat HTTP endpoint webhooks do NOT include the sender's email —
+ * only fullName and a numeric userId. We match against UserProfile.fullName.
+ */
+async function resolveSenderUser(message: { author?: unknown; raw?: unknown }) {
   const author = message.author as Record<string, unknown> | undefined;
-  console.log("[gchat-bot] getSenderEmail — author:", JSON.stringify(author));
+  console.log("[gchat-bot] resolveSenderUser — author:", JSON.stringify(author));
 
-  // Check author.email (Chat SDK normalized)
-  if (typeof author?.email === "string" && author.email) return author.email;
+  // 1. Try email if available (rare for HTTP endpoint apps)
+  if (typeof author?.email === "string" && author.email) {
+    console.log("[gchat-bot] Found email in author:", author.email);
+    if (!isEmailAllowed(author.email)) return null;
+    return prisma.userProfile.findUnique({ where: { email: author.email.toLowerCase() } });
+  }
 
-  // Check author.platformId or author.id — Chat SDK may put email there
-  if (typeof author?.platformId === "string" && author.platformId.includes("@")) return author.platformId;
-
-  // Google Chat HTTP endpoint: dig through raw payload
+  // 2. Try raw payload email fields
   const raw = message.raw as Record<string, unknown> | undefined;
   if (raw) {
-    console.log("[gchat-bot] getSenderEmail — raw payload:", JSON.stringify(raw).slice(0, 500));
-
-    // Top-level user object
     const user = raw.user as Record<string, unknown> | undefined;
-    if (typeof user?.email === "string") return user.email;
-
-    // message.sender object
-    const msg = raw.message as Record<string, unknown> | undefined;
-    const sender = msg?.sender as Record<string, unknown> | undefined;
-    if (typeof sender?.email === "string") return sender.email;
-
-    // sender displayName as fallback — try to match against allowed emails
-    // Google Chat often sends displayName but not email for HTTP endpoint apps
-    const displayName = sender?.displayName as string | undefined
-      ?? user?.displayName as string | undefined
-      ?? author?.fullName as string | undefined;
-    if (displayName) {
-      console.log("[gchat-bot] No email found, trying displayName lookup:", displayName);
+    if (typeof user?.email === "string") {
+      console.log("[gchat-bot] Found email in raw.user:", user.email);
+      if (!isEmailAllowed(user.email)) return null;
+      return prisma.userProfile.findUnique({ where: { email: (user.email as string).toLowerCase() } });
     }
   }
 
-  console.log("[gchat-bot] Could not extract email from message");
+  // 3. Fall back to fullName lookup (Google Chat only provides name, not email)
+  const fullName = author?.fullName as string | undefined;
+  if (fullName) {
+    console.log("[gchat-bot] No email available, looking up by fullName:", fullName);
+    const user = await prisma.userProfile.findFirst({
+      where: { fullName: { equals: fullName, mode: "insensitive" } },
+    });
+    if (user) {
+      console.log("[gchat-bot] Matched user by fullName:", user.email);
+      if (!isEmailAllowed(user.email)) return null;
+      return user;
+    }
+  }
+
+  console.log("[gchat-bot] Could not resolve sender to any Relay AI user");
   return null;
 }
 
@@ -157,28 +157,17 @@ function registerHandlers(bot: Chat) {
 
 bot.onNewMention(async (thread, message) => {
   console.log("[gchat-bot] onNewMention fired", { threadId: thread.id, text: message.text?.slice(0, 100) });
-  console.log("[gchat-bot] message.author:", JSON.stringify(message.author));
-  console.log("[gchat-bot] message.raw keys:", message.raw ? Object.keys(message.raw as object) : "no raw");
 
-  const email = getSenderEmail(message);
-  console.log("[gchat-bot] Resolved email:", email);
-
-  if (!email) {
-    console.log("[gchat-bot] No email found — posting error");
-    await thread.post("Could not identify your email address.");
-    return;
-  }
-
-  const user = await resolveRelayUser(email);
-  console.log("[gchat-bot] Resolved user:", user ? { userId: user.userId, email: user.email } : "null");
+  const user = await resolveSenderUser(message);
 
   if (!user) {
-    console.log("[gchat-bot] User not found or not allowed — posting signup link");
+    console.log("[gchat-bot] User not resolved — posting signup link");
     await thread.post(
       `You need a Relay AI account to use this bot. Sign up at ${process.env.APP_URL ?? "https://relay-ai-delta.vercel.app"}`,
     );
     return;
   }
+  console.log("[gchat-bot] Resolved user:", { userId: user.userId, email: user.email });
 
   await thread.subscribe();
   console.log("[gchat-bot] Subscribed to thread");
@@ -198,13 +187,9 @@ bot.onNewMention(async (thread, message) => {
 bot.onSubscribedMessage(async (thread, message) => {
   console.log("[gchat-bot] onSubscribedMessage fired", { threadId: thread.id, text: message.text?.slice(0, 100) });
 
-  const email = getSenderEmail(message);
-  console.log("[gchat-bot] Resolved email:", email);
-  if (!email) { console.log("[gchat-bot] No email — skipping"); return; }
-
-  const user = await resolveRelayUser(email);
-  console.log("[gchat-bot] Resolved user:", user ? { userId: user.userId } : "null");
-  if (!user) { console.log("[gchat-bot] User not allowed — skipping"); return; }
+  const user = await resolveSenderUser(message);
+  if (!user) { console.log("[gchat-bot] User not resolved — skipping"); return; }
+  console.log("[gchat-bot] Resolved user:", { userId: user.userId });
 
   const state = await thread.state as { conversationId?: string } | null;
   console.log("[gchat-bot] Thread state:", state);
