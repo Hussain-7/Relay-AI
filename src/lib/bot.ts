@@ -49,35 +49,49 @@ export function getBot(): Chat {
 
 /**
  * Resolve the sender's Relay AI user from a Chat SDK message.
- * Google Chat HTTP endpoint webhooks do NOT include the sender's email —
- * only fullName and a numeric userId. We match against UserProfile.fullName.
+ *
+ * Google Chat HTTP endpoint webhooks provide `userId: "users/{numericId}"` but NOT email.
+ * The numeric ID matches the `sub` / `provider_id` stored in Supabase's `auth.users`
+ * when the user signed in via Google OAuth. We query auth.users by provider_id → get
+ * the Supabase userId → look up UserProfile.
  */
 async function resolveSenderUser(message: { author?: unknown; raw?: unknown }) {
   const author = message.author as Record<string, unknown> | undefined;
   console.log("[gchat-bot] resolveSenderUser — author:", JSON.stringify(author));
 
-  // 1. Try email if available (rare for HTTP endpoint apps)
+  // 1. Try email if directly available (rare for HTTP endpoint apps)
   if (typeof author?.email === "string" && author.email) {
     console.log("[gchat-bot] Found email in author:", author.email);
     if (!isEmailAllowed(author.email)) return null;
     return prisma.userProfile.findUnique({ where: { email: author.email.toLowerCase() } });
   }
 
-  // 2. Try raw payload email fields
-  const raw = message.raw as Record<string, unknown> | undefined;
-  if (raw) {
-    const user = raw.user as Record<string, unknown> | undefined;
-    if (typeof user?.email === "string") {
-      console.log("[gchat-bot] Found email in raw.user:", user.email);
-      if (!isEmailAllowed(user.email)) return null;
-      return prisma.userProfile.findUnique({ where: { email: (user.email as string).toLowerCase() } });
+  // 2. Match by Google numeric user ID → Supabase auth.users.provider_id
+  //    author.userId comes as "users/110522809986993401130" — extract the numeric part
+  const gchatUserId = author?.userId as string | undefined;
+  if (gchatUserId) {
+    const numericId = gchatUserId.replace("users/", "");
+    console.log("[gchat-bot] Looking up by Google provider_id:", numericId);
+
+    // Query Supabase auth.users via Prisma raw query (auth schema isn't in our Prisma models)
+    const authUsers = await prisma.$queryRawUnsafe<Array<{ id: string; email: string }>>(
+      `SELECT id, email FROM auth.users WHERE raw_user_meta_data->>'provider_id' = $1 LIMIT 1`,
+      numericId,
+    );
+
+    if (authUsers.length > 0) {
+      const authUser = authUsers[0];
+      console.log("[gchat-bot] Matched auth.user by provider_id:", { id: authUser.id, email: authUser.email });
+      if (!isEmailAllowed(authUser.email)) return null;
+      return prisma.userProfile.findUnique({ where: { userId: authUser.id } });
     }
+    console.log("[gchat-bot] No auth.user found for provider_id:", numericId);
   }
 
-  // 3. Fall back to fullName lookup (Google Chat only provides name, not email)
+  // 3. Fall back to fullName lookup
   const fullName = author?.fullName as string | undefined;
   if (fullName) {
-    console.log("[gchat-bot] No email available, looking up by fullName:", fullName);
+    console.log("[gchat-bot] Falling back to fullName lookup:", fullName);
     const user = await prisma.userProfile.findFirst({
       where: { fullName: { equals: fullName, mode: "insensitive" } },
     });
