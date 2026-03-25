@@ -13,10 +13,16 @@ let _bot: Chat | null = null;
 
 export function getBot(): Chat {
   if (!_bot) {
+    // Decode base64 credentials to avoid JSON escaping issues in env vars
+    const credsBase64 = process.env.GOOGLE_CHAT_CREDENTIALS_BASE64;
+    const gchatConfig = credsBase64
+      ? { credentials: JSON.parse(Buffer.from(credsBase64, "base64").toString("utf-8")) }
+      : undefined;
+
     _bot = new Chat({
       userName: "relay-ai",
       adapters: {
-        gchat: createGoogleChatAdapter(),
+        gchat: createGoogleChatAdapter(gchatConfig),
       },
       state: createRedisState({
         url: process.env.CHAT_SDK_REDIS_URL,
