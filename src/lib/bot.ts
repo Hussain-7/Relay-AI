@@ -73,19 +73,24 @@ async function resolveSenderUser(message: { author?: unknown; raw?: unknown }) {
     const numericId = gchatUserId.replace("users/", "");
     console.log("[gchat-bot] Looking up by Google provider_id:", numericId);
 
-    // Query Supabase auth.users via Prisma raw query (auth schema isn't in our Prisma models)
-    const authUsers = await prisma.$queryRawUnsafe<Array<{ id: string; email: string }>>(
-      `SELECT id, email FROM auth.users WHERE raw_user_meta_data->>'provider_id' = $1 LIMIT 1`,
-      numericId,
-    );
+    try {
+      // Query Supabase auth.users via raw SQL (auth schema isn't in Prisma models)
+      // This may fail on PgBouncer (transaction mode) — falls through to fullName
+      const authUsers = await prisma.$queryRawUnsafe<Array<{ id: string; email: string }>>(
+        `SELECT id, email FROM auth.users WHERE raw_user_meta_data->>'provider_id' = $1 LIMIT 1`,
+        numericId,
+      );
 
-    if (authUsers.length > 0) {
-      const authUser = authUsers[0];
-      console.log("[gchat-bot] Matched auth.user by provider_id:", { id: authUser.id, email: authUser.email });
-      if (!isEmailAllowed(authUser.email)) return null;
-      return prisma.userProfile.findUnique({ where: { userId: authUser.id } });
+      if (authUsers.length > 0) {
+        const authUser = authUsers[0];
+        console.log("[gchat-bot] Matched auth.user by provider_id:", { id: authUser.id, email: authUser.email });
+        if (!isEmailAllowed(authUser.email)) return null;
+        return prisma.userProfile.findUnique({ where: { userId: authUser.id } });
+      }
+      console.log("[gchat-bot] No auth.user found for provider_id:", numericId);
+    } catch (err) {
+      console.warn("[gchat-bot] auth.users query failed (PgBouncer?), falling through to fullName:", (err as Error).message?.slice(0, 100));
     }
-    console.log("[gchat-bot] No auth.user found for provider_id:", numericId);
   }
 
   // 3. Fall back to fullName lookup
