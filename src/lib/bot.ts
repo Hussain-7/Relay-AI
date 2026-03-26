@@ -4,34 +4,34 @@ import { createRedisState } from "@chat-adapter/state-redis";
 
 import { streamMainAgentRun } from "@/lib/main-agent/runtime";
 import { createConversationForUser } from "@/lib/conversations";
-import { isEmailAllowed } from "@/lib/allowed-emails";
 import { prisma } from "@/lib/prisma";
 
-// ─── Bot instance (cached globally like Prisma — survives warm starts) ───────
+// ─── Bot instance (cached globally — survives warm starts) ───────────────────
 
 declare global {
   var __relayAiBot__: Chat | undefined;
 }
 
+// Default user for all gchat requests (first user in the system)
+const DEFAULT_USER_ID = process.env.GCHAT_DEFAULT_USER_ID;
+
 export function getBot(): Chat {
   if (!globalThis.__relayAiBot__) {
     const credsBase64 = process.env.GOOGLE_CHAT_CREDENTIALS_BASE64;
     const creds = credsBase64
-      ? JSON.parse(Buffer.from(credsBase64, "base64").toString("utf-8")) as { client_email: string; private_key: string; project_id?: string }
+      ? JSON.parse(Buffer.from(credsBase64, "base64").toString("utf-8")) as { client_email: string; private_key: string }
       : undefined;
-
-    const gchatConfig = creds ? { credentials: creds } : undefined;
 
     globalThis.__relayAiBot__ = new Chat({
       userName: "relay-ai",
       adapters: {
-        gchat: createGoogleChatAdapter(gchatConfig),
+        gchat: createGoogleChatAdapter(creds ? { credentials: creds } : undefined),
       },
       state: createRedisState({
         url: process.env.CHAT_SDK_REDIS_URL,
       }),
       streamingUpdateIntervalMs: 1000,
-      fallbackStreamingPlaceholderText: null, // We post our own placeholder
+      fallbackStreamingPlaceholderText: null,
     });
     registerHandlers(globalThis.__relayAiBot__);
   }
@@ -40,40 +40,14 @@ export function getBot(): Chat {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/**
- * Resolve the sender's Relay AI user from a Chat SDK message.
- * Uses fullName match (Google Chat HTTP endpoints don't provide email).
- */
-async function resolveSenderUser(message: { author?: unknown }) {
-  const author = message.author as Record<string, unknown> | undefined;
-  console.log('author', author);
-  // 1. Try email if available
-  if (typeof author?.email === "string" && author.email) {
-    if (!isEmailAllowed(author.email)) return null;
-    console.log('email found, finding user');
-    const user = await prisma.userProfile.findUnique({ where: { email: author.email.toLowerCase() } });
-    console.log('user', user);
-    return user;
-  }
-
-  // 2. Match by fullName (fast, no cross-schema query)
-  const fullName = author?.fullName as string | undefined;
-  console.log('fullName', fullName);
-  if (fullName) {
-    console.log('fullName found, finding user');
-    const user = await prisma.userProfile.findFirst({
-      where: { fullName: { equals: fullName, mode: "insensitive" } },
-    });
-    console.log('user', user);
-    if (user && isEmailAllowed(user.email)) return user;
-  }
-
-  return null;
+async function getDefaultUserId(): Promise<string> {
+  if (DEFAULT_USER_ID) return DEFAULT_USER_ID;
+  // Fall back to first user in the DB
+  const user = await prisma.userProfile.findFirst({ orderBy: { createdAt: "asc" } });
+  if (!user) throw new Error("No users in the system");
+  return user.userId;
 }
 
-/**
- * Consume the SSE stream from streamMainAgentRun and extract the final response text.
- */
 async function runAgentAndGetFinalText(
   conversationId: string,
   userId: string,
@@ -96,11 +70,9 @@ async function runAgentAndGetFinalText(
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-
       buffer += decoder.decode(value, { stream: true });
       const segments = buffer.split("\n\n");
       buffer = segments.pop() ?? "";
-
       for (const segment of segments) {
         const line = segment.split("\n").find((l) => l.startsWith("data: "));
         if (!line) continue;
@@ -109,7 +81,7 @@ async function runAgentAndGetFinalText(
           if (event.type === "assistant.message.completed" && event.payload?.text) {
             finalText = event.payload.text;
           }
-        } catch { /* skip malformed */ }
+        } catch { /* skip */ }
       }
     }
   } finally {
@@ -124,58 +96,40 @@ async function runAgentAndGetFinalText(
 function registerHandlers(bot: Chat) {
 
 bot.onNewMention(async (thread, message) => {
-  console.log("[gchat-bot] onNewMention", { text: message.text?.slice(0, 80) });
+  console.log("[gchat-bot] onNewMention:", message.text?.slice(0, 80));
 
-  const user = await resolveSenderUser(message);
-  console.log('user', user);
-  if (!user) {
-    await thread.post(
-      `You need a Relay AI account to use this bot. Sign up at ${process.env.APP_URL ?? "https://relay-ai-delta.vercel.app"}`,
-    );
-    console.log('user not found, posting message');
-    return;
-  }
-  console.log('user found, subscribing to thread');
+  const userId = await getDefaultUserId();
+  const conversation = await createConversationForUser({ userId });
+
   await thread.subscribe();
+  await thread.setState({ conversationId: conversation.id, userId });
 
-  // Create conversation and store mapping
-  const conversation = await createConversationForUser({ userId: user.userId });
-  console.log('conversation created', conversation);
-  await thread.setState({ conversationId: conversation.id });
-  console.log('conversation state set', conversation.id);
-  // Post placeholder immediately, then edit with the real response
   const placeholder = await thread.post("Thinking...");
-  console.log("[gchat-bot] Placeholder posted, running agent...");
 
   try {
-    const text = await runAgentAndGetFinalText(conversation.id, user.userId, message.text);
-    console.log("[gchat-bot] Agent done, editing placeholder");
+    const text = await runAgentAndGetFinalText(conversation.id, userId, message.text);
     await placeholder.edit(text);
   } catch (err) {
-    console.error("[gchat-bot] Agent error:", err);
-    await placeholder.edit("Sorry, something went wrong processing your request.");
+    console.error("[gchat-bot] Error:", err);
+    await placeholder.edit("Sorry, something went wrong.");
   }
 });
 
 bot.onSubscribedMessage(async (thread, message) => {
-  console.log("[gchat-bot] onSubscribedMessage", { text: message.text?.slice(0, 80) });
+  console.log("[gchat-bot] onSubscribedMessage:", message.text?.slice(0, 80));
 
-  const user = await resolveSenderUser(message);
-  console.log('user', user);
-  if (!user) return;
-
-  const state = await thread.state as { conversationId?: string } | null;
-  console.log('state', state);
+  const state = await thread.state as { conversationId?: string; userId?: string } | null;
   if (!state?.conversationId) return;
 
+  const userId = state.userId ?? await getDefaultUserId();
   const placeholder = await thread.post("Thinking...");
 
   try {
-    const text = await runAgentAndGetFinalText(state.conversationId, user.userId, message.text);
+    const text = await runAgentAndGetFinalText(state.conversationId, userId, message.text);
     await placeholder.edit(text);
   } catch (err) {
-    console.error("[gchat-bot] Agent error:", err);
-    await placeholder.edit("Sorry, something went wrong processing your request.");
+    console.error("[gchat-bot] Error:", err);
+    await placeholder.edit("Sorry, something went wrong.");
   }
 });
 
