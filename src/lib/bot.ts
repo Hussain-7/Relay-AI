@@ -121,19 +121,22 @@ bot.onNewMention(async (thread, message) => {
   console.log("[gchat-bot] onNewMention", { text: message.text?.slice(0, 80) });
 
   const user = await resolveSenderUser(message);
+  console.log('user', user);
   if (!user) {
     await thread.post(
       `You need a Relay AI account to use this bot. Sign up at ${process.env.APP_URL ?? "https://relay-ai-delta.vercel.app"}`,
     );
+    console.log('user not found, posting message');
     return;
   }
-
+  console.log('user found, subscribing to thread');
   await thread.subscribe();
 
   // Create conversation and store mapping
   const conversation = await createConversationForUser({ userId: user.userId });
+  console.log('conversation created', conversation);
   await thread.setState({ conversationId: conversation.id });
-
+  console.log('conversation state set', conversation.id);
   // Post placeholder immediately, then edit with the real response
   const placeholder = await thread.post("Thinking...");
   console.log("[gchat-bot] Placeholder posted, running agent...");
@@ -152,9 +155,11 @@ bot.onSubscribedMessage(async (thread, message) => {
   console.log("[gchat-bot] onSubscribedMessage", { text: message.text?.slice(0, 80) });
 
   const user = await resolveSenderUser(message);
+  console.log('user', user);
   if (!user) return;
 
   const state = await thread.state as { conversationId?: string } | null;
+  console.log('state', state);
   if (!state?.conversationId) return;
 
   const placeholder = await thread.post("Thinking...");
