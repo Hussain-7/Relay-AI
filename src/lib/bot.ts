@@ -99,6 +99,33 @@ async function resolveSenderUserId(message: { author?: unknown }): Promise<strin
 }
 
 /**
+ * Convert standard Markdown to Google Chat's supported formatting.
+ * Google Chat supports: *bold*, _italic_, ~strikethrough~, `code`, ```code blocks```
+ * Does NOT support: headings, tables, images, blockquotes, links
+ */
+function markdownToGChat(md: string): string {
+  return md
+    // Convert markdown images ![alt](url) → "alt: url"
+    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, "$1: $2")
+    // Convert markdown links [text](url) → "text (url)"
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 ($2)")
+    // Convert **bold** → *bold* (Google Chat uses single asterisk)
+    .replace(/\*\*(.+?)\*\*/g, "*$1*")
+    // Convert ### heading → *heading* (bold, no heading support)
+    .replace(/^#{1,6}\s+(.+)$/gm, "*$1*")
+    // Convert > blockquote → "| quote" (visual indent)
+    .replace(/^>\s?(.*)$/gm, "│ $1")
+    // Strip markdown table separators |---|---|
+    .replace(/^\|[-:| ]+\|$/gm, "")
+    // Convert table rows | a | b | → "a | b"
+    .replace(/^\|\s*(.+?)\s*\|$/gm, (_, content: string) =>
+      content.replace(/\s*\|\s*/g, " | ").trim()
+    )
+    // Clean up multiple blank lines
+    .replace(/\n{3,}/g, "\n\n");
+}
+
+/**
  * Consume the SSE stream from streamMainAgentRun and extract the final response text.
  */
 async function runAgentAndGetFinalText(
@@ -141,7 +168,7 @@ async function runAgentAndGetFinalText(
     reader.releaseLock();
   }
 
-  return finalText || "I wasn't able to generate a response.";
+  return markdownToGChat(finalText || "I wasn't able to generate a response.");
 }
 
 // ─── Event handlers ──────────────────────────────────────────────────────────
