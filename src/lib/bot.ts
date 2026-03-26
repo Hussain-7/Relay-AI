@@ -46,19 +46,25 @@ export function getBot(): Chat {
  */
 async function resolveSenderUser(message: { author?: unknown }) {
   const author = message.author as Record<string, unknown> | undefined;
-
+  console.log('author', author);
   // 1. Try email if available
   if (typeof author?.email === "string" && author.email) {
     if (!isEmailAllowed(author.email)) return null;
-    return prisma.userProfile.findUnique({ where: { email: author.email.toLowerCase() } });
+    console.log('email found, finding user');
+    const user = await prisma.userProfile.findUnique({ where: { email: author.email.toLowerCase() } });
+    console.log('user', user);
+    return user;
   }
 
   // 2. Match by fullName (fast, no cross-schema query)
   const fullName = author?.fullName as string | undefined;
+  console.log('fullName', fullName);
   if (fullName) {
+    console.log('fullName found, finding user');
     const user = await prisma.userProfile.findFirst({
       where: { fullName: { equals: fullName, mode: "insensitive" } },
     });
+    console.log('user', user);
     if (user && isEmailAllowed(user.email)) return user;
   }
 

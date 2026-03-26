@@ -9,5 +9,6 @@ export const ALLOWED_EMAILS = new Set([
 ]);
 
 export function isEmailAllowed(email: string): boolean {
+  console.log('isEmailAllowed', email, ALLOWED_EMAILS.has(email.toLowerCase()));
   return ALLOWED_EMAILS.has(email.toLowerCase());
 }
