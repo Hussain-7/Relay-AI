@@ -7,12 +7,14 @@ import { createConversationForUser } from "@/lib/conversations";
 import { isEmailAllowed } from "@/lib/allowed-emails";
 import { prisma } from "@/lib/prisma";
 
-// ─── Bot instance (lazy — avoids initialization during build) ────────────────
+// ─── Bot instance (cached globally like Prisma — survives warm starts) ───────
 
-let _bot: Chat | null = null;
+declare global {
+  var __relayAiBot__: Chat | undefined;
+}
 
 export function getBot(): Chat {
-  if (!_bot) {
+  if (!globalThis.__relayAiBot__) {
     const credsBase64 = process.env.GOOGLE_CHAT_CREDENTIALS_BASE64;
     const creds = credsBase64
       ? JSON.parse(Buffer.from(credsBase64, "base64").toString("utf-8")) as { client_email: string; private_key: string; project_id?: string }
@@ -20,7 +22,7 @@ export function getBot(): Chat {
 
     const gchatConfig = creds ? { credentials: creds } : undefined;
 
-    _bot = new Chat({
+    globalThis.__relayAiBot__ = new Chat({
       userName: "relay-ai",
       adapters: {
         gchat: createGoogleChatAdapter(gchatConfig),
@@ -31,9 +33,9 @@ export function getBot(): Chat {
       streamingUpdateIntervalMs: 1000,
       fallbackStreamingPlaceholderText: null, // We post our own placeholder
     });
-    registerHandlers(_bot);
+    registerHandlers(globalThis.__relayAiBot__);
   }
-  return _bot;
+  return globalThis.__relayAiBot__;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
