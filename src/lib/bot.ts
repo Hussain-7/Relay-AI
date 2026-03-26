@@ -4,6 +4,8 @@ import { createRedisState } from "@chat-adapter/state-redis";
 
 import { streamMainAgentRun } from "@/lib/main-agent/runtime";
 import { createConversationForUser } from "@/lib/conversations";
+import { isEmailAllowed } from "@/lib/allowed-emails";
+import { prisma } from "@/lib/prisma";
 
 // ─── Bot instance (cached globally — survives warm starts) ───────────────────
 
@@ -11,9 +13,8 @@ declare global {
   var __relayAiBot__: Chat | undefined;
 }
 
-// Default user for all gchat requests — MUST be set, no DB fallback
-// (Prisma queries hang on Vercel serverless due to cold-start connection issues)
-const DEFAULT_USER_ID = process.env.GCHAT_DEFAULT_USER_ID ?? "35e4ced0-e974-4a44-8c2c-0f1ac93d786f";
+// Fallback user ID if user resolution fails
+const FALLBACK_USER_ID = process.env.GCHAT_DEFAULT_USER_ID ?? "35e4ced0-e974-4a44-8c2c-0f1ac93d786f";
 
 export function getBot(): Chat {
   if (!globalThis.__relayAiBot__) {
@@ -40,10 +41,40 @@ export function getBot(): Chat {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function getDefaultUserId(): string {
-  return DEFAULT_USER_ID;
+/**
+ * Resolve the sender's Relay AI user from a Chat SDK message.
+ * Google Chat HTTP endpoints provide fullName but not email.
+ * Falls back to FALLBACK_USER_ID if resolution fails.
+ */
+async function resolveSenderUserId(message: { author?: unknown }): Promise<string> {
+  try {
+    const author = message.author as Record<string, unknown> | undefined;
+
+    // Try email first (if available)
+    if (typeof author?.email === "string" && author.email) {
+      if (!isEmailAllowed(author.email)) return FALLBACK_USER_ID;
+      const user = await prisma.userProfile.findUnique({ where: { email: author.email.toLowerCase() } });
+      if (user) return user.userId;
+    }
+
+    // Match by fullName
+    const fullName = author?.fullName as string | undefined;
+    if (fullName) {
+      const user = await prisma.userProfile.findFirst({
+        where: { fullName: { equals: fullName, mode: "insensitive" } },
+      });
+      if (user && isEmailAllowed(user.email)) return user.userId;
+    }
+  } catch (err) {
+    console.warn("[gchat-bot] User resolution failed, using fallback:", (err as Error).message?.slice(0, 100));
+  }
+
+  return FALLBACK_USER_ID;
 }
 
+/**
+ * Consume the SSE stream from streamMainAgentRun and extract the final response text.
+ */
 async function runAgentAndGetFinalText(
   conversationId: string,
   userId: string,
@@ -93,19 +124,22 @@ function registerHandlers(bot: Chat) {
 
 bot.onNewMention(async (thread, message) => {
   console.log("[gchat-bot] onNewMention:", message.text?.slice(0, 80));
-  const userId = getDefaultUserId();
-  console.log("[gchat-bot] userId:", userId);
+
+  const userId = await resolveSenderUserId(message);
+  console.log("[gchat-bot] resolved userId:", userId);
 
   const conversation = await createConversationForUser({ userId });
-  console.log("[gchat-bot] conversation created:", conversation.id);
+  console.log("[gchat-bot] conversation:", conversation.id);
 
   await thread.subscribe();
   await thread.setState({ conversationId: conversation.id, userId });
 
   const placeholder = await thread.post("Thinking...");
   console.log("[gchat-bot] placeholder posted, running agent...");
+
   try {
     const text = await runAgentAndGetFinalText(conversation.id, userId, message.text);
+    console.log("[gchat-bot] agent done, response length:", text.length);
     await placeholder.edit(text);
   } catch (err) {
     console.error("[gchat-bot] Error:", err);
@@ -119,7 +153,7 @@ bot.onSubscribedMessage(async (thread, message) => {
   const state = await thread.state as { conversationId?: string; userId?: string } | null;
   if (!state?.conversationId) return;
 
-  const userId = state.userId ?? getDefaultUserId();
+  const userId = state.userId ?? await resolveSenderUserId(message);
   const placeholder = await thread.post("Thinking...");
 
   try {
