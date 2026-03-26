@@ -1,3 +1,4 @@
+import pg from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@/generated/prisma/client";
 
@@ -11,12 +12,18 @@ function createPrismaClient(): PrismaClient {
   const connectionString = process.env.DATABASE_URL;
   const isProduction = process.env.NODE_ENV === "production";
 
-  const adapter = new PrismaPg({
+  // Create an explicit pg.Pool — prevents the "client.query() while already
+  // executing" deprecation warning by ensuring proper connection checkout.
+  const pool = new pg.Pool({
     connectionString,
-    // Limit pool size — on Vercel serverless, each function gets its own pool.
-    // Keep small to avoid exhausting Supabase's 100-connection limit.
-    max: isProduction ? 3 : 10,
+    max: isProduction ? 5 : 10,
+    // Release idle clients back to the pool quickly on serverless
+    idleTimeoutMillis: 30_000,
+    // Don't wait forever for a connection
+    connectionTimeoutMillis: 10_000,
   });
+
+  const adapter = new PrismaPg(pool);
 
   return new PrismaClient({
     adapter,
