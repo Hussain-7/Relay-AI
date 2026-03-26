@@ -42,8 +42,10 @@ export function getBot(): Chat {
 
 async function getDefaultUserId(): Promise<string> {
   if (DEFAULT_USER_ID) return DEFAULT_USER_ID;
+  console.log('DEFAULT_USER_ID not found, finding first user');
   // Fall back to first user in the DB
   const user = await prisma.userProfile.findFirst({ orderBy: { createdAt: "asc" } });
+  console.log('user found', user);
   if (!user) throw new Error("No users in the system");
   return user.userId;
 }
@@ -97,15 +99,16 @@ function registerHandlers(bot: Chat) {
 
 bot.onNewMention(async (thread, message) => {
   console.log("[gchat-bot] onNewMention:", message.text?.slice(0, 80));
-
   const userId = await getDefaultUserId();
+  console.log('userId', userId);
   const conversation = await createConversationForUser({ userId });
-
+  console.log('conversation', conversation);
   await thread.subscribe();
+  console.log('thread subscribed');
   await thread.setState({ conversationId: conversation.id, userId });
-
+  console.log('state set');
   const placeholder = await thread.post("Thinking...");
-
+  console.log('placeholder posted');
   try {
     const text = await runAgentAndGetFinalText(conversation.id, userId, message.text);
     await placeholder.edit(text);
