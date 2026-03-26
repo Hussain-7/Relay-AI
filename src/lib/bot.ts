@@ -49,17 +49,42 @@ export function getBot(): Chat {
 async function resolveSenderUserId(message: { author?: unknown }): Promise<string> {
   try {
     const author = message.author as Record<string, unknown> | undefined;
+    console.log("[gchat-bot] resolving user from author:", JSON.stringify(author));
 
-    // Try email first (if available)
+    // 1. Try email first (if available)
     if (typeof author?.email === "string" && author.email) {
+      console.log("[gchat-bot] found email:", author.email);
       if (!isEmailAllowed(author.email)) return FALLBACK_USER_ID;
       const user = await prisma.userProfile.findUnique({ where: { email: author.email.toLowerCase() } });
       if (user) return user.userId;
     }
 
-    // Match by fullName
+    // 2. Match by Google user ID → auth.users.provider_id (exact match)
+    //    Google Chat sends "users/110522809986993401130" which matches the Google OAuth sub/provider_id
+    const gchatUserId = author?.userId as string | undefined;
+    if (gchatUserId) {
+      const numericId = gchatUserId.replace("users/", "");
+      console.log("[gchat-bot] looking up by provider_id:", numericId);
+
+      const authUsers = await prisma.$queryRawUnsafe<Array<{ id: string; email: string }>>(
+        `SELECT id, email FROM auth.users WHERE raw_user_meta_data->>'provider_id' = $1 LIMIT 1`,
+        numericId,
+      );
+
+      if (authUsers.length > 0) {
+        const authUser = authUsers[0];
+        console.log("[gchat-bot] matched by provider_id:", authUser.email);
+        if (!isEmailAllowed(authUser.email)) return FALLBACK_USER_ID;
+        const profile = await prisma.userProfile.findUnique({ where: { userId: authUser.id } });
+        if (profile) return profile.userId;
+      }
+      console.log("[gchat-bot] no match for provider_id:", numericId);
+    }
+
+    // 3. Fallback: match by fullName
     const fullName = author?.fullName as string | undefined;
     if (fullName) {
+      console.log("[gchat-bot] falling back to fullName:", fullName);
       const user = await prisma.userProfile.findFirst({
         where: { fullName: { equals: fullName, mode: "insensitive" } },
       });
@@ -69,6 +94,7 @@ async function resolveSenderUserId(message: { author?: unknown }): Promise<strin
     console.warn("[gchat-bot] User resolution failed, using fallback:", (err as Error).message?.slice(0, 100));
   }
 
+  console.log("[gchat-bot] using fallback user ID");
   return FALLBACK_USER_ID;
 }
 
