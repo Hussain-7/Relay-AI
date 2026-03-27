@@ -1,5 +1,5 @@
-import { z } from "zod";
 import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
+import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
 import { checkStopFlag } from "@/lib/run-stop";
@@ -29,10 +29,7 @@ export function createAskUserTool(ctx: ToolRuntimeContext) {
       "Pause and ask the user a clarifying question before proceeding. You can provide selectable options and/or allow freeform text input. Use SPARINGLY — only when the answer genuinely affects what you do next. Do not ask unnecessary questions when a reasonable default exists.",
     inputSchema: z.object({
       question: z.string().min(1).describe("The question to display to the user"),
-      options: z
-        .array(z.string())
-        .optional()
-        .describe("Selectable option buttons for the user to choose from"),
+      options: z.array(z.string()).optional().describe("Selectable option buttons for the user to choose from"),
       allowFreeform: z
         .boolean()
         .optional()

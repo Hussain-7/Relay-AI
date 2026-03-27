@@ -1,5 +1,5 @@
-import { type NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { type NextRequest, NextResponse } from "next/server";
 import { ALLOWED_EMAILS } from "@/lib/allowed-emails";
 
 const PUBLIC_ROUTES = new Set(["/login", "/auth/callback", "/waitlist"]);
@@ -8,7 +8,14 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Skip auth for public routes, API routes, and static assets
-  if (PUBLIC_ROUTES.has(pathname) || pathname.startsWith("/api/") || pathname.endsWith(".webmanifest") || pathname.endsWith(".svg") || pathname === "/icon.svg" || pathname === "/apple-icon.svg") {
+  if (
+    PUBLIC_ROUTES.has(pathname) ||
+    pathname.startsWith("/api/") ||
+    pathname.endsWith(".webmanifest") ||
+    pathname.endsWith(".svg") ||
+    pathname === "/icon.svg" ||
+    pathname === "/apple-icon.svg"
+  ) {
     return NextResponse.next();
   }
 
@@ -39,7 +46,9 @@ export async function middleware(request: NextRequest) {
     },
   });
 
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
   // Not authenticated → redirect to login
   if (!user) {
@@ -67,7 +76,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
-  ],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
 };

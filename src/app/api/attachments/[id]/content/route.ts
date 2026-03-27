@@ -1,10 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireRequestUser } from "@/lib/server-auth";
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const user = await requireRequestUser(request.headers);
 

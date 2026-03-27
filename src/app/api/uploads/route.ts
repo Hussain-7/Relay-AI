@@ -13,11 +13,7 @@ function inferAttachmentKind(mediaType: string) {
     return "PDF" as const;
   }
 
-  if (
-    mediaType.startsWith("text/") ||
-    mediaType.includes("json") ||
-    mediaType.includes("markdown")
-  ) {
+  if (mediaType.startsWith("text/") || mediaType.includes("json") || mediaType.includes("markdown")) {
     return "DOCUMENT" as const;
   }
 

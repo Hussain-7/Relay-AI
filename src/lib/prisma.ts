@@ -1,5 +1,5 @@
-import pg from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
+import pg from "pg";
 import { PrismaClient } from "@/generated/prisma/client";
 
 declare global {
@@ -33,7 +33,6 @@ function createPrismaClient(): PrismaClient {
 
 // Cache the client globally — prevents creating new pools on every import in
 // both development (hot reload) AND production (serverless warm starts).
-export const prisma =
-  globalThis.__relayAiPrisma__ ?? createPrismaClient();
+export const prisma = globalThis.__relayAiPrisma__ ?? createPrismaClient();
 
 globalThis.__relayAiPrisma__ = prisma;

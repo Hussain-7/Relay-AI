@@ -13,15 +13,14 @@ const createConversationSchema = z.object({
 export async function GET(request: Request) {
   try {
     const user = await requireRequestUser(request.headers);
-    const conversations = await getCached(
-      `convos:${user.userId}`,
-      300,
-      () => listConversationSummaries(user.userId),
-    );
+    const conversations = await getCached(`convos:${user.userId}`, 300, () => listConversationSummaries(user.userId));
 
-    return Response.json({ conversations }, {
-      headers: { "Cache-Control": "private, no-cache" },
-    });
+    return Response.json(
+      { conversations },
+      {
+        headers: { "Cache-Control": "private, no-cache" },
+      },
+    );
   } catch (error) {
     return Response.json(
       {

@@ -4,10 +4,7 @@ import { env, hasAnthropicApiKey } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 import { requireRequestUser } from "@/lib/server-auth";
 
-export async function DELETE(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const user = await requireRequestUser(request.headers);
 

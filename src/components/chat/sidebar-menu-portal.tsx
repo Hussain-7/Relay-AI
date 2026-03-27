@@ -6,9 +6,21 @@ function IconStar({ filled }: { filled?: boolean }) {
   return (
     <svg aria-hidden="true" viewBox="0 0 16 16" className="h-4 w-4 opacity-70">
       {filled ? (
-        <path d="M8 1.5l2 4.1 4.5.7-3.3 3.2.8 4.5L8 11.8 3.9 14l.8-4.5L1.5 6.3 6 5.6 8 1.5z" fill="currentColor" stroke="currentColor" strokeWidth="0.8" strokeLinejoin="round" />
+        <path
+          d="M8 1.5l2 4.1 4.5.7-3.3 3.2.8 4.5L8 11.8 3.9 14l.8-4.5L1.5 6.3 6 5.6 8 1.5z"
+          fill="currentColor"
+          stroke="currentColor"
+          strokeWidth="0.8"
+          strokeLinejoin="round"
+        />
       ) : (
-        <path d="M8 1.5l2 4.1 4.5.7-3.3 3.2.8 4.5L8 11.8 3.9 14l.8-4.5L1.5 6.3 6 5.6 8 1.5z" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round" />
+        <path
+          d="M8 1.5l2 4.1 4.5.7-3.3 3.2.8 4.5L8 11.8 3.9 14l.8-4.5L1.5 6.3 6 5.6 8 1.5z"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.1"
+          strokeLinejoin="round"
+        />
       )}
     </svg>
   );
@@ -17,7 +29,14 @@ function IconStar({ filled }: { filled?: boolean }) {
 function IconPencil() {
   return (
     <svg aria-hidden="true" viewBox="0 0 16 16" className="h-4 w-4 opacity-70">
-      <path d="M11.13 1.87a1.75 1.75 0 0 1 2.47 0l.53.53a1.75 1.75 0 0 1 0 2.47L5.75 13.25 2 14l.75-3.75 8.38-8.38Zm1.41 1.06a.25.25 0 0 0-.35 0L4 11.12l-.3 1.5 1.5-.3L13.4 4.12a.25.25 0 0 0 0-.35l-.53-.53Z" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d="M11.13 1.87a1.75 1.75 0 0 1 2.47 0l.53.53a1.75 1.75 0 0 1 0 2.47L5.75 13.25 2 14l.75-3.75 8.38-8.38Zm1.41 1.06a.25.25 0 0 0-.35 0L4 11.12l-.3 1.5 1.5-.3L13.4 4.12a.25.25 0 0 0 0-.35l-.53-.53Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.1"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -25,12 +44,20 @@ function IconPencil() {
 function IconTrash() {
   return (
     <svg aria-hidden="true" viewBox="0 0 16 16" className="h-4 w-4 opacity-70">
-      <path d="M5.5 2.5h5M2.5 4.5h11M6 4.5v7.5M10 4.5v7.5M3.5 4.5l.5 8.5a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1l.5-8.5" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d="M5.5 2.5h5M2.5 4.5h11M6 4.5v7.5M10 4.5v7.5M3.5 4.5l.5 8.5a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1l.5-8.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.1"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
 
-const itemClass = "flex w-full items-center gap-3 border-0 rounded-[8px] bg-transparent cursor-pointer px-3 py-[7px] text-left text-[0.84rem] leading-[1.2] transition-[background,color] duration-140 ease-linear hover:bg-[rgba(255,255,255,0.065)]";
+const itemClass =
+  "flex w-full items-center gap-3 border-0 rounded-[8px] bg-transparent cursor-pointer px-3 py-[7px] text-left text-[0.84rem] leading-[1.2] transition-[background,color] duration-140 ease-linear hover:bg-[rgba(255,255,255,0.065)]";
 
 export function SidebarMenuPortal({
   triggerSelector,

@@ -3,30 +3,30 @@ import type {
   BetaMessage,
   BetaRawMessageStreamEvent,
 } from "@anthropic-ai/sdk/resources/beta/messages/messages";
-import { type AttachmentKind, Prisma, RunStatus } from "@/generated/prisma/client";
+import { type AttachmentKind, type Prisma, RunStatus } from "@/generated/prisma/client";
 
-import { type AttachmentDto, type TimelineEventEnvelope } from "@/lib/contracts";
+import type { AttachmentDto, TimelineEventEnvelope } from "@/lib/contracts";
 import { env, hasAnthropicApiKey } from "@/lib/env";
-import { getConfiguredMcpServers } from "@/lib/main-agent/mcp";
-import { buildMainAgentSystemPrompt } from "@/lib/main-agent/system-prompt";
-import { MAIN_AGENT_SERVER_TOOLS, getMainAgentTools } from "@/lib/main-agent/tools";
-import { createMemoryTool } from "@/lib/main-agent/tools/memory";
 import { getDomain, getTextWithCitations } from "@/lib/main-agent/citations";
 import { generateErrorResponse } from "@/lib/main-agent/error-recovery";
 import {
-  getAnthropicClient,
   buildAttachmentBlocks,
-  getMainAgentErrorMessage,
-  mapMessagesForModel,
-  inferServerToolName,
   emitSseEvent,
+  getAnthropicClient,
+  getMainAgentErrorMessage,
+  inferServerToolName,
+  mapMessagesForModel,
 } from "@/lib/main-agent/helpers";
+import { getConfiguredMcpServers } from "@/lib/main-agent/mcp";
+import { buildMainAgentSystemPrompt } from "@/lib/main-agent/system-prompt";
 import { maybeUpdateConversationTitle } from "@/lib/main-agent/titles";
+import { getMainAgentTools, MAIN_AGENT_SERVER_TOOLS } from "@/lib/main-agent/tools";
+import { createMemoryTool } from "@/lib/main-agent/tools/memory";
 import { prisma } from "@/lib/prisma";
-import { calculateCostUsd } from "@/lib/usage";
 import { appendRunEvent } from "@/lib/run-events";
 import { checkStopFlag, clearStopFlag } from "@/lib/run-stop";
 import { invalidateCache } from "@/lib/server-cache";
+import { calculateCostUsd } from "@/lib/usage";
 
 export async function streamMainAgentRun(input: {
   conversationId: string;
@@ -70,7 +70,11 @@ export async function streamMainAgentRun(input: {
         emitSseEvent(controller, envelope);
 
         // Skip DB persistence for streaming deltas — they're reconstructable from finalMessageJson
-        if (type !== "assistant.text.delta" && type !== "assistant.thinking.delta" && type !== "tool.call.input.delta") {
+        if (
+          type !== "assistant.text.delta" &&
+          type !== "assistant.thinking.delta" &&
+          type !== "tool.call.input.delta"
+        ) {
           pendingWrites.push(
             appendRunEvent({
               runId,
@@ -87,7 +91,14 @@ export async function streamMainAgentRun(input: {
         const anthropic = hasAnthropicApiKey() ? getAnthropicClient() : null;
 
         // All independent reads in parallel — single DB round-trip
-        const [conversationWithSession, attachments, messageHistory, configuredMcpServers, activeCodingSession, priorOutputImages] = await Promise.all([
+        const [
+          conversationWithSession,
+          attachments,
+          messageHistory,
+          configuredMcpServers,
+          activeCodingSession,
+          priorOutputImages,
+        ] = await Promise.all([
           prisma.conversation.findUniqueOrThrow({
             where: { id: input.conversationId },
             include: {
@@ -108,9 +119,16 @@ export async function streamMainAgentRun(input: {
                   conversationId: input.conversationId,
                 },
                 select: {
-                  id: true, conversationId: true, runId: true, kind: true,
-                  filename: true, mediaType: true, sizeBytes: true,
-                  anthropicFileId: true, metadataJson: true, createdAt: true,
+                  id: true,
+                  conversationId: true,
+                  runId: true,
+                  kind: true,
+                  filename: true,
+                  mediaType: true,
+                  sizeBytes: true,
+                  anthropicFileId: true,
+                  metadataJson: true,
+                  createdAt: true,
                 },
                 orderBy: { createdAt: "asc" },
               })
@@ -148,13 +166,14 @@ export async function streamMainAgentRun(input: {
         const conversation = conversationWithSession;
 
         // Ensure session exists — create only if needed (avoids redundant conversation re-fetch)
-        const mainAgentSession = conversationWithSession.mainAgentSession
-          ?? await prisma.mainAgentSession.create({
-              data: {
-                conversationId: input.conversationId,
-                userId: input.userId,
-              },
-            });
+        const mainAgentSession =
+          conversationWithSession.mainAgentSession ??
+          (await prisma.mainAgentSession.create({
+            data: {
+              conversationId: input.conversationId,
+              userId: input.userId,
+            },
+          }));
 
         const attachmentBlocks = buildAttachmentBlocks(
           attachments.map((attachment) => ({
@@ -167,22 +186,28 @@ export async function streamMainAgentRun(input: {
         // Tell the agent the real DB IDs so tools (e.g. image_generation) can reference them
         const attachmentIdBlock: BetaContentBlockParam[] =
           attachments.length > 0
-            ? [{
-                type: "text" as const,
-                text: `[Attached files: ${attachments.map((a) => `${a.filename} (id: ${a.id})`).join(", ")}]`,
-              }]
+            ? [
+                {
+                  type: "text" as const,
+                  text: `[Attached files: ${attachments.map((a) => `${a.filename} (id: ${a.id})`).join(", ")}]`,
+                },
+              ]
             : [];
 
         // Include output images from previous runs so the agent can reference them for editing
         const outputAttachmentBlock: BetaContentBlockParam[] =
           priorOutputImages.length > 0
-            ? [{
-                type: "text" as const,
-                text: `[Previously generated images in this conversation: ${priorOutputImages.map((a) => {
-                  const meta = a.metadataJson as Record<string, unknown> | null;
-                  return `${a.filename} (id: ${a.id}, model: ${meta?.model ?? "unknown"})`;
-                }).join(", ")}. Use these IDs with imageAttachmentId to edit them.]`,
-              }]
+            ? [
+                {
+                  type: "text" as const,
+                  text: `[Previously generated images in this conversation: ${priorOutputImages
+                    .map((a) => {
+                      const meta = a.metadataJson as Record<string, unknown> | null;
+                      return `${a.filename} (id: ${a.id}, model: ${meta?.model ?? "unknown"})`;
+                    })
+                    .join(", ")}. Use these IDs with imageAttachmentId to edit them.]`,
+                },
+              ]
             : [];
 
         const userContent: BetaContentBlockParam[] = [
@@ -238,8 +263,13 @@ export async function streamMainAgentRun(input: {
           userId: input.userId,
           conversationId: input.conversationId,
           runId,
-          emit: async (type: "tool.call.completed" | "tool.call.failed", payload: Record<string, unknown>) => emit(type, "main_agent", payload),
-          emitProgress: (type: Parameters<typeof emit>[0], source: Parameters<typeof emit>[1], payload?: Record<string, unknown> | null) => emit(type, source, payload),
+          emit: async (type: "tool.call.completed" | "tool.call.failed", payload: Record<string, unknown>) =>
+            emit(type, "main_agent", payload),
+          emitProgress: (
+            type: Parameters<typeof emit>[0],
+            source: Parameters<typeof emit>[1],
+            payload?: Record<string, unknown> | null,
+          ) => emit(type, source, payload),
         };
         const tools = getMainAgentTools(toolCtx, activeCodingSession);
 
@@ -256,7 +286,9 @@ export async function streamMainAgentRun(input: {
         ];
 
         // Resolve persisted container ID for cross-turn session continuity
-        const existingContainerId = (mainAgentSession.metadataJson as Record<string, unknown> | null)?.containerId as string | undefined;
+        const existingContainerId = (mainAgentSession.metadataJson as Record<string, unknown> | null)?.containerId as
+          | string
+          | undefined;
 
         // Start API call immediately — don't wait for DB writes yet
         const runner = anthropic.beta.messages.toolRunner({
@@ -331,9 +363,7 @@ export async function streamMainAgentRun(input: {
           tools: [
             ...MAIN_AGENT_SERVER_TOOLS.map((tool) => tool.tool),
             ...tools,
-            ...(prefs.memory ? [
-              createMemoryTool(toolCtx),
-            ] : []),
+            ...(prefs.memory ? [createMemoryTool(toolCtx)] : []),
             // Generate mcp_toolset entries for each configured MCP server
             ...configuredMcpServers.map((server) => ({
               type: "mcp_toolset" as const,
@@ -459,9 +489,8 @@ export async function streamMainAgentRun(input: {
                 const mcpResult = block as unknown as { tool_use_id: string; content: unknown; is_error?: boolean };
                 const toolUseId = mcpResult.tool_use_id;
                 // Find the matching tool name from our tracking
-                const matchingName = Array.from(indexToToolUseId.entries())
-                  .find(([, id]) => id === toolUseId);
-                const toolName = matchingName ? indexToToolName.get(matchingName[0]) ?? "mcp_tool" : "mcp_tool";
+                const matchingName = Array.from(indexToToolUseId.entries()).find(([, id]) => id === toolUseId);
+                const toolName = matchingName ? (indexToToolName.get(matchingName[0]) ?? "mcp_tool") : "mcp_tool";
 
                 emit(mcpResult.is_error ? "tool.call.failed" : "tool.call.completed", "main_agent", {
                   toolName,
@@ -535,11 +564,13 @@ export async function streamMainAgentRun(input: {
               // If there are leftover pending citations when block ends, flush them
               const leftover = pendingCitations.get(rawEvent.index);
               if (leftover?.length) {
-                const citationSuffix = leftover.map((c) => {
-                  const domain = getDomain(c.url);
-                  const safeTitle = c.title.replace(/"/g, "'");
-                  return ` [${domain}](${c.url} "${safeTitle}")`;
-                }).join("");
+                const citationSuffix = leftover
+                  .map((c) => {
+                    const domain = getDomain(c.url);
+                    const safeTitle = c.title.replace(/"/g, "'");
+                    return ` [${domain}](${c.url} "${safeTitle}")`;
+                  })
+                  .join("");
                 emit("assistant.text.delta", "main_agent", {
                   delta: citationSuffix,
                   index: rawEvent.index,
@@ -600,16 +631,16 @@ export async function streamMainAgentRun(input: {
                     const sentenceEndMatch = rawEvent.delta.text.match(/[.!?](?:\s|$)/);
                     if (sentenceEndMatch) {
                       const insertPos = sentenceEndMatch.index! + 1;
-                      const citationSuffix = toPlace.map((c) => {
-                        const domain = getDomain(c.url);
-                        const safeTitle = c.title.replace(/"/g, "'");
-                        return ` [${domain}](${c.url} "${safeTitle}")`;
-                      }).join("");
+                      const citationSuffix = toPlace
+                        .map((c) => {
+                          const domain = getDomain(c.url);
+                          const safeTitle = c.title.replace(/"/g, "'");
+                          return ` [${domain}](${c.url} "${safeTitle}")`;
+                        })
+                        .join("");
 
                       textToEmit =
-                        rawEvent.delta.text.slice(0, insertPos) +
-                        citationSuffix +
-                        rawEvent.delta.text.slice(insertPos);
+                        rawEvent.delta.text.slice(0, insertPos) + citationSuffix + rawEvent.delta.text.slice(insertPos);
 
                       // Update pending — keep only unplaced citations
                       if (remaining.length > 0) {
@@ -703,7 +734,6 @@ export async function streamMainAgentRun(input: {
           }
         }
 
-
         // If stopped by client via Redis flag, save partial state and close gracefully
         if (stopped) {
           await clearStopFlag(runId);
@@ -734,7 +764,11 @@ export async function streamMainAgentRun(input: {
           ]).catch(() => {});
 
           emit("run.cancelled", "system", { status: "cancelled" });
-          try { controller.close(); } catch { /* client already disconnected */ }
+          try {
+            controller.close();
+          } catch {
+            /* client already disconnected */
+          }
           await Promise.allSettled(pendingWrites);
           return;
         }
@@ -772,16 +806,12 @@ export async function streamMainAgentRun(input: {
                 .join("\n")
                 .slice(0, 2000);
             }
-            emit(
-              blockAny.is_error ? "tool.call.failed" : "tool.call.completed",
-              "main_agent",
-              {
-                toolName: mcpToolNames.get(toolUseId) ?? "mcp_tool",
-                toolRuntime: "mcp",
-                toolUseId,
-                result: resultText || content,
-              },
-            );
+            emit(blockAny.is_error ? "tool.call.failed" : "tool.call.completed", "main_agent", {
+              toolName: mcpToolNames.get(toolUseId) ?? "mcp_tool",
+              toolRuntime: "mcp",
+              toolUseId,
+              result: resultText || content,
+            });
           }
         }
 
@@ -837,10 +867,12 @@ export async function streamMainAgentRun(input: {
         if (containerId) {
           const existingMeta = (mainAgentSession.metadataJson as Record<string, unknown> | null) ?? {};
           pendingWrites.push(
-            prisma.mainAgentSession.update({
-              where: { id: mainAgentSession.id },
-              data: { metadataJson: { ...existingMeta, containerId } as Prisma.InputJsonValue },
-            }).catch(() => {}),
+            prisma.mainAgentSession
+              .update({
+                where: { id: mainAgentSession.id },
+                data: { metadataJson: { ...existingMeta, containerId } as Prisma.InputJsonValue },
+              })
+              .catch(() => {}),
           );
         }
 
@@ -885,7 +917,19 @@ export async function streamMainAgentRun(input: {
         // Only include text that appears after the last tool-related block.
         // Pre-tool text (e.g. "Sure! Let me look that up") is shown in the
         // timeline as intermediate text, not in the final response bubble.
-        const toolBlockTypes = new Set(["tool_use", "tool_result", "server_tool_use", "mcp_tool_use", "mcp_tool_result", "web_search_tool_result", "web_fetch_tool_result", "code_execution_tool_result", "bash_code_execution_tool_result", "text_editor_code_execution_tool_result", "tool_search_tool_result"]);
+        const toolBlockTypes = new Set([
+          "tool_use",
+          "tool_result",
+          "server_tool_use",
+          "mcp_tool_use",
+          "mcp_tool_result",
+          "web_search_tool_result",
+          "web_fetch_tool_result",
+          "code_execution_tool_result",
+          "bash_code_execution_tool_result",
+          "text_editor_code_execution_tool_result",
+          "tool_search_tool_result",
+        ]);
         let lastToolIndex = -1;
         for (let i = finalMessage.content.length - 1; i >= 0; i--) {
           const blockType = (finalMessage.content[i] as unknown as { type: string }).type;
@@ -894,9 +938,8 @@ export async function streamMainAgentRun(input: {
             break;
           }
         }
-        const finalContentBlocks = lastToolIndex >= 0
-          ? finalMessage.content.slice(lastToolIndex + 1)
-          : finalMessage.content;
+        const finalContentBlocks =
+          lastToolIndex >= 0 ? finalMessage.content.slice(lastToolIndex + 1) : finalMessage.content;
         const finalText = getTextWithCitations(finalContentBlocks);
 
         const usageRaw = finalMessage.usage as unknown as Record<string, unknown>;
@@ -935,7 +978,11 @@ export async function streamMainAgentRun(input: {
         });
 
         // Close stream — client has all data it needs
-        try { controller.close(); } catch { /* client may have disconnected */ }
+        try {
+          controller.close();
+        } catch {
+          /* client may have disconnected */
+        }
 
         // DB finalization runs after stream close (still within start(), process stays alive)
         await Promise.all([
@@ -988,10 +1035,7 @@ export async function streamMainAgentRun(input: {
           }),
         ]);
 
-        void invalidateCache(
-          `conv:${input.conversationId}`,
-          `convos:${input.userId}`,
-        );
+        void invalidateCache(`conv:${input.conversationId}`, `convos:${input.userId}`);
       } catch (error) {
         const message = getMainAgentErrorMessage(error);
 
@@ -1028,29 +1072,37 @@ export async function streamMainAgentRun(input: {
 
         // Persist so the message shows on reload
         pendingWrites.push(
-          prisma.message.create({
-            data: {
-              conversationId: input.conversationId,
-              role: "ASSISTANT",
-              contentJson: [{ type: "text", text: finalText }] as unknown as Prisma.InputJsonValue,
-            },
-          }).catch(() => {}),
+          prisma.message
+            .create({
+              data: {
+                conversationId: input.conversationId,
+                role: "ASSISTANT",
+                contentJson: [{ type: "text", text: finalText }] as unknown as Prisma.InputJsonValue,
+              },
+            })
+            .catch(() => {}),
         );
 
-        try { controller.close(); } catch { /* client may have disconnected */ }
+        try {
+          controller.close();
+        } catch {
+          /* client may have disconnected */
+        }
 
         // AgentRun may not exist if error occurred before DB writes completed
-        await prisma.agentRun.update({
-          where: { id: runId },
-          data: {
-            status: RunStatus.FAILED,
-            finalText,
-            metadataJson: {
-              error: message,
-            } as Prisma.InputJsonValue,
-            completedAt: new Date(),
-          },
-        }).catch(() => {});
+        await prisma.agentRun
+          .update({
+            where: { id: runId },
+            data: {
+              status: RunStatus.FAILED,
+              finalText,
+              metadataJson: {
+                error: message,
+              } as Prisma.InputJsonValue,
+              completedAt: new Date(),
+            },
+          })
+          .catch(() => {});
       } finally {
         // Flush remaining background DB writes (event persistence)
         await Promise.allSettled(pendingWrites);
@@ -1070,10 +1122,7 @@ function extractSkillFileIds(message: BetaMessage): string[] {
   for (const block of message.content) {
     const blockAny = block as unknown as Record<string, unknown>;
     const blockType = blockAny.type as string;
-    if (
-      blockType === "bash_code_execution_tool_result" ||
-      blockType === "code_execution_tool_result"
-    ) {
+    if (blockType === "bash_code_execution_tool_result" || blockType === "code_execution_tool_result") {
       collectFileIds(blockAny.content, fileIds);
     }
   }
@@ -1098,6 +1147,15 @@ function inferOutputAttachmentKind(filename: string): AttachmentKind {
   const ext = filename.split(".").pop()?.toLowerCase();
   if (ext === "pdf") return "PDF";
   if (ext === "png" || ext === "jpg" || ext === "jpeg" || ext === "gif" || ext === "webp") return "IMAGE";
-  if (ext === "xlsx" || ext === "docx" || ext === "pptx" || ext === "csv" || ext === "txt" || ext === "md" || ext === "json") return "DOCUMENT";
+  if (
+    ext === "xlsx" ||
+    ext === "docx" ||
+    ext === "pptx" ||
+    ext === "csv" ||
+    ext === "txt" ||
+    ext === "md" ||
+    ext === "json"
+  )
+    return "DOCUMENT";
   return "OTHER";
 }

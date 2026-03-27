@@ -1,18 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-
+import { IconChevron, IconClose, IconGithub, IconRefresh, IconSearch } from "@/components/icons";
 import {
+  type GithubRepoSearchResult,
+  type RepoBindingListItem,
+  useConnectRepo,
+  useGithubStatus,
+  useOwnerRepos,
+  useRefreshRepoBindings,
   useRepoBindings,
   useSearchGithubRepos,
-  useConnectRepo,
-  useRefreshRepoBindings,
-  useOwnerRepos,
-  useGithubStatus,
-  type RepoBindingListItem,
-  type GithubRepoSearchResult,
 } from "@/lib/api-hooks";
-import { IconClose, IconSearch, IconGithub, IconChevron, IconRefresh } from "@/components/icons";
 
 function relativeTime(dateStr: string): string {
   const now = Date.now();
@@ -32,7 +31,10 @@ function relativeTime(dateStr: string): string {
 function LockIcon() {
   return (
     <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3 w-3 inline-block ml-1 opacity-50">
-      <path d="M4 6V4a4 4 0 1 1 8 0v2h1a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h1zm2-2a2 2 0 1 1 4 0v2H6V4z" fill="currentColor" />
+      <path
+        d="M4 6V4a4 4 0 1 1 8 0v2h1a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h1zm2-2a2 2 0 1 1 4 0v2H6V4z"
+        fill="currentColor"
+      />
     </svg>
   );
 }
@@ -116,15 +118,18 @@ export function RepoBindingModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery, localFilteredRepos]);
 
-  const handleConnect = useCallback(async (repo: GithubRepoSearchResult) => {
-    const existingBinding = bindings.find((b) => b.repoFullName === repo.fullName);
-    if (existingBinding) {
-      onSelect(existingBinding);
-      return;
-    }
-    const binding = await connectMutation.mutateAsync(repo.fullName);
-    onSelect(binding);
-  }, [connectMutation, onSelect, bindings]);
+  const handleConnect = useCallback(
+    async (repo: GithubRepoSearchResult) => {
+      const existingBinding = bindings.find((b) => b.repoFullName === repo.fullName);
+      if (existingBinding) {
+        onSelect(existingBinding);
+        return;
+      }
+      const binding = await connectMutation.mutateAsync(repo.fullName);
+      onSelect(binding);
+    },
+    [connectMutation, onSelect, bindings],
+  );
 
   const filteredCount = ownerRepos.length;
 
@@ -133,8 +138,7 @@ export function RepoBindingModal({
     if (localFilteredRepos && localFilteredRepos.length > 0) return localFilteredRepos;
     if (searchResults) return searchResults;
 
-    return [...ownerRepos]
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    return [...ownerRepos].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   }, [localFilteredRepos, searchResults, ownerRepos]);
 
   const isSearching = searchQuery.trim().length > 0;
@@ -151,9 +155,7 @@ export function RepoBindingModal({
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-4 pb-3">
-          <h2 className="text-[rgba(245,240,232,0.92)] text-[1rem] font-semibold m-0">
-            Connect repository
-          </h2>
+          <h2 className="text-[rgba(245,240,232,0.92)] text-[1rem] font-semibold m-0">Connect repository</h2>
           <div className="flex items-center gap-1">
             {isGithubInstalled && (
               <button
@@ -178,7 +180,9 @@ export function RepoBindingModal({
 
         {!isGithubInstalled ? (
           <div className="flex flex-col items-center justify-center py-12 px-5 gap-3">
-            <span className="text-[rgba(245,240,232,0.5)]"><IconGithub /></span>
+            <span className="text-[rgba(245,240,232,0.5)]">
+              <IconGithub />
+            </span>
             <span className="text-[rgba(245,240,232,0.5)] text-[0.88rem]">GitHub App not installed</span>
             <span className="text-[rgba(245,240,232,0.3)] text-[0.8rem] text-center">
               Install the GitHub App to connect repositories.
@@ -241,7 +245,11 @@ export function RepoBindingModal({
                   onChange={(e) => handleSearchChange(e.target.value)}
                 />
                 {searchMutation.isPending && (
-                  <svg className="h-4 w-4 shrink-0 animate-spin text-[rgba(245,240,232,0.35)]" viewBox="0 0 24 24" fill="none">
+                  <svg
+                    className="h-4 w-4 shrink-0 animate-spin text-[rgba(245,240,232,0.35)]"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                  >
                     <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5" opacity="0.25" />
                     <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
                   </svg>
@@ -269,7 +277,10 @@ export function RepoBindingModal({
                     <div key={i} className="flex items-center gap-3 px-4 py-2.5 animate-pulse">
                       <span className="h-4 w-4 rounded-full bg-[rgba(255,255,255,0.06)] shrink-0" />
                       <div className="flex-1 flex items-center gap-2">
-                        <span className="h-3.5 rounded bg-[rgba(255,255,255,0.06)]" style={{ width: `${90 + (i * 17) % 60}px` }} />
+                        <span
+                          className="h-3.5 rounded bg-[rgba(255,255,255,0.06)]"
+                          style={{ width: `${90 + ((i * 17) % 60)}px` }}
+                        />
                         <span className="h-3 w-10 rounded bg-[rgba(255,255,255,0.04)]" />
                       </div>
                       <span className="h-7 w-16 rounded-[6px] bg-[rgba(255,255,255,0.04)]" />
@@ -290,11 +301,15 @@ export function RepoBindingModal({
                         key={repo.fullName}
                         className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-[rgba(255,255,255,0.03)]"
                       >
-                        <span className="text-[rgba(245,240,232,0.3)] shrink-0"><IconGithub /></span>
+                        <span className="text-[rgba(245,240,232,0.3)] shrink-0">
+                          <IconGithub />
+                        </span>
                         <div className="flex-1 min-w-0">
                           <span className="text-[rgba(245,240,232,0.88)] text-[0.84rem] font-medium">{repo.name}</span>
                           {repo.isPrivate && <LockIcon />}
-                          <span className="text-[rgba(245,240,232,0.25)] text-[0.72rem] ml-2">{relativeTime(repo.updatedAt)}</span>
+                          <span className="text-[rgba(245,240,232,0.25)] text-[0.72rem] ml-2">
+                            {relativeTime(repo.updatedAt)}
+                          </span>
                         </div>
                         <button
                           type="button"

@@ -1,6 +1,6 @@
-import { z } from "zod";
-import type { BetaToolResultContentBlockParam } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 import type { BetaRunnableTool } from "@anthropic-ai/sdk/lib/tools/BetaRunnableTool";
+import type { BetaToolResultContentBlockParam } from "@anthropic-ai/sdk/resources/beta/messages/messages";
+import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
 import type { ToolCatalogEntry, ToolRuntimeContext } from "./context";
@@ -219,4 +219,3 @@ export function createMemoryTool(ctx: ToolRuntimeContext): BetaRunnableTool<Memo
     },
   };
 }
-

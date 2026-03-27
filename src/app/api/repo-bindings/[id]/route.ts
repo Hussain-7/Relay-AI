@@ -1,10 +1,7 @@
 import { deleteRepoBinding } from "@/lib/github/service";
 import { requireRequestUser } from "@/lib/server-auth";
 
-export async function DELETE(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await requireRequestUser(request.headers);
     const { id } = await params;

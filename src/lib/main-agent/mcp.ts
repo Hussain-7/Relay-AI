@@ -30,8 +30,8 @@ export async function getConfiguredMcpServers(userId: string): Promise<Configure
 
       if (connector.encryptedAccessToken && connector.accessTokenIv) {
         // Check if token is expired or near-expiry
-        const isExpired = connector.tokenExpiresAt &&
-          connector.tokenExpiresAt.getTime() < Date.now() + TOKEN_EXPIRY_BUFFER_MS;
+        const isExpired =
+          connector.tokenExpiresAt && connector.tokenExpiresAt.getTime() < Date.now() + TOKEN_EXPIRY_BUFFER_MS;
 
         if (isExpired && connector.encryptedRefreshToken) {
           // Race token refresh against a timeout so one slow OAuth server doesn't block the run

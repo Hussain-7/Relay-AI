@@ -107,9 +107,7 @@ export async function GET(request: Request) {
           const updateData: Record<string, unknown> = {
             encryptedUserToken: encToken,
             userTokenIv: tokenIv,
-            userTokenExpiresAt: tokenData.expires_in
-              ? new Date(Date.now() + tokenData.expires_in * 1000)
-              : null,
+            userTokenExpiresAt: tokenData.expires_in ? new Date(Date.now() + tokenData.expires_in * 1000) : null,
           };
 
           if (tokenData.refresh_token) {
@@ -119,11 +117,14 @@ export async function GET(request: Request) {
           }
 
           // Find the installation to update — use provided installationId or look up existing
-          const targetInstallationId = installationId
-            ?? (await prisma.githubInstallation.findFirst({
+          const targetInstallationId =
+            installationId ??
+            (
+              await prisma.githubInstallation.findFirst({
                 where: { userId: verified.userId },
                 orderBy: { updatedAt: "desc" },
-              }))?.installationId;
+              })
+            )?.installationId;
 
           if (targetInstallationId) {
             await prisma.githubInstallation.update({

@@ -26,9 +26,7 @@ export const metadata: Metadata = {
   },
   description:
     "An open-source AI workspace combining chat, deep research, image generation, document creation, and remote coding sessions — powered by Claude.",
-  metadataBase: new URL(
-    process.env.APP_URL || "https://relay-ai-delta.vercel.app",
-  ),
+  metadataBase: new URL(process.env.APP_URL || "https://relay-ai-delta.vercel.app"),
   keywords: [
     "AI workspace",
     "Claude",
@@ -74,7 +72,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body suppressHydrationWarning className={`${primarySans.variable} ${primarySerif.variable} ${primaryMono.variable} antialiased`}>
+      <body
+        suppressHydrationWarning
+        className={`${primarySans.variable} ${primarySerif.variable} ${primaryMono.variable} antialiased`}
+      >
         <QueryProvider>{children}</QueryProvider>
         <Toaster
           theme="dark"

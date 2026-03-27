@@ -2,13 +2,7 @@
 
 import { useRouter } from "next/navigation";
 
-export default function ChatError({
-  error,
-  reset,
-}: {
-  error: Error & { digest?: string };
-  reset: () => void;
-}) {
+export default function ChatError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   const router = useRouter();
 
   return (
@@ -24,9 +18,7 @@ export default function ChatError({
       }}
     >
       <div style={{ textAlign: "center", maxWidth: 420 }}>
-        <h2 style={{ fontSize: "1.3rem", fontWeight: 500, marginBottom: 8 }}>
-          Chat error
-        </h2>
+        <h2 style={{ fontSize: "1.3rem", fontWeight: 500, marginBottom: 8 }}>Chat error</h2>
         <p style={{ fontSize: "0.9rem", opacity: 0.55, marginBottom: 24 }}>
           {error.message || "Something went wrong loading this conversation."}
         </p>

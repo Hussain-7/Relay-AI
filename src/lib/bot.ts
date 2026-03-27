@@ -1,10 +1,9 @@
-import { Chat } from "chat";
 import { createGoogleChatAdapter } from "@chat-adapter/gchat";
 import { createRedisState } from "@chat-adapter/state-redis";
-
-import { streamMainAgentRun } from "@/lib/main-agent/runtime";
-import { createConversationForUser } from "@/lib/conversations";
+import { Chat } from "chat";
 import { isEmailAllowed } from "@/lib/allowed-emails";
+import { createConversationForUser } from "@/lib/conversations";
+import { streamMainAgentRun } from "@/lib/main-agent/runtime";
 import { prisma } from "@/lib/prisma";
 
 // ─── Bot instance (cached globally — survives warm starts) ───────────────────
@@ -20,7 +19,10 @@ export function getBot(): Chat {
   if (!globalThis.__relayAiBot__) {
     const credsBase64 = process.env.GOOGLE_CHAT_CREDENTIALS_BASE64;
     const creds = credsBase64
-      ? JSON.parse(Buffer.from(credsBase64, "base64").toString("utf-8")) as { client_email: string; private_key: string }
+      ? (JSON.parse(Buffer.from(credsBase64, "base64").toString("utf-8")) as {
+          client_email: string;
+          private_key: string;
+        })
       : undefined;
 
     globalThis.__relayAiBot__ = new Chat({
@@ -104,35 +106,31 @@ async function resolveSenderUserId(message: { author?: unknown }): Promise<strin
  * Does NOT support: headings, tables, images, blockquotes, links
  */
 function markdownToGChat(md: string): string {
-  return md
-    // Convert markdown images ![alt](url) → "alt: url"
-    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, "$1: $2")
-    // Convert markdown links [text](url) → "text (url)"
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 ($2)")
-    // Convert **bold** → *bold* (Google Chat uses single asterisk)
-    .replace(/\*\*(.+?)\*\*/g, "*$1*")
-    // Convert ### heading → *heading* (bold, no heading support)
-    .replace(/^#{1,6}\s+(.+)$/gm, "*$1*")
-    // Convert > blockquote → "| quote" (visual indent)
-    .replace(/^>\s?(.*)$/gm, "│ $1")
-    // Strip markdown table separators |---|---|
-    .replace(/^\|[-:| ]+\|$/gm, "")
-    // Convert table rows | a | b | → "a | b"
-    .replace(/^\|\s*(.+?)\s*\|$/gm, (_, content: string) =>
-      content.replace(/\s*\|\s*/g, " | ").trim()
-    )
-    // Clean up multiple blank lines
-    .replace(/\n{3,}/g, "\n\n");
+  return (
+    md
+      // Convert markdown images ![alt](url) → "alt: url"
+      .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, "$1: $2")
+      // Convert markdown links [text](url) → "text (url)"
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 ($2)")
+      // Convert **bold** → *bold* (Google Chat uses single asterisk)
+      .replace(/\*\*(.+?)\*\*/g, "*$1*")
+      // Convert ### heading → *heading* (bold, no heading support)
+      .replace(/^#{1,6}\s+(.+)$/gm, "*$1*")
+      // Convert > blockquote → "| quote" (visual indent)
+      .replace(/^>\s?(.*)$/gm, "│ $1")
+      // Strip markdown table separators |---|---|
+      .replace(/^\|[-:| ]+\|$/gm, "")
+      // Convert table rows | a | b | → "a | b"
+      .replace(/^\|\s*(.+?)\s*\|$/gm, (_, content: string) => content.replace(/\s*\|\s*/g, " | ").trim())
+      // Clean up multiple blank lines
+      .replace(/\n{3,}/g, "\n\n")
+  );
 }
 
 /**
  * Consume the SSE stream from streamMainAgentRun and extract the final response text.
  */
-async function runAgentAndGetFinalText(
-  conversationId: string,
-  userId: string,
-  prompt: string,
-): Promise<string> {
+async function runAgentAndGetFinalText(conversationId: string, userId: string, prompt: string): Promise<string> {
   const { stream } = await streamMainAgentRun({
     conversationId,
     userId,
@@ -161,7 +159,9 @@ async function runAgentAndGetFinalText(
           if (event.type === "assistant.message.completed" && event.payload?.text) {
             finalText = event.payload.text;
           }
-        } catch { /* skip */ }
+        } catch {
+          /* skip */
+        }
       }
     }
   } finally {
@@ -174,72 +174,70 @@ async function runAgentAndGetFinalText(
 // ─── Event handlers ──────────────────────────────────────────────────────────
 
 function registerHandlers(bot: Chat) {
+  bot.onNewMention(async (thread, message) => {
+    console.log("[gchat-bot] onNewMention:", message.text?.slice(0, 80), "isDM:", thread.isDM);
+    console.log("[gchat-bot] author:", JSON.stringify(message.author));
 
-bot.onNewMention(async (thread, message) => {
-  console.log("[gchat-bot] onNewMention:", message.text?.slice(0, 80), "isDM:", thread.isDM);
-  console.log("[gchat-bot] author:", JSON.stringify(message.author));
+    const userId = await resolveSenderUserId(message);
+    console.log("[gchat-bot] resolved userId:", userId);
 
-  const userId = await resolveSenderUserId(message);
-  console.log("[gchat-bot] resolved userId:", userId);
+    const conversation = await createConversationForUser({ userId });
+    console.log("[gchat-bot] conversation:", conversation.id);
 
-  const conversation = await createConversationForUser({ userId });
-  console.log("[gchat-bot] conversation:", conversation.id);
+    await thread.subscribe();
+    await thread.setState({ conversationId: conversation.id, userId });
 
-  await thread.subscribe();
-  await thread.setState({ conversationId: conversation.id, userId });
+    const placeholder = await thread.post("Thinking...");
+    console.log("[gchat-bot] placeholder posted, running agent...");
 
-  const placeholder = await thread.post("Thinking...");
-  console.log("[gchat-bot] placeholder posted, running agent...");
+    try {
+      const text = await runAgentAndGetFinalText(conversation.id, userId, message.text);
+      console.log("[gchat-bot] agent done, response length:", text.length);
+      await placeholder.edit(text);
+    } catch (err) {
+      console.error("[gchat-bot] Error:", err);
+      await placeholder.edit("Sorry, something went wrong.");
+    }
+  });
 
-  try {
-    const text = await runAgentAndGetFinalText(conversation.id, userId, message.text);
-    console.log("[gchat-bot] agent done, response length:", text.length);
-    await placeholder.edit(text);
-  } catch (err) {
-    console.error("[gchat-bot] Error:", err);
-    await placeholder.edit("Sorry, something went wrong.");
-  }
-});
+  bot.onSubscribedMessage(async (thread, message) => {
+    console.log("[gchat-bot] onSubscribedMessage:", message.text?.slice(0, 80));
 
-bot.onSubscribedMessage(async (thread, message) => {
-  console.log("[gchat-bot] onSubscribedMessage:", message.text?.slice(0, 80));
+    const state = (await thread.state) as { conversationId?: string; userId?: string } | null;
+    if (!state?.conversationId) return;
 
-  const state = await thread.state as { conversationId?: string; userId?: string } | null;
-  if (!state?.conversationId) return;
+    const userId = state.userId ?? (await resolveSenderUserId(message));
+    const placeholder = await thread.post("Thinking...");
 
-  const userId = state.userId ?? await resolveSenderUserId(message);
-  const placeholder = await thread.post("Thinking...");
+    try {
+      const text = await runAgentAndGetFinalText(state.conversationId, userId, message.text);
+      await placeholder.edit(text);
+    } catch (err) {
+      console.error("[gchat-bot] Error:", err);
+      await placeholder.edit("Sorry, something went wrong.");
+    }
+  });
 
-  try {
-    const text = await runAgentAndGetFinalText(state.conversationId, userId, message.text);
-    await placeholder.edit(text);
-  } catch (err) {
-    console.error("[gchat-bot] Error:", err);
-    await placeholder.edit("Sorry, something went wrong.");
-  }
-});
+  // Handle DMs explicitly — same logic as onNewMention but logs differently for debugging
+  bot.onDirectMessage(async (thread, message) => {
+    console.log("[gchat-bot] onDirectMessage:", message.text?.slice(0, 80));
+    console.log("[gchat-bot] DM author:", JSON.stringify(message.author));
 
-// Handle DMs explicitly — same logic as onNewMention but logs differently for debugging
-bot.onDirectMessage(async (thread, message) => {
-  console.log("[gchat-bot] onDirectMessage:", message.text?.slice(0, 80));
-  console.log("[gchat-bot] DM author:", JSON.stringify(message.author));
+    const userId = await resolveSenderUserId(message);
+    console.log("[gchat-bot] DM resolved userId:", userId);
 
-  const userId = await resolveSenderUserId(message);
-  console.log("[gchat-bot] DM resolved userId:", userId);
+    const conversation = await createConversationForUser({ userId });
+    await thread.subscribe();
+    await thread.setState({ conversationId: conversation.id, userId });
 
-  const conversation = await createConversationForUser({ userId });
-  await thread.subscribe();
-  await thread.setState({ conversationId: conversation.id, userId });
+    const placeholder = await thread.post("Thinking...");
 
-  const placeholder = await thread.post("Thinking...");
-
-  try {
-    const text = await runAgentAndGetFinalText(conversation.id, userId, message.text);
-    await placeholder.edit(text);
-  } catch (err) {
-    console.error("[gchat-bot] DM Error:", err);
-    await placeholder.edit("Sorry, something went wrong.");
-  }
-});
-
+    try {
+      const text = await runAgentAndGetFinalText(conversation.id, userId, message.text);
+      await placeholder.edit(text);
+    } catch (err) {
+      console.error("[gchat-bot] DM Error:", err);
+      await placeholder.edit("Sorry, something went wrong.");
+    }
+  });
 } // end registerHandlers

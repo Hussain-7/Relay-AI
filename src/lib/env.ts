@@ -4,7 +4,6 @@ const booleanLike = z
   .string()
   .optional()
   .transform((value) => value === "true");
-  
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -57,10 +56,5 @@ export function hasGoogleAiConfig() {
 }
 
 export function hasGitHubAppConfig() {
-  return Boolean(
-    env.GITHUB_APP_ID &&
-      env.GITHUB_APP_PRIVATE_KEY &&
-      env.GITHUB_APP_PRIVATE_KEY.includes("BEGIN") &&
-      env.GITHUB_APP_SLUG,
-  );
+  return Boolean(env.GITHUB_APP_ID && env.GITHUB_APP_PRIVATE_KEY?.includes("BEGIN") && env.GITHUB_APP_SLUG);
 }

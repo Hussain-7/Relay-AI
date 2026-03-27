@@ -252,7 +252,10 @@
   position: relative !important;
   top: -1px !important;
   overflow: hidden !important;
-  transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
+  transition:
+    background 160ms ease,
+    color 160ms ease,
+    border-color 160ms ease;
 }
 
 .chat-markdown a:hover,
@@ -283,7 +286,6 @@
   pointer-events: none !important;
 }
 
-
 /* ── Citation tooltip (portal-based, escapes overflow) ── */
 
 .citation-tooltip {
@@ -305,8 +307,14 @@
 }
 
 @keyframes tooltip-in {
-  from { opacity: 0; transform: translate(-50%, calc(-100% - 4px)); }
-  to { opacity: 1; transform: translate(-50%, calc(-100% - 8px)); }
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-100% - 4px));
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, calc(-100% - 8px));
+  }
 }
 
 /* ── Activity shimmer (processing indicator) ── */
@@ -328,8 +336,12 @@
 }
 
 @keyframes shimmer-sweep {
-  0% { background-position: 100% 0; }
-  100% { background-position: -100% 0; }
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
 }
 
 /* ── Pending spark pulse (waiting for first timeline step) ── */
@@ -339,8 +351,15 @@
 }
 
 @keyframes spark-pulse {
-  0%, 100% { transform: scale(0.7); opacity: 0.45; }
-  50% { transform: scale(1.25); opacity: 1; }
+  0%,
+  100% {
+    transform: scale(0.7);
+    opacity: 0.45;
+  }
+  50% {
+    transform: scale(1.25);
+    opacity: 1;
+  }
 }
 
 /* ── Animations ── */

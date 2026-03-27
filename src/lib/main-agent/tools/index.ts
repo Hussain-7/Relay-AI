@@ -1,9 +1,9 @@
-export type { ToolRuntimeContext, ToolCatalogEntry } from "./context";
+export type { ToolCatalogEntry, ToolRuntimeContext } from "./context";
 
+import { askUserCatalog, createAskUserTool } from "./ask-user";
+import { type ActiveCodingSessionHint, codingSessionCatalog, createCodingTools } from "./coding-session";
 import type { ToolRuntimeContext } from "./context";
-import { createCodingTools, codingSessionCatalog, type ActiveCodingSessionHint } from "./coding-session";
 import { createGithubCreateRepoTool, githubCatalog } from "./github";
-import { createAskUserTool, askUserCatalog } from "./ask-user";
 import { createImageGenerationTool, imageGenerationCatalog } from "./image-generation";
 import { memoryCatalog } from "./memory";
 
@@ -43,7 +43,8 @@ export const MAIN_AGENT_SERVER_TOOLS = [
     runtime: "main_agent" as const,
     kind: "anthropic_server" as const,
     enabled: true,
-    description: "Short-lived code execution for analysis, parsing, data work, and document generation (xlsx, pptx, docx, pdf).",
+    description:
+      "Short-lived code execution for analysis, parsing, data work, and document generation (xlsx, pptx, docx, pdf).",
     tool: {
       name: "code_execution" as const,
       type: "code_execution_20260120" as const,
@@ -66,14 +67,8 @@ export const MAIN_AGENT_SERVER_TOOLS = [
 // ── Custom tools (executed on our server via toolRunner) ──
 
 export function getMainAgentTools(ctx: ToolRuntimeContext, activeCodingSessionHint?: ActiveCodingSessionHint | null) {
-  const {
-    prepareSandboxTool,
-    cloneRepoTool,
-    codingAgentTool,
-    bashSandboxTool,
-    getSandboxUrlTool,
-    closeSandboxTool,
-  } = createCodingTools(ctx, activeCodingSessionHint);
+  const { prepareSandboxTool, cloneRepoTool, codingAgentTool, bashSandboxTool, getSandboxUrlTool, closeSandboxTool } =
+    createCodingTools(ctx, activeCodingSessionHint);
 
   return [
     prepareSandboxTool,

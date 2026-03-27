@@ -1,10 +1,7 @@
-import { requireRequestUser } from "@/lib/server-auth";
 import { listRepoSecrets, upsertRepoSecrets } from "@/lib/repo-secrets";
+import { requireRequestUser } from "@/lib/server-auth";
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await requireRequestUser(request.headers);
     const { id } = await params;
@@ -18,10 +15,7 @@ export async function GET(
   }
 }
 
-export async function PUT(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await requireRequestUser(request.headers);
     const { id } = await params;

@@ -1,6 +1,13 @@
 import { z } from "zod";
 
-import { deleteConversationForUser, getConversationDetail, toggleConversationStar, updateConversationMainModel, updateConversationRepoBinding, updateConversationTitle } from "@/lib/conversations";
+import {
+  deleteConversationForUser,
+  getConversationDetail,
+  toggleConversationStar,
+  updateConversationMainModel,
+  updateConversationRepoBinding,
+  updateConversationTitle,
+} from "@/lib/conversations";
 import { requireRequestUser } from "@/lib/server-auth";
 import { getCached, invalidateCache } from "@/lib/server-cache";
 
@@ -11,22 +18,20 @@ const patchConversationSchema = z.object({
   repoBindingId: z.string().nullable().optional(),
 });
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await requireRequestUser(request.headers);
     const { id } = await params;
-    const conversation = await getCached(
-      `conv:${id}`,
-      120,
-      () => getConversationDetail({ conversationId: id, userId: user.userId }),
+    const conversation = await getCached(`conv:${id}`, 120, () =>
+      getConversationDetail({ conversationId: id, userId: user.userId }),
     );
 
-    return Response.json({ conversation }, {
-      headers: { "Cache-Control": "private, no-cache" },
-    });
+    return Response.json(
+      { conversation },
+      {
+        headers: { "Cache-Control": "private, no-cache" },
+      },
+    );
   } catch (error) {
     return Response.json(
       {
@@ -37,10 +42,7 @@ export async function GET(
   }
 }
 
-export async function DELETE(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await requireRequestUser(request.headers);
     const { id } = await params;
@@ -63,10 +65,7 @@ export async function DELETE(
   }
 }
 
-export async function PATCH(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await requireRequestUser(request.headers);
     const { id } = await params;

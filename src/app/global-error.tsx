@@ -1,12 +1,6 @@
 "use client";
 
-export default function GlobalError({
-  error,
-  reset,
-}: {
-  error: Error & { digest?: string };
-  reset: () => void;
-}) {
+export default function GlobalError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   return (
     <html lang="en">
       <body
@@ -22,13 +16,9 @@ export default function GlobalError({
         }}
       >
         <div style={{ textAlign: "center", maxWidth: 420 }}>
-          <h2 style={{ fontSize: "1.4rem", fontWeight: 500, marginBottom: 8 }}>
-            Something went wrong
-          </h2>
+          <h2 style={{ fontSize: "1.4rem", fontWeight: 500, marginBottom: 8 }}>Something went wrong</h2>
           <p style={{ fontSize: "0.95rem", opacity: 0.6, marginBottom: 24 }}>
-            {error.digest
-              ? `Error ID: ${error.digest}`
-              : "An unexpected error occurred."}
+            {error.digest ? `Error ID: ${error.digest}` : "An unexpected error occurred."}
           </p>
           <button
             onClick={reset}

@@ -1,6 +1,5 @@
-import { env } from "@/lib/env";
-import { hasSupabaseAuth } from "@/lib/env";
 import { isEmailAllowed } from "@/lib/allowed-emails";
+import { env, hasSupabaseAuth } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 
 export interface RequestUser {
@@ -34,8 +33,7 @@ export async function requireRequestUser(headers: Headers): Promise<RequestUser>
   }
 
   // 2. Fallback: dev header auth
-  const allowHeader =
-    env.ALLOW_INSECURE_USER_HEADER || env.NODE_ENV === "development" || env.NODE_ENV === "test";
+  const allowHeader = env.ALLOW_INSECURE_USER_HEADER || env.NODE_ENV === "development" || env.NODE_ENV === "test";
 
   if (!allowHeader) {
     throw new Error("Authentication required");
@@ -43,8 +41,7 @@ export async function requireRequestUser(headers: Headers): Promise<RequestUser>
 
   const requestedUserId = getHeaderString(headers, "x-user-id");
   const userId = requestedUserId ?? "demo-user";
-  const email =
-    getHeaderString(headers, "x-user-email") ?? `${userId}@relay-ai.local`;
+  const email = getHeaderString(headers, "x-user-email") ?? `${userId}@relay-ai.local`;
   const fullName = getHeaderString(headers, "x-user-name");
   const avatarUrl = getHeaderString(headers, "x-user-avatar");
 
@@ -58,9 +55,11 @@ async function getSupabaseUser(): Promise<RequestUser | null> {
     // Dynamic import to avoid pulling in cookies() for non-Supabase paths
     const { getSupabaseServerClient } = await import("@/lib/supabase-server");
     const supabase = await getSupabaseServerClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-    if (!user || !user.email) {
+    if (!user?.email) {
       return null;
     }
 

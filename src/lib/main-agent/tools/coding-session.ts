@@ -1,16 +1,16 @@
-import { z } from "zod";
 import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 import type { Sandbox } from "@e2b/code-interpreter";
+import { z } from "zod";
 
 import {
-  startOrResumeCodingSession,
-  ensureRepoCloned,
-  runCodingTask,
   closeCodingSession,
   connectSandboxOrThrow,
+  ensureRepoCloned,
+  runCodingTask,
+  startOrResumeCodingSession,
 } from "@/lib/coding/session-service";
-import { getGitHubToken } from "@/lib/github/service";
 import { hasE2bConfig, hasGitHubAppConfig } from "@/lib/env";
+import { getGitHubToken } from "@/lib/github/service";
 import { prisma } from "@/lib/prisma";
 import type { ToolCatalogEntry, ToolRuntimeContext } from "./context";
 import { jsonResult } from "./context";
@@ -40,7 +40,8 @@ export const codingSessionCatalog: ToolCatalogEntry[] = [
     runtime: "main_agent",
     kind: "custom_backend",
     enabled: true,
-    description: "Run a coding task using Claude Code inside the sandbox. Reads, writes, edits files, runs commands, and manages git.",
+    description:
+      "Run a coding task using Claude Code inside the sandbox. Reads, writes, edits files, runs commands, and manages git.",
   },
   {
     id: "bash_sandbox",
@@ -122,10 +123,7 @@ export interface ActiveCodingSessionHint {
 
 // ── Combined factory: all coding tools share a single cache ──
 
-export function createCodingTools(
-  ctx: ToolRuntimeContext,
-  activeCodingSessionHint?: ActiveCodingSessionHint | null,
-) {
+export function createCodingTools(ctx: ToolRuntimeContext, activeCodingSessionHint?: ActiveCodingSessionHint | null) {
   const cache: RunSandboxCache = {
     session: null,
     sandbox: null,
@@ -199,10 +197,12 @@ export function createCodingTools(
     cache.sandbox = sandbox;
 
     // Link coding session to current agent run
-    await prisma.agentRun.update({
-      where: { id: ctx.runId },
-      data: { codingSessionId: session.id },
-    }).catch(() => {}); // Non-fatal if run doesn't exist yet
+    await prisma.agentRun
+      .update({
+        where: { id: ctx.runId },
+        data: { codingSessionId: session.id },
+      })
+      .catch(() => {}); // Non-fatal if run doesn't exist yet
 
     // Auto-clone/refresh repo if bound
     if (session.repoBinding) {
@@ -404,13 +404,17 @@ export function createCodingTools(
         }
 
         if (!cache.session || !cache.sandbox) {
-          throw new Error("No active sandbox. Call prepare_sandbox (and clone_repo_sandbox if a repo is linked) before coding_agent_sandbox.");
+          throw new Error(
+            "No active sandbox. Call prepare_sandbox (and clone_repo_sandbox if a repo is linked) before coding_agent_sandbox.",
+          );
         }
 
         // Verify cached sandbox is still alive
         if (!(await isSandboxAlive(cache.sandbox))) {
           clearSandboxCache();
-          throw new Error("Sandbox is no longer reachable. Call prepare_sandbox to provision a new one, then clone_repo_sandbox, then retry coding_agent_sandbox.");
+          throw new Error(
+            "Sandbox is no longer reachable. Call prepare_sandbox to provision a new one, then clone_repo_sandbox, then retry coding_agent_sandbox.",
+          );
         }
 
         const session = cache.session;
@@ -467,7 +471,10 @@ export function createCodingTools(
         });
       } catch (error) {
         // Only clear sandbox cache on sandbox-level errors, not task failures
-        if (error instanceof Error && (error.message.includes("No active sandbox") || error.message.includes("no longer reachable"))) {
+        if (
+          error instanceof Error &&
+          (error.message.includes("No active sandbox") || error.message.includes("no longer reachable"))
+        ) {
           clearSandboxCache();
         }
         await ctx.emit("tool.call.failed", {
@@ -530,10 +537,9 @@ export function createCodingTools(
           cwd = input.workspacePath ?? session.workspacePath ?? "/workspace";
         }
 
-        const result = await sandbox.commands.run(
-          `cd "${cwd}" && ${input.command}`,
-          { timeoutMs: input.timeoutMs ?? 30000 },
-        );
+        const result = await sandbox.commands.run(`cd "${cwd}" && ${input.command}`, {
+          timeoutMs: input.timeoutMs ?? 30000,
+        });
 
         const output = {
           exitCode: result.exitCode,

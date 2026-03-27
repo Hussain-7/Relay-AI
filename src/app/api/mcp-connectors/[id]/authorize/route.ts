@@ -1,4 +1,4 @@
-import { randomBytes, createHash } from "crypto";
+import { createHash, randomBytes } from "crypto";
 
 import { cookies } from "next/headers";
 
@@ -8,10 +8,7 @@ import { getOAuthCallbackUrl, registerOAuthClient } from "@/lib/mcp-connectors";
 import { prisma } from "@/lib/prisma";
 import { requireRequestUser } from "@/lib/server-auth";
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!env.MCP_TOKEN_SECRET) {
     return Response.json({ error: "MCP_TOKEN_SECRET is not configured" }, { status: 500 });
   }
@@ -47,10 +44,13 @@ export async function GET(
   }
 
   if (!clientId) {
-    return Response.json({
-      error:
-        "This server requires a pre-registered Client ID. Delete and re-add this connector, entering the Client ID in the form (e.g. Vercel MCP uses 'vercel-mcp-adapter').",
-    }, { status: 422 });
+    return Response.json(
+      {
+        error:
+          "This server requires a pre-registered Client ID. Delete and re-add this connector, entering the Client ID in the form (e.g. Vercel MCP uses 'vercel-mcp-adapter').",
+      },
+      { status: 422 },
+    );
   }
 
   // PKCE

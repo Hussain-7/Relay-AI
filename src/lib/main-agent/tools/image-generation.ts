@@ -1,6 +1,6 @@
-import { z } from "zod";
 import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { createClient } from "@supabase/supabase-js";
+import { z } from "zod";
 
 import { env, hasGoogleAiConfig } from "@/lib/env";
 import { getGoogleAiClient } from "@/lib/google-ai";
@@ -28,13 +28,21 @@ type ModelAlias = keyof typeof MODEL_MAP;
 const STORAGE_BUCKET = "generated-images";
 
 const inputSchema = z.object({
-  prompt: z.string().min(1).describe("Detailed description of the image to generate or how to edit the existing image."),
-  model: z.enum(["imagen-4", "gemini-3-pro-image", "gemini-3.1-flash-image"]).describe(
-    "Model to use. imagen-4: pixel-perfect photorealistic output — ads, product renders, high-end design. Text-to-image ONLY, no editing. gemini-3-pro-image: thinking + design + control — infographics, UI mockups, text-heavy visuals, complex layouts. Supports editing. gemini-3.1-flash-image: fast, scalable — social media, bulk content, rapid prototyping. Supports editing.",
-  ),
-  imageAttachmentId: z.string().optional().describe(
-    "For editing an existing image: the attachment ID of the source image. MUST use a Gemini model (not imagen-4) when providing this.",
-  ),
+  prompt: z
+    .string()
+    .min(1)
+    .describe("Detailed description of the image to generate or how to edit the existing image."),
+  model: z
+    .enum(["imagen-4", "gemini-3-pro-image", "gemini-3.1-flash-image"])
+    .describe(
+      "Model to use. imagen-4: pixel-perfect photorealistic output — ads, product renders, high-end design. Text-to-image ONLY, no editing. gemini-3-pro-image: thinking + design + control — infographics, UI mockups, text-heavy visuals, complex layouts. Supports editing. gemini-3.1-flash-image: fast, scalable — social media, bulk content, rapid prototyping. Supports editing.",
+    ),
+  imageAttachmentId: z
+    .string()
+    .optional()
+    .describe(
+      "For editing an existing image: the attachment ID of the source image. MUST use a Gemini model (not imagen-4) when providing this.",
+    ),
   aspectRatio: z.string().optional().describe("Aspect ratio, e.g. '16:9', '1:1', '9:16'. Defaults to '1:1'."),
 });
 
@@ -102,11 +110,14 @@ async function generateWithImagen(prompt: string, modelId: string, aspectRatio: 
 
   const imageBytes = response.generatedImages?.[0]?.image?.imageBytes;
   if (!imageBytes) {
-    console.error("[image_generation] Imagen returned no image data. Response:", JSON.stringify(response).slice(0, 500));
+    console.error(
+      "[image_generation] Imagen returned no image data. Response:",
+      JSON.stringify(response).slice(0, 500),
+    );
     throw new Error(
       "Imagen returned no image data. This usually means the prompt was blocked by the safety filter " +
-      "(e.g. references to real people, celebrities, copyrighted characters, or violent/sensitive content). " +
-      "Try rephrasing without real names or identifiable individuals.",
+        "(e.g. references to real people, celebrities, copyrighted characters, or violent/sensitive content). " +
+        "Try rephrasing without real names or identifiable individuals.",
     );
   }
 
@@ -114,17 +125,11 @@ async function generateWithImagen(prompt: string, modelId: string, aspectRatio: 
   return Buffer.from(imageBytes, "base64");
 }
 
-async function generateWithGemini(
-  prompt: string,
-  modelId: string,
-  inputImage?: { base64: string; mimeType: string },
-) {
+async function generateWithGemini(prompt: string, modelId: string, inputImage?: { base64: string; mimeType: string }) {
   const google = await getGoogleAiClient();
   console.log(`[image_generation] Calling Gemini: model=${modelId}, hasInputImage=${Boolean(inputImage)}`);
 
-  const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [
-    { text: prompt },
-  ];
+  const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [{ text: prompt }];
 
   if (inputImage) {
     parts.push({
@@ -151,9 +156,7 @@ async function generateWithGemini(
 
   console.log(`[image_generation] Gemini returned ${candidate.content.parts.length} parts`);
 
-  const imagePart = candidate.content.parts.find(
-    (p) => "inlineData" in p && p.inlineData,
-  );
+  const imagePart = candidate.content.parts.find((p) => "inlineData" in p && p.inlineData);
 
   if (!imagePart?.inlineData?.data) {
     const partTypes = candidate.content.parts.map((p) => Object.keys(p).join(",")).join("; ");
@@ -161,7 +164,9 @@ async function generateWithGemini(
     throw new Error("Gemini returned no image data. The model may have refused the request.");
   }
 
-  console.log(`[image_generation] Gemini image: mimeType=${imagePart.inlineData.mimeType}, data=${imagePart.inlineData.data.length} chars`);
+  console.log(
+    `[image_generation] Gemini image: mimeType=${imagePart.inlineData.mimeType}, data=${imagePart.inlineData.data.length} chars`,
+  );
   return Buffer.from(imagePart.inlineData.data, "base64");
 }
 
@@ -195,24 +200,22 @@ async function uploadToSupabaseStorage(buffer: Buffer, filename: string): Promis
   }
 
   const storagePath = `${Date.now()}-${filename}`;
-  console.log(`[image_generation] Uploading to Supabase Storage: bucket=${STORAGE_BUCKET}, path=${storagePath}, size=${buffer.length}`);
+  console.log(
+    `[image_generation] Uploading to Supabase Storage: bucket=${STORAGE_BUCKET}, path=${storagePath}, size=${buffer.length}`,
+  );
 
-  const { error: uploadError } = await supabase.storage
-    .from(STORAGE_BUCKET)
-    .upload(storagePath, buffer, {
-      contentType: "image/png",
-      cacheControl: "public, max-age=31536000, immutable",
-      upsert: false,
-    });
+  const { error: uploadError } = await supabase.storage.from(STORAGE_BUCKET).upload(storagePath, buffer, {
+    contentType: "image/png",
+    cacheControl: "public, max-age=31536000, immutable",
+    upsert: false,
+  });
 
   if (uploadError) {
     console.error("[image_generation] Supabase upload error:", uploadError);
     throw new Error(`Failed to upload image: ${uploadError.message}`);
   }
 
-  const { data: urlData } = supabase.storage
-    .from(STORAGE_BUCKET)
-    .getPublicUrl(storagePath);
+  const { data: urlData } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(storagePath);
 
   console.log(`[image_generation] Public URL: ${urlData.publicUrl}`);
   return urlData.publicUrl;
@@ -247,7 +250,8 @@ export function createImageGenerationTool(ctx: ToolRuntimeContext) {
       const aspectRatio = input.aspectRatio ?? "1:1";
 
       if (input.imageAttachmentId && modelAlias === "imagen-4") {
-        const error = "Imagen 4 does not support image editing. Use gemini-3-pro-image or gemini-3.1-flash-image instead.";
+        const error =
+          "Imagen 4 does not support image editing. Use gemini-3-pro-image or gemini-3.1-flash-image instead.";
         await ctx.emit("tool.call.failed", {
           toolName: "image_generation",
           toolRuntime: "custom",
@@ -257,7 +261,9 @@ export function createImageGenerationTool(ctx: ToolRuntimeContext) {
         return jsonResult({ error });
       }
 
-      console.log(`[image_generation] Starting: model=${modelAlias} (${modelId}), aspectRatio=${aspectRatio}, editing=${Boolean(input.imageAttachmentId)}`);
+      console.log(
+        `[image_generation] Starting: model=${modelAlias} (${modelId}), aspectRatio=${aspectRatio}, editing=${Boolean(input.imageAttachmentId)}`,
+      );
 
       try {
         // Resolve input image if editing

@@ -1,11 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-
+import { ActivityStep } from "@/components/chat/activity-step";
+import { IconChevron } from "@/components/icons";
 import type { RenderTimelineEntry } from "@/lib/chat-utils";
 import { buildActivitySummary } from "@/lib/chat-utils";
-import { IconChevron } from "@/components/icons";
-import { ActivityStep } from "@/components/chat/activity-step";
 
 // Persist user's manual toggle across remounts (live → completed transition).
 // Keyed by runId so each run's accordion state is independent.
@@ -70,9 +69,16 @@ export function RunActivityAccordion({
         onClick={handleToggle}
         aria-expanded={isExpanded}
       >
-        <span className={`min-w-0 text-[rgba(245,240,232,0.68)] text-[0.92rem] leading-[1.35] ${isLive ? "activity-shimmer" : ""}`}>{summary}</span>
+        <span
+          className={`min-w-0 text-[rgba(245,240,232,0.68)] text-[0.92rem] leading-[1.35] ${isLive ? "activity-shimmer" : ""}`}
+        >
+          {summary}
+        </span>
         <span className="inline-flex items-center gap-2 text-[rgba(245,240,232,0.42)]">
-          <span className={`inline-grid place-items-center transition-transform duration-[180ms] ease-linear ${isExpanded ? "rotate-0" : "-rotate-90"}`} aria-hidden="true">
+          <span
+            className={`inline-grid place-items-center transition-transform duration-[180ms] ease-linear ${isExpanded ? "rotate-0" : "-rotate-90"}`}
+            aria-hidden="true"
+          >
             <IconChevron />
           </span>
         </span>

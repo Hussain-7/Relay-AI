@@ -227,7 +227,11 @@ function summarizeToolAction(name: string) {
 
 export function buildActivitySummary(entries: RenderTimelineEntry[], isLive: boolean) {
   const toolSummaries = Array.from(
-    new Set(entries.filter((entry): entry is ToolTimelineEntry => entry.kind === "tool").map((entry) => summarizeToolAction(entry.title))),
+    new Set(
+      entries
+        .filter((entry): entry is ToolTimelineEntry => entry.kind === "tool")
+        .map((entry) => summarizeToolAction(entry.title)),
+    ),
   );
 
   if (toolSummaries.length === 1) {
@@ -421,9 +425,10 @@ export function buildTimelineEntries(events: TimelineEventEnvelope[]) {
           if (isSubTool) {
             const parentTool = findParentCodingTool(entries);
             if (parentTool) {
-              const inputSummary = typeof event.payload?.inputSummary === "string"
-                ? event.payload.inputSummary
-                : String(event.payload?.toolName ?? "Tool");
+              const inputSummary =
+                typeof event.payload?.inputSummary === "string"
+                  ? event.payload.inputSummary
+                  : String(event.payload?.toolName ?? "Tool");
               parentTool.logs.push({
                 id: key,
                 message: inputSummary,
@@ -489,9 +494,7 @@ export function buildTimelineEntries(events: TimelineEventEnvelope[]) {
                 logEntry.message = logEntry.message + statusSuffix;
                 // Attach tool result content for expandable detail
                 const resultContent =
-                  typeof event.payload?.resultContent === "string"
-                    ? event.payload.resultContent
-                    : null;
+                  typeof event.payload?.resultContent === "string" ? event.payload.resultContent : null;
                 if (resultContent) {
                   logEntry.kind = "tool_result";
                   logEntry.detail = resultContent;
@@ -516,9 +519,8 @@ export function buildTimelineEntries(events: TimelineEventEnvelope[]) {
           if (isSubTool) {
             const parentTool = findParentCodingTool(entries);
             if (parentTool) {
-              const inputSummary = typeof event.payload?.inputSummary === "string"
-                ? event.payload.inputSummary
-                : candidateName;
+              const inputSummary =
+                typeof event.payload?.inputSummary === "string" ? event.payload.inputSummary : candidateName;
               const statusSuffix = event.type === "tool.call.completed" ? " — done" : " — failed";
               parentTool.logs.push({
                 id: key,
@@ -656,15 +658,17 @@ export function buildTimelineEntries(events: TimelineEventEnvelope[]) {
       }
       case "approval.resolved": {
         const resolvedApprovalId = typeof event.payload?.approvalId === "string" ? event.payload.approvalId : null;
-        const resolvedStatus = event.payload?.status === "APPROVED" ? "answered" as const
-          : event.payload?.status === "REJECTED" && (event.payload?.response as Record<string, unknown> | null)?.reason === "timeout" ? "timeout" as const
-          : "rejected" as const;
+        const resolvedStatus =
+          event.payload?.status === "APPROVED"
+            ? ("answered" as const)
+            : event.payload?.status === "REJECTED" &&
+                (event.payload?.response as Record<string, unknown> | null)?.reason === "timeout"
+              ? ("timeout" as const)
+              : ("rejected" as const);
         const resolvedResponse = (event.payload?.response as Record<string, unknown> | null) ?? null;
         // Find and update the matching pending approval entry
         if (resolvedApprovalId) {
-          const existing = entries.find(
-            (e) => e.kind === "approval" && e.approvalId === resolvedApprovalId,
-          );
+          const existing = entries.find((e) => e.kind === "approval" && e.approvalId === resolvedApprovalId);
           if (existing && existing.kind === "approval") {
             existing.status = resolvedStatus;
             existing.response = resolvedResponse;
@@ -714,7 +718,6 @@ export function getFileTypeBadge(attachment: AttachmentDto) {
   return "FILE";
 }
 
-
 export function formatRelativeDate(isoString: string): string {
   const date = new Date(isoString);
   const now = new Date();
@@ -727,7 +730,9 @@ export function formatRelativeDate(isoString: string): string {
   if (diffHr < 24) return `${diffHr}h ago`;
 
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const diffDays = Math.round((startOfToday.getTime() - new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()) / 86_400_000);
+  const diffDays = Math.round(
+    (startOfToday.getTime() - new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()) / 86_400_000,
+  );
 
   if (diffDays === 1) return "Yesterday";
   if (diffDays < 7) return `${diffDays}d ago`;

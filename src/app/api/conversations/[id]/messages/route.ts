@@ -10,17 +10,16 @@ const createMessageSchema = z.object({
   prompt: z.string().trim().min(1),
   attachmentIds: z.array(z.string()).default([]),
   isNew: z.boolean().optional(),
-  preferences: z.object({
-    thinking: z.boolean().default(false),
-    effort: z.enum(["low", "medium", "high"]).default("low"),
-    memory: z.boolean().default(false),
-  }).optional(),
+  preferences: z
+    .object({
+      thinking: z.boolean().default(false),
+      effort: z.enum(["low", "medium", "high"]).default("low"),
+      memory: z.boolean().default(false),
+    })
+    .optional(),
 });
 
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await requireRequestUser(request.headers);
     const { id } = await params;

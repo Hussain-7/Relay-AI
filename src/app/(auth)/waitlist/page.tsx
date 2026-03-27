@@ -7,7 +7,11 @@ function SparkIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
       <path d="M12 3.5 13.9 9l5.6 1.9-5.6 1.9L12 18.5l-1.9-5.7L4.5 10.9 10.1 9 12 3.5Z" fill="currentColor" />
-      <path d="M12 3.5 13.9 9l5.6 1.9-5.6 1.9L12 18.5l-1.9-5.7L4.5 10.9 10.1 9 12 3.5Z" fill="currentColor" transform="rotate(45 12 12)" />
+      <path
+        d="M12 3.5 13.9 9l5.6 1.9-5.6 1.9L12 18.5l-1.9-5.7L4.5 10.9 10.1 9 12 3.5Z"
+        fill="currentColor"
+        transform="rotate(45 12 12)"
+      />
     </svg>
   );
 }
@@ -42,9 +46,12 @@ export default function WaitlistPage() {
         <p className="mt-4 text-[0.92rem] leading-[1.6] text-[rgba(245,240,232,0.5)]">
           Relay AI is currently invite-only. We&apos;ve noted your interest
           {email ? (
-            <> at <span className="text-[rgba(245,240,232,0.75)] font-medium">{email}</span></>
-          ) : null}
-          {" "}and will reach out when a spot opens up.
+            <>
+              {" "}
+              at <span className="text-[rgba(245,240,232,0.75)] font-medium">{email}</span>
+            </>
+          ) : null}{" "}
+          and will reach out when a spot opens up.
         </p>
 
         <div className="mt-10 flex flex-col gap-3">

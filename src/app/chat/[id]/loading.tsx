@@ -52,10 +52,7 @@ export default function ChatLoading() {
   );
 }
 
-function shimmerBar(
-  height: number,
-  width: number | string,
-): React.CSSProperties {
+function shimmerBar(height: number, width: number | string): React.CSSProperties {
   return {
     height,
     width,

@@ -33,9 +33,7 @@ export function RenameModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-5 pt-5 pb-4">
-          <h2 className="text-[rgba(245,240,232,0.92)] text-[1.05rem] font-semibold m-0">
-            Rename chat
-          </h2>
+          <h2 className="text-[rgba(245,240,232,0.92)] text-[1.05rem] font-semibold m-0">Rename chat</h2>
         </div>
 
         <div className="px-5 pb-5">

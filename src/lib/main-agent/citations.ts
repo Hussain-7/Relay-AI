@@ -1,7 +1,4 @@
-import type {
-  BetaContentBlock,
-  BetaContentBlockParam,
-} from "@anthropic-ai/sdk/resources/beta/messages/messages";
+import type { BetaContentBlock, BetaContentBlockParam } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 
 interface Citation {
   url: string;

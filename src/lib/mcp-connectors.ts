@@ -28,21 +28,18 @@ function inferTransport(url: string): "streamable-http" | "sse" | "unknown" {
   return "unknown";
 }
 
-export async function testMcpConnection(
-  url: string,
-  authToken?: string,
-): Promise<TestConnectionResult> {
+export async function testMcpConnection(url: string, authToken?: string): Promise<TestConnectionResult> {
   try {
     const transport = inferTransport(url);
     const headers: Record<string, string> = { "Content-Type": "application/json" };
 
     // Streamable HTTP expects Accept header for JSON + SSE responses
     if (transport === "streamable-http" || transport === "unknown") {
-      headers["Accept"] = "application/json, text/event-stream";
+      headers.Accept = "application/json, text/event-stream";
     }
 
     if (authToken) {
-      headers["Authorization"] = `Bearer ${authToken}`;
+      headers.Authorization = `Bearer ${authToken}`;
     }
 
     // SSE endpoints use GET to establish the event stream — just check reachability
@@ -89,7 +86,7 @@ export async function testMcpConnection(
         await response.body?.cancel();
         return { success: true, needsAuth: false, reachable: true };
       }
-      const body = await response.json() as { result?: { serverInfo?: { name?: string } } };
+      const body = (await response.json()) as { result?: { serverInfo?: { name?: string } } };
       return {
         success: true,
         needsAuth: false,
@@ -131,7 +128,7 @@ export async function discoverOAuthMetadata(mcpUrl: string): Promise<OAuthMetada
     const response = await fetch(wellKnownUrl, { signal: AbortSignal.timeout(5_000) });
 
     if (response.ok) {
-      const metadata = await response.json() as OAuthMetadata;
+      const metadata = (await response.json()) as OAuthMetadata;
       if (metadata.authorization_endpoint && metadata.token_endpoint) {
         return metadata;
       }
@@ -168,7 +165,7 @@ export async function registerOAuthClient(
 
     if (!response.ok) return null;
 
-    const body = await response.json() as {
+    const body = (await response.json()) as {
       client_id: string;
       client_secret?: string;
     };
@@ -215,7 +212,7 @@ export async function exchangeCodeForTokens(
 
     if (!response.ok) return null;
 
-    const body = await response.json() as {
+    const body = (await response.json()) as {
       access_token: string;
       refresh_token?: string;
       expires_in?: number;
@@ -269,7 +266,7 @@ export async function refreshMcpToken(
       return null;
     }
 
-    const body = await response.json() as {
+    const body = (await response.json()) as {
       access_token: string;
       refresh_token?: string;
       expires_in?: number;
@@ -299,10 +296,12 @@ export async function refreshMcpToken(
 
     return { accessToken: body.access_token, expiresAt };
   } catch {
-    await prisma.mcpConnector.update({
-      where: { id: connector.id },
-      data: { status: "NEEDS_AUTH", lastError: "Token refresh error" },
-    }).catch(() => {});
+    await prisma.mcpConnector
+      .update({
+        where: { id: connector.id },
+        data: { status: "NEEDS_AUTH", lastError: "Token refresh error" },
+      })
+      .catch(() => {});
     return null;
   }
 }

@@ -1,6 +1,6 @@
-import type { AttachmentDto } from "@/lib/contracts";
-import { getFileTypeBadge } from "@/lib/chat-utils";
 import { IconClose } from "@/components/icons";
+import { getFileTypeBadge } from "@/lib/chat-utils";
+import type { AttachmentDto } from "@/lib/contracts";
 
 export interface PendingFile {
   clientId: string;
@@ -36,7 +36,13 @@ function FileIcon({ badge }: { badge: string }) {
   const isPdf = badge === "PDF";
   return (
     <div className="absolute inset-0 flex items-center justify-center bg-[rgba(255,255,255,0.03)]">
-      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" className={isPdf ? "text-[rgba(220,120,100,0.5)]" : "text-[rgba(245,240,232,0.2)]"}>
+      <svg
+        width="28"
+        height="28"
+        viewBox="0 0 24 24"
+        fill="none"
+        className={isPdf ? "text-[rgba(220,120,100,0.5)]" : "text-[rgba(245,240,232,0.2)]"}
+      >
         <path d="M6 2h9l5 5v15H6V2z" fill="currentColor" opacity="0.15" />
         <path d="M14 2v5h5" stroke="currentColor" strokeWidth="1.2" />
         <path d="M6 2h8l6 6v14H6V2z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
@@ -107,11 +113,7 @@ export function AttachmentChip(props: AttachmentCardProps) {
     >
       {/* Thumbnail / icon area */}
       <div className="relative flex-1 min-h-0 overflow-hidden">
-        {isImage && thumbnailSrc ? (
-          <Thumbnail src={thumbnailSrc} alt={filename} />
-        ) : (
-          <FileIcon badge={badge} />
-        )}
+        {isImage && thumbnailSrc ? <Thumbnail src={thumbnailSrc} alt={filename} /> : <FileIcon badge={badge} />}
         {isUploading && <LoadingOverlay />}
         {isError && <ErrorOverlay />}
       </div>
@@ -121,9 +123,7 @@ export function AttachmentChip(props: AttachmentCardProps) {
         <span className="inline-flex shrink-0 px-1 py-0.5 rounded-[3px] bg-[rgba(255,255,255,0.1)] text-[rgba(245,240,232,0.6)] text-[0.58rem] font-bold tracking-[0.04em] uppercase leading-none">
           {badge}
         </span>
-        <span className="text-[0.72rem] leading-[1.2] text-[rgba(245,240,232,0.8)] truncate min-w-0">
-          {filename}
-        </span>
+        <span className="text-[0.72rem] leading-[1.2] text-[rgba(245,240,232,0.8)] truncate min-w-0">{filename}</span>
       </div>
 
       {/* Remove button */}

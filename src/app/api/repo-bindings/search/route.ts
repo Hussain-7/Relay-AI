@@ -14,9 +14,6 @@ export async function POST(request: Request) {
     const repos = await searchGithubRepos(user.userId, body.query);
     return Response.json({ repos });
   } catch (error) {
-    return Response.json(
-      { error: error instanceof Error ? error.message : "Search failed." },
-      { status: 400 },
-    );
+    return Response.json({ error: error instanceof Error ? error.message : "Search failed." }, { status: 400 });
   }
 }

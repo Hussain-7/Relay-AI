@@ -1,14 +1,11 @@
-import { type RunEvent } from "@/generated/prisma/client";
 import { createClient } from "@supabase/supabase-js";
+import type { RunEvent } from "@/generated/prisma/client";
 
 import type { TimelineEventEnvelope, TimelineEventType, TimelineSource } from "@/lib/contracts";
 import { env, hasSupabaseRealtimeConfig } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 
-let supabaseServerClient:
-  | ReturnType<typeof createClient>
-  | null
-  | undefined;
+let supabaseServerClient: ReturnType<typeof createClient> | null | undefined;
 
 function getSupabaseServerClient() {
   if (!hasSupabaseRealtimeConfig()) {
@@ -63,7 +60,8 @@ export async function appendRunEvent(input: {
 
   if (supabase) {
     // Fire-and-forget: use httpSend for server-side REST delivery (no WebSocket needed)
-    supabase.channel(`conversation:${input.conversationId}`)
+    supabase
+      .channel(`conversation:${input.conversationId}`)
       .httpSend("run_event", envelope)
       .catch(() => {});
   }

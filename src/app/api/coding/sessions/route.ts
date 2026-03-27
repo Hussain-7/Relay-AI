@@ -1,7 +1,6 @@
 import { z } from "zod";
-
-import { ensureConversationForUser } from "@/lib/conversations";
 import { getLatestCodingSession, startOrResumeCodingSession } from "@/lib/coding/session-service";
+import { ensureConversationForUser } from "@/lib/conversations";
 import { requireRequestUser } from "@/lib/server-auth";
 
 const codingSessionSchema = z.discriminatedUnion("action", [

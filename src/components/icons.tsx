@@ -36,7 +36,14 @@ export function IconArrowUp() {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4">
       <path d="M12 18V7" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
-      <path d="m7.5 11.5 4.5-4.5 4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d="m7.5 11.5 4.5-4.5 4.5 4.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -70,7 +77,14 @@ export function IconMore() {
 export function IconCheck() {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4">
-      <path d="m6.5 12.5 3.4 3.4 7.6-8" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d="m6.5 12.5 3.4 3.4 7.6-8"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -78,7 +92,14 @@ export function IconCheck() {
 export function IconTool() {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4">
-      <path d="M14.5 6.5a4 4 0 0 0-5.2 5.2l-4.6 4.6a1.4 1.4 0 1 0 2 2l4.6-4.6a4 4 0 0 0 5.2-5.2l-2.1 2.1-1.9-1.9 2-2.2Z" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d="M14.5 6.5a4 4 0 0 0-5.2 5.2l-4.6 4.6a1.4 1.4 0 1 0 2 2l4.6-4.6a4 4 0 0 0 5.2-5.2l-2.1 2.1-1.9-1.9 2-2.2Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -86,7 +107,14 @@ export function IconTool() {
 export function IconThinking() {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4">
-      <path d="M12 6v6l3 2" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d="M12 6v6l3 2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
       <circle cx="12" cy="12" r="7.25" fill="none" stroke="currentColor" strokeWidth="1.7" />
     </svg>
   );
@@ -96,7 +124,14 @@ export function IconDone() {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4">
       <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="1.7" />
-      <path d="m8.5 12.2 2.3 2.4 4.8-5.1" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d="m8.5 12.2 2.3 2.4 4.8-5.1"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -114,7 +149,14 @@ export function IconInfo() {
 export function IconPaperclip() {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4">
-      <path d="M21.44 11.05l-9.19 9.19a5.64 5.64 0 0 1-7.98-7.98l9.19-9.19a3.76 3.76 0 0 1 5.32 5.32L9.6 17.57a1.88 1.88 0 0 1-2.66-2.66l8.38-8.38" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d="M21.44 11.05l-9.19 9.19a5.64 5.64 0 0 1-7.98-7.98l9.19-9.19a3.76 3.76 0 0 1 5.32 5.32L9.6 17.57a1.88 1.88 0 0 1-2.66-2.66l8.38-8.38"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -141,7 +183,14 @@ export function IconRefresh({ spinning }: { spinning?: boolean } = {}) {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24" className={`h-4 w-4${spinning ? " animate-spin" : ""}`}>
       <path d="M21 12a9 9 0 1 1-2.63-6.36" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M21 3v6h-6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d="M21 3v6h-6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -149,7 +198,14 @@ export function IconRefresh({ spinning }: { spinning?: boolean } = {}) {
 export function IconKey() {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4">
-      <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.78 7.78 5.5 5.5 0 0 1 7.78-7.78zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.78 7.78 5.5 5.5 0 0 1 7.78-7.78zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }

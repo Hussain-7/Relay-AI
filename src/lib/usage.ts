@@ -2,13 +2,16 @@
  * Token pricing per million tokens (USD).
  * Source: https://www.anthropic.com/pricing
  */
-const MODEL_PRICING: Record<string, {
-  input: number;
-  output: number;
-  cacheWrite5m: number;
-  cacheWrite1h: number;
-  cacheRead: number;
-}> = {
+const MODEL_PRICING: Record<
+  string,
+  {
+    input: number;
+    output: number;
+    cacheWrite5m: number;
+    cacheWrite1h: number;
+    cacheRead: number;
+  }
+> = {
   "claude-opus-4-6": {
     input: 5,
     output: 25,

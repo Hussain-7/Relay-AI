@@ -12,10 +12,10 @@
  */
 
 import "dotenv/config";
-import { PrismaPg } from "@prisma/adapter-pg";
-import { PrismaClient } from "../src/generated/prisma/client";
-import { Redis } from "@upstash/redis";
 import * as readline from "node:readline";
+import { PrismaPg } from "@prisma/adapter-pg";
+import { Redis } from "@upstash/redis";
+import { PrismaClient } from "../src/generated/prisma/client";
 
 const connectionString = process.env.DIRECT_URL || process.env.DATABASE_URL;
 if (!connectionString) {
@@ -41,11 +41,7 @@ async function flushUserCache(userId: string, conversationIds: string[]) {
     return;
   }
 
-  const keys = [
-    `convos:${userId}`,
-    `github-owners:${userId}`,
-    ...conversationIds.map((id) => `conv:${id}`),
-  ];
+  const keys = [`convos:${userId}`, `github-owners:${userId}`, ...conversationIds.map((id) => `conv:${id}`)];
 
   // Also scan for any github-repos:* keys for this user
   let cursor = "0";

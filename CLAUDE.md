@@ -10,7 +10,9 @@ Relay AI is a Next.js 16 web application that serves as an AI workspace combinin
 
 - `pnpm dev` — start Next.js dev server
 - `pnpm build` — production build
-- `pnpm lint` — ESLint (next/core-web-vitals + typescript)
+- `pnpm lint` — Biome linter + formatter check
+- `pnpm lint:fix` — auto-fix lint issues
+- `pnpm format` — format all files with Biome
 - `pnpm typecheck` — `tsc --noEmit`
 - `pnpm prisma:generate` — regenerate Prisma client after schema changes
 - `pnpm prisma:push` — push schema to database (accepts data loss)

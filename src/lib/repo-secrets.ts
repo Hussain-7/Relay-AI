@@ -1,5 +1,5 @@
+import { decryptToken, encryptToken } from "@/lib/mcp-token-crypto";
 import { prisma } from "@/lib/prisma";
-import { encryptToken, decryptToken } from "@/lib/mcp-token-crypto";
 
 const KEY_REGEX = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
@@ -14,10 +14,7 @@ export interface RepoSecretSummary {
  * List secrets for a repo binding (keys only, no values).
  * Verifies the caller owns the binding.
  */
-export async function listRepoSecrets(
-  userId: string,
-  repoBindingId: string,
-): Promise<RepoSecretSummary[]> {
+export async function listRepoSecrets(userId: string, repoBindingId: string): Promise<RepoSecretSummary[]> {
   const binding = await prisma.repoBinding.findUnique({
     where: { id: repoBindingId },
     select: { userId: true },
@@ -87,11 +84,7 @@ export async function upsertRepoSecrets(
 /**
  * Delete a single secret by ID. Verifies ownership.
  */
-export async function deleteRepoSecret(
-  userId: string,
-  repoBindingId: string,
-  secretId: string,
-): Promise<void> {
+export async function deleteRepoSecret(userId: string, repoBindingId: string, secretId: string): Promise<void> {
   const secret = await prisma.repoSecret.findUnique({
     where: { id: secretId },
     include: { repoBinding: { select: { userId: true } } },
@@ -106,9 +99,7 @@ export async function deleteRepoSecret(
 /**
  * Get decrypted secrets for a repo binding (server-only, for sandbox provisioning).
  */
-export async function getDecryptedSecrets(
-  repoBindingId: string,
-): Promise<{ key: string; value: string }[]> {
+export async function getDecryptedSecrets(repoBindingId: string): Promise<{ key: string; value: string }[]> {
   const secrets = await prisma.repoSecret.findMany({
     where: { repoBindingId },
     orderBy: { key: "asc" },

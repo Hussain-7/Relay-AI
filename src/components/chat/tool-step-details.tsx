@@ -1,11 +1,10 @@
 "use client";
 
 import { useState } from "react";
-
+import { DiffView } from "@/components/chat/diff-view";
+import { IconChevron } from "@/components/icons";
 import type { ToolLogEntry, ToolTimelineEntry } from "@/lib/chat-utils";
 import { getToolDetailLabel } from "@/lib/chat-utils";
-import { IconChevron } from "@/components/icons";
-import { DiffView } from "@/components/chat/diff-view";
 
 function LogEntryExpandable({ log }: { log: ToolLogEntry }) {
   const [isDetailOpen, setIsDetailOpen] = useState(false);
@@ -37,16 +36,17 @@ function LogEntryExpandable({ log }: { log: ToolLogEntry }) {
 
   const toggleLabel =
     log.kind === "diff" || log.kind === "tool_result"
-      ? isDetailOpen ? "hide" : "show"
-      : isDetailOpen ? "less" : "more";
+      ? isDetailOpen
+        ? "hide"
+        : "show"
+      : isDetailOpen
+        ? "less"
+        : "more";
 
   return (
     <li className={`flex flex-col gap-1 text-[0.8rem] leading-[1.45] ${textColor}`}>
       <div className="flex items-start gap-2">
-        <span
-          className={`inline-block h-1.5 w-1.5 rounded-full shrink-0 mt-[5px] ${bulletColor}`}
-          aria-hidden="true"
-        />
+        <span className={`inline-block h-1.5 w-1.5 rounded-full shrink-0 mt-[5px] ${bulletColor}`} aria-hidden="true" />
         <span className="min-w-0 break-words [overflow-wrap:anywhere]">
           {log.message}
           {hasDetail ? (
@@ -104,7 +104,10 @@ export function ToolStepDetails({ entry }: { entry: ToolTimelineEntry }) {
         aria-expanded={isExpanded}
       >
         <span>{getToolDetailLabel(entry)}</span>
-        <span className={`inline-grid place-items-center transition-transform duration-[180ms] ease-linear ${isExpanded ? "rotate-0" : "-rotate-90"}`} aria-hidden="true">
+        <span
+          className={`inline-grid place-items-center transition-transform duration-[180ms] ease-linear ${isExpanded ? "rotate-0" : "-rotate-90"}`}
+          aria-hidden="true"
+        >
           <IconChevron />
         </span>
       </button>
@@ -113,15 +116,22 @@ export function ToolStepDetails({ entry }: { entry: ToolTimelineEntry }) {
         <div className="grid gap-3 mt-3 min-w-0">
           {hasInput ? (
             <section className="border border-[rgba(255,255,255,0.08)] rounded-[18px] bg-[rgba(255,255,255,0.03)] p-3 min-w-0 overflow-hidden">
-              <div className="mb-2 text-[rgba(245,240,232,0.5)] text-[0.72rem] tracking-[0.12em] uppercase">Request</div>
-              <pre className="overflow-auto m-0 rounded-[16px] bg-[rgba(8,8,8,0.4)] px-3.5 py-3 text-[rgba(255,255,255,0.82)] text-[0.78rem] leading-[1.55] whitespace-pre-wrap break-words [overflow-wrap:anywhere]" aria-label={`${entry.title} input`}>
+              <div className="mb-2 text-[rgba(245,240,232,0.5)] text-[0.72rem] tracking-[0.12em] uppercase">
+                Request
+              </div>
+              <pre
+                className="overflow-auto m-0 rounded-[16px] bg-[rgba(8,8,8,0.4)] px-3.5 py-3 text-[rgba(255,255,255,0.82)] text-[0.78rem] leading-[1.55] whitespace-pre-wrap break-words [overflow-wrap:anywhere]"
+                aria-label={`${entry.title} input`}
+              >
                 {entry.input}
               </pre>
             </section>
           ) : null}
           {hasLogs ? (
             <section className="border border-[rgba(255,255,255,0.08)] rounded-[18px] bg-[rgba(255,255,255,0.03)] p-3 min-w-0 overflow-hidden">
-              <div className="mb-2 text-[rgba(245,240,232,0.5)] text-[0.72rem] tracking-[0.12em] uppercase">Processing</div>
+              <div className="mb-2 text-[rgba(245,240,232,0.5)] text-[0.72rem] tracking-[0.12em] uppercase">
+                Processing
+              </div>
               <ol className="m-0 p-0 list-none grid gap-1.5 overflow-y-auto pr-1">
                 {entry.logs.map((log) => (
                   <LogEntryExpandable key={log.id} log={log} />
@@ -131,8 +141,13 @@ export function ToolStepDetails({ entry }: { entry: ToolTimelineEntry }) {
           ) : null}
           {hasOutput ? (
             <section className="border border-[rgba(255,255,255,0.08)] rounded-[18px] bg-[rgba(255,255,255,0.03)] p-3 min-w-0 overflow-hidden">
-              <div className="mb-2 text-[rgba(245,240,232,0.5)] text-[0.72rem] tracking-[0.12em] uppercase">Response</div>
-              <pre className="overflow-auto m-0 rounded-[16px] bg-[rgba(8,8,8,0.4)] px-3.5 py-3 text-[rgba(255,255,255,0.82)] text-[0.78rem] leading-[1.55] whitespace-pre-wrap break-words [overflow-wrap:anywhere] border border-[rgba(122,168,148,0.18)]" aria-label={`${entry.title} output`}>
+              <div className="mb-2 text-[rgba(245,240,232,0.5)] text-[0.72rem] tracking-[0.12em] uppercase">
+                Response
+              </div>
+              <pre
+                className="overflow-auto m-0 rounded-[16px] bg-[rgba(8,8,8,0.4)] px-3.5 py-3 text-[rgba(255,255,255,0.82)] text-[0.78rem] leading-[1.55] whitespace-pre-wrap break-words [overflow-wrap:anywhere] border border-[rgba(122,168,148,0.18)]"
+                aria-label={`${entry.title} output`}
+              >
                 {entry.output}
               </pre>
             </section>

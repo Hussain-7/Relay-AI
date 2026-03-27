@@ -1,18 +1,22 @@
 import { z } from "zod";
-import { Prisma } from "@/generated/prisma/client";
+import type { Prisma } from "@/generated/prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { requireRequestUser } from "@/lib/server-auth";
 
-const preferencesSchema = z.object({
-  agent: z.object({
-    model: z.string(),
-    thinking: z.boolean(),
-    effort: z.enum(["low", "medium", "high"]),
-    memory: z.boolean(),
-  }).optional(),
-  // Extensible — add more sections here later (mcp, ui, etc.)
-}).passthrough();
+const preferencesSchema = z
+  .object({
+    agent: z
+      .object({
+        model: z.string(),
+        thinking: z.boolean(),
+        effort: z.enum(["low", "medium", "high"]),
+        memory: z.boolean(),
+      })
+      .optional(),
+    // Extensible — add more sections here later (mcp, ui, etc.)
+  })
+  .passthrough();
 
 export async function GET(request: Request) {
   try {

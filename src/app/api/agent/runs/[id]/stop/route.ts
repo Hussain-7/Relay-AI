@@ -6,10 +6,7 @@ import { requireRequestUser } from "@/lib/server-auth";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await requireRequestUser(request.headers);
     const { id: runId } = await params;
@@ -35,9 +32,6 @@ export async function POST(
 
     return Response.json({ ok: true });
   } catch (error) {
-    return Response.json(
-      { error: error instanceof Error ? error.message : "Failed to stop run." },
-      { status: 500 },
-    );
+    return Response.json({ error: error instanceof Error ? error.message : "Failed to stop run." }, { status: 500 });
   }
 }

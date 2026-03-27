@@ -1,6 +1,6 @@
-import { z } from "zod";
 import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { Sandbox } from "@e2b/code-interpreter";
+import { z } from "zod";
 
 import { env, hasE2bConfig } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
@@ -26,7 +26,12 @@ export function createSandboxExecTool(ctx: ToolRuntimeContext) {
       command: z.string().min(1).describe("The shell command to execute"),
       workspacePath: z.string().optional().describe("Working directory (defaults to the session workspace)"),
       timeoutMs: z.number().optional().describe("Timeout in ms (default 30s). Ignored when background=true."),
-      background: z.boolean().optional().describe("Run the command in the background (nohup). Use for long-running processes like dev servers. Returns immediately."),
+      background: z
+        .boolean()
+        .optional()
+        .describe(
+          "Run the command in the background (nohup). Use for long-running processes like dev servers. Returns immediately.",
+        ),
     }),
     async run(input) {
       try {
@@ -88,10 +93,9 @@ export function createSandboxExecTool(ctx: ToolRuntimeContext) {
         let stderr = "";
         let exitCode = 0;
         try {
-          const result = await sandbox.commands.run(
-            `cd "${cwd}" && ${input.command}`,
-            { timeoutMs: input.timeoutMs ?? 30000 },
-          );
+          const result = await sandbox.commands.run(`cd "${cwd}" && ${input.command}`, {
+            timeoutMs: input.timeoutMs ?? 30000,
+          });
           stdout = result.stdout;
           stderr = result.stderr;
           exitCode = result.exitCode;

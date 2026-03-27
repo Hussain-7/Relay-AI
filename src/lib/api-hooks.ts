@@ -1,13 +1,8 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-
-import type {
-  ConversationDetailDto,
-  ConversationSummaryDto,
-  ModelCatalogDto,
-} from "@/lib/contracts";
 import { api } from "@/lib/api-client";
+import type { ConversationDetailDto, ConversationSummaryDto, ModelCatalogDto } from "@/lib/contracts";
 
 export const queryKeys = {
   user: ["user"] as const,
@@ -93,10 +88,7 @@ export function usePreferences() {
 export function useGithubStatus() {
   return useQuery({
     queryKey: queryKeys.githubStatus,
-    queryFn: () =>
-      api.get<{ configured: boolean; installed: boolean; installUrl?: string }>(
-        "/api/github/status",
-      ),
+    queryFn: () => api.get<{ configured: boolean; installed: boolean; installUrl?: string }>("/api/github/status"),
     staleTime: 60 * 1000,
     refetchOnWindowFocus: true,
   });
@@ -120,9 +112,7 @@ export function useConversations() {
   return useQuery({
     queryKey: queryKeys.conversations,
     queryFn: async () => {
-      const data = await api.get<{ conversations: ConversationSummaryDto[] }>(
-        "/api/conversations",
-      );
+      const data = await api.get<{ conversations: ConversationSummaryDto[] }>("/api/conversations");
       return data.conversations;
     },
     staleTime: 30 * 1000,
@@ -134,9 +124,7 @@ export function useConversationDetail(id: string | null) {
   return useQuery({
     queryKey: queryKeys.conversation(id ?? ""),
     queryFn: async () => {
-      const data = await api.get<{ conversation: ConversationDetailDto }>(
-        `/api/conversations/${id}`,
-      );
+      const data = await api.get<{ conversation: ConversationDetailDto }>(`/api/conversations/${id}`);
       return data.conversation;
     },
     enabled: id !== null,
@@ -166,17 +154,15 @@ export function useCreateConversation() {
 
   return useMutation({
     mutationFn: async (vars?: { id?: string; repoBindingId?: string }) => {
-      const data = await api.post<{ conversation: ConversationDetailDto }>(
-        "/api/conversations",
-        { id: vars?.id, repoBindingId: vars?.repoBindingId },
-      );
+      const data = await api.post<{ conversation: ConversationDetailDto }>("/api/conversations", {
+        id: vars?.id,
+        repoBindingId: vars?.repoBindingId,
+      });
       return data.conversation;
     },
     onMutate: async (vars) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.conversations });
-      const previous = queryClient.getQueryData<ConversationSummaryDto[]>(
-        queryKeys.conversations,
-      );
+      const previous = queryClient.getQueryData<ConversationSummaryDto[]>(queryKeys.conversations);
 
       // Resolve repoFullName from cached repo bindings for the optimistic entry
       let repoFullName: string | null = null;
@@ -200,25 +186,18 @@ export function useCreateConversation() {
         repoFullName,
       };
 
-      queryClient.setQueryData<ConversationSummaryDto[]>(
-        queryKeys.conversations,
-        (old) => [optimistic, ...(old ?? [])],
-      );
+      queryClient.setQueryData<ConversationSummaryDto[]>(queryKeys.conversations, (old) => [
+        optimistic,
+        ...(old ?? []),
+      ]);
 
       return { previous, optimisticId };
     },
     onSuccess: (conversation, _vars, context) => {
-      queryClient.setQueryData<ConversationSummaryDto[]>(
-        queryKeys.conversations,
-        (old) =>
-          (old ?? []).map((c) =>
-            c.id === context?.optimisticId ? toSummary(conversation) : c,
-          ),
+      queryClient.setQueryData<ConversationSummaryDto[]>(queryKeys.conversations, (old) =>
+        (old ?? []).map((c) => (c.id === context?.optimisticId ? toSummary(conversation) : c)),
       );
-      queryClient.setQueryData(
-        queryKeys.conversation(conversation.id),
-        conversation,
-      );
+      queryClient.setQueryData(queryKeys.conversation(conversation.id), conversation);
     },
     onError: (_err, _vars, context) => {
       if (context?.previous) {
@@ -242,13 +221,10 @@ export function useDeleteConversation() {
     },
     onMutate: async (id) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.conversations });
-      const previous = queryClient.getQueryData<ConversationSummaryDto[]>(
-        queryKeys.conversations,
-      );
+      const previous = queryClient.getQueryData<ConversationSummaryDto[]>(queryKeys.conversations);
 
-      queryClient.setQueryData<ConversationSummaryDto[]>(
-        queryKeys.conversations,
-        (old) => (old ?? []).filter((c) => c.id !== id),
+      queryClient.setQueryData<ConversationSummaryDto[]>(queryKeys.conversations, (old) =>
+        (old ?? []).filter((c) => c.id !== id),
       );
 
       return { previous };
@@ -272,35 +248,27 @@ export function useToggleConversationStar() {
 
   return useMutation({
     mutationFn: async ({ id, isStarred }: { id: string; isStarred: boolean }) => {
-      const data = await api.patch<{ conversation: ConversationDetailDto }>(
-        `/api/conversations/${id}`,
-        { isStarred },
-      );
+      const data = await api.patch<{ conversation: ConversationDetailDto }>(`/api/conversations/${id}`, { isStarred });
       return data.conversation;
     },
     onMutate: async ({ id, isStarred }) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.conversations });
       const previousList = queryClient.getQueryData<ConversationSummaryDto[]>(queryKeys.conversations);
 
-      queryClient.setQueryData<ConversationSummaryDto[]>(
-        queryKeys.conversations,
-        (old) => {
-          const now = new Date().toISOString();
-          const updated = (old ?? []).map((c) => (c.id === id ? { ...c, isStarred, updatedAt: now } : c));
-          return updated.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-        },
-      );
+      queryClient.setQueryData<ConversationSummaryDto[]>(queryKeys.conversations, (old) => {
+        const now = new Date().toISOString();
+        const updated = (old ?? []).map((c) => (c.id === id ? { ...c, isStarred, updatedAt: now } : c));
+        return updated.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+      });
       return { previousList };
     },
     onSuccess: (conversation, { id }) => {
       // Apply server truth to both caches so subsequent refetches don't flash
-      queryClient.setQueryData<ConversationSummaryDto[]>(
-        queryKeys.conversations,
-        (old) => (old ?? []).map((c) => (c.id === id ? { ...c, isStarred: conversation.isStarred } : c)),
+      queryClient.setQueryData<ConversationSummaryDto[]>(queryKeys.conversations, (old) =>
+        (old ?? []).map((c) => (c.id === id ? { ...c, isStarred: conversation.isStarred } : c)),
       );
-      queryClient.setQueryData<ConversationDetailDto>(
-        queryKeys.conversation(id),
-        (old) => old ? { ...old, isStarred: conversation.isStarred } : old,
+      queryClient.setQueryData<ConversationDetailDto>(queryKeys.conversation(id), (old) =>
+        old ? { ...old, isStarred: conversation.isStarred } : old,
       );
     },
     onError: (_err, _vars, context) => {
@@ -319,10 +287,7 @@ export function useRenameConversation() {
 
   return useMutation({
     mutationFn: async ({ id, title }: { id: string; title: string }) => {
-      const data = await api.patch<{ conversation: ConversationDetailDto }>(
-        `/api/conversations/${id}`,
-        { title },
-      );
+      const data = await api.patch<{ conversation: ConversationDetailDto }>(`/api/conversations/${id}`, { title });
       return data.conversation;
     },
     onMutate: async ({ id, title }) => {
@@ -331,16 +296,12 @@ export function useRenameConversation() {
       const previousDetail = queryClient.getQueryData<ConversationDetailDto>(queryKeys.conversation(id));
 
       // Optimistic update in list
-      queryClient.setQueryData<ConversationSummaryDto[]>(
-        queryKeys.conversations,
-        (old) => (old ?? []).map((c) => (c.id === id ? { ...c, title } : c)),
+      queryClient.setQueryData<ConversationSummaryDto[]>(queryKeys.conversations, (old) =>
+        (old ?? []).map((c) => (c.id === id ? { ...c, title } : c)),
       );
       // Optimistic update in detail
       if (previousDetail) {
-        queryClient.setQueryData<ConversationDetailDto>(
-          queryKeys.conversation(id),
-          { ...previousDetail, title },
-        );
+        queryClient.setQueryData<ConversationDetailDto>(queryKeys.conversation(id), { ...previousDetail, title });
       }
       return { previousList, previousDetail };
     },
@@ -363,41 +324,29 @@ export function useUpdateConversationModel() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({
-      id,
-      model,
-    }: {
-      id: string;
-      model: string;
-    }) => {
-      const data = await api.patch<{ conversation: ConversationDetailDto }>(
-        `/api/conversations/${id}`,
-        { mainAgentModel: model },
-      );
+    mutationFn: async ({ id, model }: { id: string; model: string }) => {
+      const data = await api.patch<{ conversation: ConversationDetailDto }>(`/api/conversations/${id}`, {
+        mainAgentModel: model,
+      });
       return data.conversation;
     },
     onMutate: async ({ id, model }) => {
       await queryClient.cancelQueries({
         queryKey: queryKeys.conversation(id),
       });
-      const previous = queryClient.getQueryData<ConversationDetailDto>(
-        queryKeys.conversation(id),
-      );
+      const previous = queryClient.getQueryData<ConversationDetailDto>(queryKeys.conversation(id));
 
       if (previous) {
-        queryClient.setQueryData<ConversationDetailDto>(
-          queryKeys.conversation(id),
-          { ...previous, mainAgentModel: model },
-        );
+        queryClient.setQueryData<ConversationDetailDto>(queryKeys.conversation(id), {
+          ...previous,
+          mainAgentModel: model,
+        });
       }
 
       return { previous };
     },
     onSuccess: (conversation) => {
-      queryClient.setQueryData(
-        queryKeys.conversation(conversation.id),
-        conversation,
-      );
+      queryClient.setQueryData(queryKeys.conversation(conversation.id), conversation);
     },
     onError: (_err, { id }, context) => {
       if (context?.previous) {
@@ -461,9 +410,8 @@ export function useDeleteMcpConnector() {
     onMutate: async (id) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.mcpConnectors });
       const previous = queryClient.getQueryData<McpConnectorDto[]>(queryKeys.mcpConnectors);
-      queryClient.setQueryData<McpConnectorDto[]>(
-        queryKeys.mcpConnectors,
-        (old) => (old ?? []).filter((c) => c.id !== id),
+      queryClient.setQueryData<McpConnectorDto[]>(queryKeys.mcpConnectors, (old) =>
+        (old ?? []).filter((c) => c.id !== id),
       );
       return { previous };
     },
@@ -483,16 +431,12 @@ export function useToggleMcpConnector() {
 
   return useMutation({
     mutationFn: async ({ id, enabled }: { id: string; enabled: boolean }) => {
-      const data = await api.patch<{ connector: McpConnectorDto }>(
-        `/api/mcp-connectors/${id}`,
-        { enabled },
-      );
+      const data = await api.patch<{ connector: McpConnectorDto }>(`/api/mcp-connectors/${id}`, { enabled });
       return data.connector;
     },
     onSuccess: (connector) => {
-      queryClient.setQueryData<McpConnectorDto[]>(
-        queryKeys.mcpConnectors,
-        (old) => (old ?? []).map((c) => (c.id === connector.id ? connector : c)),
+      queryClient.setQueryData<McpConnectorDto[]>(queryKeys.mcpConnectors, (old) =>
+        (old ?? []).map((c) => (c.id === connector.id ? connector : c)),
       );
     },
     onSettled: () => {
@@ -584,10 +528,7 @@ export function useOwnerRepos(owner: string | null) {
 export function useSearchGithubRepos() {
   return useMutation({
     mutationFn: async (query: string) => {
-      const data = await api.post<{ repos: GithubRepoSearchResult[] }>(
-        "/api/repo-bindings/search",
-        { query },
-      );
+      const data = await api.post<{ repos: GithubRepoSearchResult[] }>("/api/repo-bindings/search", { query });
       return data.repos;
     },
   });
@@ -598,10 +539,7 @@ export function useConnectRepo() {
 
   return useMutation({
     mutationFn: async (repoFullName: string) => {
-      const data = await api.post<{ binding: RepoBindingListItem }>(
-        "/api/repo-bindings/connect",
-        { repoFullName },
-      );
+      const data = await api.post<{ binding: RepoBindingListItem }>("/api/repo-bindings/connect", { repoFullName });
       return data.binding;
     },
     onMutate: async (repoFullName) => {
@@ -616,26 +554,20 @@ export function useConnectRepo() {
         installationId: null,
         metadataJson: null,
       };
-      queryClient.setQueryData<RepoBindingsData>(
-        queryKeys.repoBindings,
-        (old) => ({
-          bindings: [optimisticBinding, ...(old?.bindings ?? [])],
-          available: old?.available ?? [],
-          owners: old?.owners ?? [],
-        }),
-      );
+      queryClient.setQueryData<RepoBindingsData>(queryKeys.repoBindings, (old) => ({
+        bindings: [optimisticBinding, ...(old?.bindings ?? [])],
+        available: old?.available ?? [],
+        owners: old?.owners ?? [],
+      }));
       return { previous, optimisticId: optimisticBinding.id };
     },
     onSuccess: (binding, _vars, context) => {
       // Replace optimistic with real binding
-      queryClient.setQueryData<RepoBindingsData>(
-        queryKeys.repoBindings,
-        (old) => ({
-          bindings: (old?.bindings ?? []).map((b) => b.id === context?.optimisticId ? binding : b),
-          available: old?.available ?? [],
-          owners: old?.owners ?? [],
-        }),
-      );
+      queryClient.setQueryData<RepoBindingsData>(queryKeys.repoBindings, (old) => ({
+        bindings: (old?.bindings ?? []).map((b) => (b.id === context?.optimisticId ? binding : b)),
+        available: old?.available ?? [],
+        owners: old?.owners ?? [],
+      }));
     },
     onError: (_err, _vars, context) => {
       if (context?.previous) {
@@ -659,14 +591,11 @@ export function useDeleteRepoBinding() {
     onMutate: async (id) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.repoBindings });
       const previous = queryClient.getQueryData<RepoBindingsData>(queryKeys.repoBindings);
-      queryClient.setQueryData<RepoBindingsData>(
-        queryKeys.repoBindings,
-        (old) => ({
-          bindings: (old?.bindings ?? []).filter((b) => b.id !== id),
-          available: old?.available ?? [],
-          owners: old?.owners ?? [],
-        }),
-      );
+      queryClient.setQueryData<RepoBindingsData>(queryKeys.repoBindings, (old) => ({
+        bindings: (old?.bindings ?? []).filter((b) => b.id !== id),
+        available: old?.available ?? [],
+        owners: old?.owners ?? [],
+      }));
       return { previous };
     },
     onError: (_err, _id, context) => {
@@ -685,10 +614,9 @@ export function useLinkRepoToConversation() {
 
   return useMutation({
     mutationFn: async ({ conversationId, repoBindingId }: { conversationId: string; repoBindingId: string | null }) => {
-      const data = await api.patch<{ conversation: ConversationDetailDto }>(
-        `/api/conversations/${conversationId}`,
-        { repoBindingId },
-      );
+      const data = await api.patch<{ conversation: ConversationDetailDto }>(`/api/conversations/${conversationId}`, {
+        repoBindingId,
+      });
       return data.conversation;
     },
     // Optimistic: update conversation detail immediately
@@ -700,11 +628,10 @@ export function useLinkRepoToConversation() {
         const repoData = queryClient.getQueryData<RepoBindingsData>(queryKeys.repoBindings);
         const matchingBinding = repoData?.bindings.find((b) => b.id === repoBindingId);
 
-        queryClient.setQueryData<ConversationDetailDto>(
-          queryKeys.conversation(conversationId),
-          {
-            ...previous,
-            repoBinding: repoBindingId && matchingBinding
+        queryClient.setQueryData<ConversationDetailDto>(queryKeys.conversation(conversationId), {
+          ...previous,
+          repoBinding:
+            repoBindingId && matchingBinding
               ? {
                   id: matchingBinding.id,
                   provider: "GITHUB",
@@ -716,16 +643,12 @@ export function useLinkRepoToConversation() {
                   metadataJson: null,
                 }
               : null,
-          },
-        );
+        });
       }
       return { previous };
     },
     onSuccess: (conversation) => {
-      queryClient.setQueryData(
-        queryKeys.conversation(conversation.id),
-        conversation,
-      );
+      queryClient.setQueryData(queryKeys.conversation(conversation.id), conversation);
       void queryClient.invalidateQueries({ queryKey: queryKeys.conversations });
     },
     onError: (_err, { conversationId }, context) => {
@@ -749,9 +672,7 @@ export function useRepoSecrets(repoBindingId: string | null) {
   return useQuery({
     queryKey: queryKeys.repoSecrets(repoBindingId ?? ""),
     queryFn: async () => {
-      const data = await api.get<{ secrets: RepoSecretDto[] }>(
-        `/api/repo-bindings/${repoBindingId}/secrets`,
-      );
+      const data = await api.get<{ secrets: RepoSecretDto[] }>(`/api/repo-bindings/${repoBindingId}/secrets`);
       return data.secrets;
     },
     enabled: repoBindingId !== null,
@@ -770,10 +691,9 @@ export function useSaveRepoSecrets() {
       repoBindingId: string;
       secrets: { key: string; value: string }[];
     }) => {
-      const data = await api.put<{ secrets: RepoSecretDto[] }>(
-        `/api/repo-bindings/${repoBindingId}/secrets`,
-        { secrets },
-      );
+      const data = await api.put<{ secrets: RepoSecretDto[] }>(`/api/repo-bindings/${repoBindingId}/secrets`, {
+        secrets,
+      });
       return data.secrets;
     },
     onSuccess: (secrets, { repoBindingId }) => {
@@ -786,22 +706,15 @@ export function useDeleteRepoSecret() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({
-      repoBindingId,
-      secretId,
-    }: {
-      repoBindingId: string;
-      secretId: string;
-    }) => {
+    mutationFn: async ({ repoBindingId, secretId }: { repoBindingId: string; secretId: string }) => {
       await api.del(`/api/repo-bindings/${repoBindingId}/secrets/${secretId}`);
       return { repoBindingId, secretId };
     },
     onMutate: async ({ repoBindingId, secretId }) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.repoSecrets(repoBindingId) });
       const previous = queryClient.getQueryData<RepoSecretDto[]>(queryKeys.repoSecrets(repoBindingId));
-      queryClient.setQueryData<RepoSecretDto[]>(
-        queryKeys.repoSecrets(repoBindingId),
-        (old) => (old ?? []).filter((s) => s.id !== secretId),
+      queryClient.setQueryData<RepoSecretDto[]>(queryKeys.repoSecrets(repoBindingId), (old) =>
+        (old ?? []).filter((s) => s.id !== secretId),
       );
       return { previous };
     },

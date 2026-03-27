@@ -1,5 +1,5 @@
-import { Octokit } from "octokit";
 import { createAppAuth } from "@octokit/auth-app";
+import { Octokit } from "octokit";
 
 import { env, hasGitHubAppConfig } from "@/lib/env";
 import { decryptToken, encryptToken } from "@/lib/mcp-token-crypto";
@@ -178,7 +178,18 @@ export async function listGithubOwners(userId: string): Promise<string[]> {
   return owners;
 }
 
-function pushRepo(repos: RepoListItem[], repo: { full_name: string; name: string; owner?: { login: string } | null; default_branch?: string; private: boolean; description?: string | null; updated_at?: string | null }) {
+function pushRepo(
+  repos: RepoListItem[],
+  repo: {
+    full_name: string;
+    name: string;
+    owner?: { login: string } | null;
+    default_branch?: string;
+    private: boolean;
+    description?: string | null;
+    updated_at?: string | null;
+  },
+) {
   repos.push({
     fullName: repo.full_name,
     name: repo.name,
@@ -195,10 +206,7 @@ function pushRepo(repos: RepoListItem[], repo: { full_name: string; name: string
  * - Personal: ALL repos paginated (up to 500), sorted by updated.
  * - Org: 50 most recently updated repos (1 page).
  */
-export async function listGithubReposByOwner(
-  userId: string,
-  owner: string,
-): Promise<RepoListItem[]> {
+export async function listGithubReposByOwner(userId: string, owner: string): Promise<RepoListItem[]> {
   const repos: RepoListItem[] = [];
   const userToken = await getGitHubUserToken(userId);
 
@@ -218,7 +226,9 @@ export async function listGithubReposByOwner(
           sort: "updated",
           affiliation: "owner,collaborator,organization_member",
         });
-        console.log(`[github] listGithubReposByOwner page=${page} returned=${data.length} total=${repos.length + data.length}`);
+        console.log(
+          `[github] listGithubReposByOwner page=${page} returned=${data.length} total=${repos.length + data.length}`,
+        );
         for (const repo of data) pushRepo(repos, repo);
         if (data.length < perPage) break;
         page++;
@@ -265,10 +275,7 @@ const GITHUB_REPOS_CACHE_TTL = 86400; // 24 hours
 /**
  * Cached owners list (user login + org logins). 24h TTL.
  */
-export async function listGithubOwnersCached(
-  userId: string,
-  forceRefresh?: boolean,
-): Promise<string[]> {
+export async function listGithubOwnersCached(userId: string, forceRefresh?: boolean): Promise<string[]> {
   const cacheKey = `github-owners:${userId}`;
   if (forceRefresh) {
     await invalidateCache(cacheKey);
@@ -311,18 +318,13 @@ export async function invalidateGithubRepoCache(userId: string): Promise<void> {
 export async function warmGithubRepoCache(userId: string): Promise<void> {
   const owners = await listGithubOwnersCached(userId, true);
   // Cache all owners' repos in parallel
-  await Promise.all(
-    owners.map((owner) => listGithubReposByOwnerCached(userId, owner, true)),
-  );
+  await Promise.all(owners.map((owner) => listGithubReposByOwnerCached(userId, owner, true)));
 }
 
 /**
  * Search repos via GitHub Search API.
  */
-export async function searchGithubRepos(
-  userId: string,
-  query: string,
-): Promise<RepoListItem[]> {
+export async function searchGithubRepos(userId: string, query: string): Promise<RepoListItem[]> {
   const userToken = await getGitHubUserToken(userId);
   if (userToken) {
     const userClient = new Octokit({ auth: userToken });
@@ -484,10 +486,12 @@ export async function createRemoteRepo(input: {
       if (firstRepo) {
         owner = firstRepo.full_name.split("/")[0] ?? null;
         if (owner) {
-          await prisma.githubInstallation.update({
-            where: { id: installation.id },
-            data: { accountLogin: owner },
-          }).catch(() => {});
+          await prisma.githubInstallation
+            .update({
+              where: { id: installation.id },
+              data: { accountLogin: owner },
+            })
+            .catch(() => {});
         }
       }
     } catch {
@@ -516,8 +520,8 @@ export async function createRemoteRepo(input: {
   } catch {
     throw new Error(
       `Cannot create repository "${input.name}" under "${owner}". ` +
-      `Installation tokens can only create repos in organizations. ` +
-      `Re-authorize the GitHub App to grant a user token, or create the repo manually on GitHub.`,
+        `Installation tokens can only create repos in organizations. ` +
+        `Re-authorize the GitHub App to grant a user token, or create the repo manually on GitHub.`,
     );
   }
 }
@@ -585,10 +589,7 @@ export async function getGitHubUserToken(userId: string): Promise<string | null>
       return null;
     }
 
-    const refreshToken = decryptToken(
-      installation.encryptedRefreshToken,
-      installation.refreshTokenIv,
-    );
+    const refreshToken = decryptToken(installation.encryptedRefreshToken, installation.refreshTokenIv);
 
     const response = await fetch("https://github.com/login/oauth/access_token", {
       method: "POST",
@@ -619,9 +620,7 @@ export async function getGitHubUserToken(userId: string): Promise<string | null>
     } = {
       encryptedUserToken: newEncToken,
       userTokenIv: newTokenIv,
-      userTokenExpiresAt: data.expires_in
-        ? new Date(Date.now() + data.expires_in * 1000)
-        : null,
+      userTokenExpiresAt: data.expires_in ? new Date(Date.now() + data.expires_in * 1000) : null,
     };
 
     if (data.refresh_token) {
@@ -664,10 +663,9 @@ export async function getGitHubInstallationToken(userId: string): Promise<string
     },
   });
 
-  const { data: tokenData } = await appClient.request(
-    "POST /app/installations/{installation_id}/access_tokens",
-    { installation_id: Number(installation.installationId) },
-  );
+  const { data: tokenData } = await appClient.request("POST /app/installations/{installation_id}/access_tokens", {
+    installation_id: Number(installation.installationId),
+  });
 
   return tokenData.token;
 }

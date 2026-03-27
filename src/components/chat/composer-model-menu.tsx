@@ -2,10 +2,9 @@
 
 import { useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-
-import type { ModelCatalogDto } from "@/lib/contracts";
 import { IconCheck } from "@/components/icons";
 import { Toggle as ToggleSwitch } from "@/components/ui/toggle";
+import type { ModelCatalogDto } from "@/lib/contracts";
 
 export interface AgentPreferences {
   thinking: boolean;
@@ -63,7 +62,9 @@ export function ComposerModelMenuPortal({
       data-chat-action-menu
       ref={panelRef}
     >
-      <div className="px-3 pt-1.5 pb-2 text-[rgba(245,240,232,0.4)] text-[0.66rem] font-semibold tracking-[0.16em] uppercase">Choose model</div>
+      <div className="px-3 pt-1.5 pb-2 text-[rgba(245,240,232,0.4)] text-[0.66rem] font-semibold tracking-[0.16em] uppercase">
+        Choose model
+      </div>
       {models.map((model) => {
         const isSelected = selectedModelId === model.id;
 
@@ -77,7 +78,9 @@ export function ComposerModelMenuPortal({
           >
             <span className="flex min-w-0 flex-auto flex-col gap-[3px]">
               <span className="text-[rgba(245,240,232,0.94)] text-[0.88rem] font-medium">{model.label}</span>
-              <span className="text-[rgba(245,240,232,0.48)] text-[0.76rem] leading-[1.4] text-pretty">{model.description}</span>
+              <span className="text-[rgba(245,240,232,0.48)] text-[0.76rem] leading-[1.4] text-pretty">
+                {model.description}
+              </span>
             </span>
             {isSelected ? (
               <span className="inline-grid shrink-0 place-items-center text-[rgba(190,222,209,0.9)]" aria-hidden="true">
@@ -94,7 +97,10 @@ export function ComposerModelMenuPortal({
             <span className="text-[rgba(245,240,232,0.86)] text-[0.8rem] font-medium">Extended Thinking</span>
             <span className="text-[rgba(245,240,232,0.4)] text-[0.72rem]">Adaptive reasoning depth</span>
           </div>
-          <ToggleSwitch enabled={preferences.thinking} onChange={(v) => onPreferencesChange({ ...preferences, thinking: v })} />
+          <ToggleSwitch
+            enabled={preferences.thinking}
+            onChange={(v) => onPreferencesChange({ ...preferences, thinking: v })}
+          />
         </div>
 
         <div className="flex items-center justify-between">
@@ -125,7 +131,10 @@ export function ComposerModelMenuPortal({
             <span className="text-[rgba(245,240,232,0.86)] text-[0.8rem] font-medium">Memory</span>
             <span className="text-[rgba(245,240,232,0.4)] text-[0.72rem]">Persist workspace context</span>
           </div>
-          <ToggleSwitch enabled={preferences.memory} onChange={(v) => onPreferencesChange({ ...preferences, memory: v })} />
+          <ToggleSwitch
+            enabled={preferences.memory}
+            onChange={(v) => onPreferencesChange({ ...preferences, memory: v })}
+          />
         </div>
       </div>
     </div>,

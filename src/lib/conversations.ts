@@ -1,6 +1,25 @@
-import { Prisma, type Attachment, type CodingSession, type Conversation, type MainAgentSession, type Message, type RepoBinding, type RunApproval, type RunEvent, type AgentRun } from "@/generated/prisma/client";
+import type {
+  AgentRun,
+  Attachment,
+  CodingSession,
+  Conversation,
+  MainAgentSession,
+  Message,
+  Prisma,
+  RepoBinding,
+  RunApproval,
+  RunEvent,
+} from "@/generated/prisma/client";
 
-import type { AttachmentDto, CodingSessionDto, ConversationDetailDto, ConversationSummaryDto, MessageDto, RunDto, TimelineEventEnvelope } from "@/lib/contracts";
+import type {
+  AttachmentDto,
+  CodingSessionDto,
+  ConversationDetailDto,
+  ConversationSummaryDto,
+  MessageDto,
+  RunDto,
+  TimelineEventEnvelope,
+} from "@/lib/contracts";
 import { prisma } from "@/lib/prisma";
 
 /** Select all Attachment columns except `content` (large binary blob). */
@@ -68,9 +87,11 @@ type ConversationDetailRecord = Conversation & {
       attachments: AttachmentWithoutContent[];
       approvals: RunApproval[];
       events: RunEvent[];
-      codingSession: (CodingSession & {
-        repoBinding: RepoBinding | null;
-      }) | null;
+      codingSession:
+        | (CodingSession & {
+            repoBinding: RepoBinding | null;
+          })
+        | null;
     }
   >;
   codingSessions: Array<
@@ -97,7 +118,9 @@ function mapAttachment(attachment: AttachmentWithoutContent): AttachmentDto {
   };
 }
 
-function mapCodingSession(session: (CodingSession & { repoBinding: RepoBinding | null }) | null): CodingSessionDto | null {
+function mapCodingSession(
+  session: (CodingSession & { repoBinding: RepoBinding | null }) | null,
+): CodingSessionDto | null {
   if (!session) {
     return null;
   }
@@ -133,25 +156,23 @@ function mapEvents(conversationId: string, runId: string, events: RunEvent[]): T
     runId,
     conversationId,
     type: event.type as TimelineEventEnvelope["type"],
-    source: ((event.payloadJson as Record<string, unknown> | null)?.source as TimelineEventEnvelope["source"] | undefined) ?? "system",
+    source:
+      ((event.payloadJson as Record<string, unknown> | null)?.source as TimelineEventEnvelope["source"] | undefined) ??
+      "system",
     ts: event.ts.toISOString(),
     payload: toJsonRecord(event.payloadJson),
   }));
 }
 
 function mapRun(conversationId: string, run: ConversationDetailRecord["runs"][number]): RunDto {
-  const inputAttachments = run.attachments.filter(
-    (a) => {
-      const meta = a.metadataJson as Record<string, unknown> | null;
-      return !meta?.source || meta.source === "user_upload";
-    },
-  );
-  const outputAttachments = run.attachments.filter(
-    (a) => {
-      const source = (a.metadataJson as Record<string, unknown> | null)?.source;
-      return source === "skill_output" || source === "image_generation";
-    },
-  );
+  const inputAttachments = run.attachments.filter((a) => {
+    const meta = a.metadataJson as Record<string, unknown> | null;
+    return !meta?.source || meta.source === "user_upload";
+  });
+  const outputAttachments = run.attachments.filter((a) => {
+    const source = (a.metadataJson as Record<string, unknown> | null)?.source;
+    return source === "skill_output" || source === "image_generation";
+  });
 
   return {
     id: run.id,
@@ -196,10 +217,7 @@ function mapMessage(message: Message): MessageDto {
   };
 }
 
-export async function ensureConversationForUser(input: {
-  conversationId: string;
-  userId: string;
-}) {
+export async function ensureConversationForUser(input: { conversationId: string; userId: string }) {
   const conversation = await prisma.conversation.findFirst({
     where: {
       id: input.conversationId,
@@ -236,10 +254,7 @@ export async function createConversationForUser(input: {
   });
 }
 
-export async function ensureMainAgentSession(input: {
-  conversationId: string;
-  userId: string;
-}) {
+export async function ensureMainAgentSession(input: { conversationId: string; userId: string }) {
   const conversation = await prisma.conversation.findUnique({
     where: { id: input.conversationId },
     include: { mainAgentSession: true },
@@ -344,10 +359,7 @@ export async function getConversationDetail(input: {
   };
 }
 
-export async function deleteConversationForUser(input: {
-  conversationId: string;
-  userId: string;
-}) {
+export async function deleteConversationForUser(input: { conversationId: string; userId: string }) {
   const deleted = await prisma.conversation.deleteMany({
     where: {
       id: input.conversationId,
@@ -360,22 +372,14 @@ export async function deleteConversationForUser(input: {
   }
 }
 
-export async function toggleConversationStar(input: {
-  conversationId: string;
-  userId: string;
-  isStarred: boolean;
-}) {
+export async function toggleConversationStar(input: { conversationId: string; userId: string; isStarred: boolean }) {
   await prisma.conversation.updateMany({
     where: { id: input.conversationId, userId: input.userId },
     data: { isStarred: input.isStarred, updatedAt: new Date() },
   });
 }
 
-export async function updateConversationTitle(input: {
-  conversationId: string;
-  userId: string;
-  title: string;
-}) {
+export async function updateConversationTitle(input: { conversationId: string; userId: string; title: string }) {
   await prisma.conversation.updateMany({
     where: { id: input.conversationId, userId: input.userId },
     data: { title: input.title },
@@ -398,11 +402,7 @@ export async function updateConversationRepoBinding(input: {
   });
 }
 
-export async function updateConversationMainModel(input: {
-  conversationId: string;
-  userId: string;
-  model: string;
-}) {
+export async function updateConversationMainModel(input: { conversationId: string; userId: string; model: string }) {
   const session = await ensureMainAgentSession({
     conversationId: input.conversationId,
     userId: input.userId,

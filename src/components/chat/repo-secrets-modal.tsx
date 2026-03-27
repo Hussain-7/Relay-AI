@@ -1,14 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-
-import {
-  useRepoSecrets,
-  useSaveRepoSecrets,
-  useDeleteRepoSecret,
-  type RepoSecretDto,
-} from "@/lib/api-hooks";
 import { IconClose, IconPlus } from "@/components/icons";
+import { type RepoSecretDto, useDeleteRepoSecret, useRepoSecrets, useSaveRepoSecrets } from "@/lib/api-hooks";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -48,7 +42,14 @@ function buildRowsFromSecrets(secrets: RepoSecretDto[]): SecretRow[] {
 function IconTrash() {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4">
-      <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V6h12Z" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V6h12Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -56,7 +57,13 @@ function IconTrash() {
 function IconEye() {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24" className="h-3.5 w-3.5">
-      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <path
+        d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+      />
       <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" strokeWidth="1.7" />
     </svg>
   );
@@ -65,7 +72,13 @@ function IconEye() {
 function IconEyeOff() {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24" className="h-3.5 w-3.5">
-      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <path
+        d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+      />
       <line x1="1" y1="1" x2="23" y2="23" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
     </svg>
   );
@@ -74,7 +87,14 @@ function IconEyeOff() {
 function IconUpload() {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4">
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -148,7 +168,7 @@ function SecretRowInput({
               autoComplete="off"
               data-1p-ignore
               data-lpignore="true"
-              style={showValue ? undefined : { WebkitTextSecurity: "disc" } as React.CSSProperties}
+              style={showValue ? undefined : ({ WebkitTextSecurity: "disc" } as React.CSSProperties)}
               className="w-full rounded-[8px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-2.5 py-1.5 pr-8 text-[0.82rem] text-[rgba(245,240,232,0.9)] placeholder:text-[rgba(245,240,232,0.25)] font-mono outline-none focus:border-[rgba(255,255,255,0.18)] transition-colors"
             />
             {row.value && (
@@ -206,18 +226,22 @@ export function RepoSecretsModal({
     return rows;
   }, [dirty, existingSecrets, rows]);
 
-  const updateRows = useCallback((updater: (prev: SecretRow[]) => SecretRow[]) => {
-    if (!dirty) {
-      // First user edit — seed state from server data then apply updater
-      const base = existingSecrets && existingSecrets.length > 0
-        ? buildRowsFromSecrets(existingSecrets)
-        : [{ key: "", value: "", isExisting: false } as SecretRow];
-      setRows(updater(base));
-      setDirty(true);
-    } else {
-      setRows(updater);
-    }
-  }, [dirty, existingSecrets]);
+  const updateRows = useCallback(
+    (updater: (prev: SecretRow[]) => SecretRow[]) => {
+      if (!dirty) {
+        // First user edit — seed state from server data then apply updater
+        const base =
+          existingSecrets && existingSecrets.length > 0
+            ? buildRowsFromSecrets(existingSecrets)
+            : [{ key: "", value: "", isExisting: false } as SecretRow];
+        setRows(updater(base));
+        setDirty(true);
+      } else {
+        setRows(updater);
+      }
+    },
+    [dirty, existingSecrets],
+  );
 
   // Close on Escape
   useEffect(() => {
@@ -228,10 +252,13 @@ export function RepoSecretsModal({
     return () => window.removeEventListener("keydown", handler);
   }, [onClose]);
 
-  const handleChange = useCallback((index: number, field: "key" | "value", val: string) => {
-    updateRows((prev) => prev.map((r, i) => (i === index ? { ...r, [field]: val } : r)));
-    setError(null);
-  }, [updateRows]);
+  const handleChange = useCallback(
+    (index: number, field: "key" | "value", val: string) => {
+      updateRows((prev) => prev.map((r, i) => (i === index ? { ...r, [field]: val } : r)));
+      setError(null);
+    },
+    [updateRows],
+  );
 
   const handleRemove = useCallback(
     (index: number) => {
@@ -247,48 +274,54 @@ export function RepoSecretsModal({
     [displayRows, repoBindingId, deleteMutation, updateRows],
   );
 
-  const handlePasteMultiLine = useCallback((index: number, entries: { key: string; value: string }[]) => {
-    updateRows((prev) => {
-      const before = prev.slice(0, index);
-      const after = prev.slice(index + 1);
-      const newRows: SecretRow[] = entries.map((e) => ({
-        key: e.key,
-        value: e.value,
-        isExisting: false,
-      }));
-      return [...before, ...newRows, ...after];
-    });
-    setError(null);
-  }, [updateRows]);
+  const handlePasteMultiLine = useCallback(
+    (index: number, entries: { key: string; value: string }[]) => {
+      updateRows((prev) => {
+        const before = prev.slice(0, index);
+        const after = prev.slice(index + 1);
+        const newRows: SecretRow[] = entries.map((e) => ({
+          key: e.key,
+          value: e.value,
+          isExisting: false,
+        }));
+        return [...before, ...newRows, ...after];
+      });
+      setError(null);
+    },
+    [updateRows],
+  );
 
   const handleAddRow = useCallback(() => {
     updateRows((prev) => [...prev, { key: "", value: "", isExisting: false }]);
   }, [updateRows]);
 
-  const handleImportFile = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const text = reader.result as string;
-      const entries = parseEnvContent(text);
-      if (entries.length > 0) {
-        updateRows((prev) => {
-          const newRows: SecretRow[] = entries.map((entry) => ({
-            key: entry.key,
-            value: entry.value,
-            isExisting: false,
-          }));
-          const importKeys = new Set(entries.map((e) => e.key));
-          const kept = prev.filter((r) => r.isExisting && !importKeys.has(r.key));
-          return [...kept, ...newRows];
-        });
-        setError(null);
-      }
-    };
-    reader.readAsText(file);
-    e.target.value = "";
-  }, [updateRows]);
+  const handleImportFile = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const text = reader.result as string;
+        const entries = parseEnvContent(text);
+        if (entries.length > 0) {
+          updateRows((prev) => {
+            const newRows: SecretRow[] = entries.map((entry) => ({
+              key: entry.key,
+              value: entry.value,
+              isExisting: false,
+            }));
+            const importKeys = new Set(entries.map((e) => e.key));
+            const kept = prev.filter((r) => r.isExisting && !importKeys.has(r.key));
+            return [...kept, ...newRows];
+          });
+          setError(null);
+        }
+      };
+      reader.readAsText(file);
+      e.target.value = "";
+    },
+    [updateRows],
+  );
 
   const handleSave = useCallback(() => {
     const toSave = displayRows.filter((r) => r.key.trim() !== "");
@@ -320,7 +353,9 @@ export function RepoSecretsModal({
   return (
     <div
       className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
       <div className="relative w-full max-w-[560px] mx-4 max-h-[85vh] flex flex-col rounded-[20px] border border-[rgba(255,255,255,0.08)] bg-[rgba(30,28,24,0.98)] shadow-[0_24px_80px_rgba(0,0,0,0.55)] overflow-hidden">
         {/* Header */}
@@ -341,8 +376,12 @@ export function RepoSecretsModal({
 
         {/* Column labels */}
         <div className="flex items-center gap-2 px-5 pb-2">
-          <span className="flex-1 text-[0.7rem] uppercase tracking-wider text-[rgba(245,240,232,0.3)] font-medium">Key</span>
-          <span className="flex-1 text-[0.7rem] uppercase tracking-wider text-[rgba(245,240,232,0.3)] font-medium">Value</span>
+          <span className="flex-1 text-[0.7rem] uppercase tracking-wider text-[rgba(245,240,232,0.3)] font-medium">
+            Key
+          </span>
+          <span className="flex-1 text-[0.7rem] uppercase tracking-wider text-[rgba(245,240,232,0.3)] font-medium">
+            Value
+          </span>
           <span className="w-7 shrink-0" />
         </div>
 
@@ -383,9 +422,7 @@ export function RepoSecretsModal({
         </div>
 
         {/* Error */}
-        {error && (
-          <div className="px-5 pt-2 text-[0.78rem] text-red-400">{error}</div>
-        )}
+        {error && <div className="px-5 pt-2 text-[0.78rem] text-red-400">{error}</div>}
 
         {/* Footer */}
         <div className="flex items-center justify-between px-5 py-4 border-t border-[rgba(255,255,255,0.06)] mt-2">

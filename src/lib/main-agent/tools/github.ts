@@ -1,8 +1,7 @@
-import { z } from "zod";
 import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
-
-import { createRemoteRepo } from "@/lib/github/service";
+import { z } from "zod";
 import { hasGitHubAppConfig } from "@/lib/env";
+import { createRemoteRepo } from "@/lib/github/service";
 import { prisma } from "@/lib/prisma";
 import type { ToolCatalogEntry, ToolRuntimeContext } from "./context";
 import { jsonResult } from "./context";
@@ -27,13 +26,20 @@ export function createGithubCreateRepoTool(ctx: ToolRuntimeContext) {
     inputSchema: z.object({
       name: z.string().min(1).describe("Repository name (e.g. 'my-project')"),
       description: z.string().optional().describe("Short repository description"),
-      isPrivate: z.boolean().optional().describe("Whether the repo is private (default: true). ALWAYS create private repos unless the user explicitly asks for public."),
+      isPrivate: z
+        .boolean()
+        .optional()
+        .describe(
+          "Whether the repo is private (default: true). ALWAYS create private repos unless the user explicitly asks for public.",
+        ),
       owner: z.string().optional().describe("GitHub org or user to create under (defaults to the installed account)"),
     }),
     async run(input) {
       try {
         if (!hasGitHubAppConfig()) {
-          throw new Error("GitHub App is not configured. Ask the user to install the GitHub App from the profile menu.");
+          throw new Error(
+            "GitHub App is not configured. Ask the user to install the GitHub App from the profile menu.",
+          );
         }
 
         const binding = await createRemoteRepo({

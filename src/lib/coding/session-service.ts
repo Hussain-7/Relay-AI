@@ -1,10 +1,9 @@
 import { Sandbox } from "@e2b/code-interpreter";
 import { CodingSessionStatus } from "@/generated/prisma/client";
-
-import { appendRunEvent } from "@/lib/run-events";
 import { env, hasE2bConfig } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
-import { getDecryptedSecrets, buildDotEnvContent } from "@/lib/repo-secrets";
+import { buildDotEnvContent, getDecryptedSecrets } from "@/lib/repo-secrets";
+import { appendRunEvent } from "@/lib/run-events";
 
 /**
  * Format a compact summary of a tool call's input for display in the timeline.
@@ -65,9 +64,7 @@ function extractToolResultContent(block: Record<string, unknown>): string {
     return content
       .filter(
         (c: unknown): c is { type: string; text: string } =>
-          typeof c === "object" &&
-          c !== null &&
-          (c as Record<string, unknown>).type === "text",
+          typeof c === "object" && c !== null && (c as Record<string, unknown>).type === "text",
       )
       .map((c) => c.text)
       .join("\n");
@@ -88,9 +85,7 @@ function truncateToolResult(toolName: string, content: string): string {
     Glob: 2000,
   };
   const limit = limits[toolName] ?? 1500;
-  return content.length <= limit
-    ? content
-    : content.slice(0, limit) + "\n…truncated";
+  return content.length <= limit ? content : content.slice(0, limit) + "\n…truncated";
 }
 
 const DEFAULT_WORKSPACE_ROOT = "/workspace";
@@ -322,7 +317,10 @@ export async function startOrResumeCodingSession(input: {
       where: { userId: input.userId, repoFullName: input.repoBindingId },
     });
     if (repoBinding) {
-      log.info("Resolved repoBinding by fullName fallback", { repoFullName: input.repoBindingId, bindingId: repoBinding.id });
+      log.info("Resolved repoBinding by fullName fallback", {
+        repoFullName: input.repoBindingId,
+        bindingId: repoBinding.id,
+      });
     }
   }
 
@@ -352,7 +350,9 @@ export async function startOrResumeCodingSession(input: {
   log.info("Sandbox created", { sandboxId: sandbox.sandboxId, template });
 
   // Ensure /workspace exists and is writable
-  await safeRun(sandbox, `mkdir -p "${DEFAULT_WORKSPACE_ROOT}" && chmod 777 "${DEFAULT_WORKSPACE_ROOT}"`, { user: "root" });
+  await safeRun(sandbox, `mkdir -p "${DEFAULT_WORKSPACE_ROOT}" && chmod 777 "${DEFAULT_WORKSPACE_ROOT}"`, {
+    user: "root",
+  });
 
   // Only create workspace dir + CLAUDE.md when there's no repo binding.
   // When a repo is bound, ensureRepoCloned handles directory creation via git clone.
@@ -413,7 +413,8 @@ export async function ensureRepoCloned(
 
   log.info("Checking if repo already cloned", { repoFullName, workspacePath: session.workspacePath });
 
-  const cloneCheck = await safeRun(sandbox,
+  const cloneCheck = await safeRun(
+    sandbox,
     `test -d "${session.workspacePath}/.git" && echo "exists" || echo "missing"`,
   );
 
@@ -430,9 +431,7 @@ export async function ensureRepoCloned(
   }
 
   // Clean up any leftover directory from a failed previous clone attempt
-  const dirCheck = await safeRun(sandbox,
-    `test -d "${session.workspacePath}" && echo "exists" || echo "missing"`,
-  );
+  const dirCheck = await safeRun(sandbox, `test -d "${session.workspacePath}" && echo "exists" || echo "missing"`);
   if (dirCheck.stdout.trim() === "exists") {
     log.info("Removing leftover workspace directory before clone", { workspacePath: session.workspacePath });
     await safeRun(sandbox, `rm -rf "${session.workspacePath}"`, { user: "root" });
@@ -441,7 +440,8 @@ export async function ensureRepoCloned(
   log.info("Cloning repo", { repoFullName, workspacePath: session.workspacePath });
 
   // Full clone (not shallow) so the agent can create branches, view history, etc.
-  const cloneResult = await safeRun(sandbox,
+  const cloneResult = await safeRun(
+    sandbox,
     `git clone '${cloneUrl}' '${session.workspacePath}' 2>&1; echo "===EXIT:$?"`,
     { timeoutMs: 180000, user: "root" },
   );
@@ -462,19 +462,22 @@ export async function ensureRepoCloned(
   // Mark as safe directory (cloned as root, CLI runs as non-root user)
   await safeRun(sandbox, `git config --global --add safe.directory '${session.workspacePath}'`);
 
-  await safeRun(sandbox,
+  await safeRun(
+    sandbox,
     `cd "${session.workspacePath}" && git config user.email '${gitUser.email}' && git config user.name '${gitUser.name}'`,
     { user: "root" },
   );
 
   // Configure git credential helper so all remotes authenticate with the token
-  await safeRun(sandbox,
+  await safeRun(
+    sandbox,
     `git config --global credential.helper '!f() { echo "username=x-access-token"; echo "password=${token}"; }; f'`,
     { user: "root" },
   );
 
   // Ensure gh CLI is available (no-op if already installed in the E2B template)
-  await safeRun(sandbox,
+  await safeRun(
+    sandbox,
     `which gh > /dev/null 2>&1 || (curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg 2>/dev/null && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null && apt-get update -qq && apt-get install -y -qq gh > /dev/null 2>&1)`,
     { user: "root", timeoutMs: 60000 },
   );
@@ -497,11 +500,7 @@ export async function ensureRepoCloned(
  * Write decrypted repo secrets as a `.env` file in the workspace.
  * Also ensures `.env` is listed in `.gitignore` to prevent accidental commits.
  */
-async function writeRepoSecretsEnv(
-  sandbox: Sandbox,
-  workspacePath: string,
-  repoBindingId: string | undefined,
-) {
+async function writeRepoSecretsEnv(sandbox: Sandbox, workspacePath: string, repoBindingId: string | undefined) {
   if (!repoBindingId) return;
 
   try {
@@ -512,7 +511,10 @@ async function writeRepoSecretsEnv(
     await sandbox.files.write(`${workspacePath}/.env`, dotEnvContent);
 
     // Ensure .env is in .gitignore
-    const check = await safeRun(sandbox, `grep -qxF '.env' "${workspacePath}/.gitignore" 2>/dev/null && echo exists || echo missing`);
+    const check = await safeRun(
+      sandbox,
+      `grep -qxF '.env' "${workspacePath}/.gitignore" 2>/dev/null && echo exists || echo missing`,
+    );
     if (check.stdout.trim() === "missing") {
       await safeRun(sandbox, `printf '\\n.env\\n' >> "${workspacePath}/.gitignore"`);
     }
@@ -539,7 +541,11 @@ export async function runCodingTask(input: {
   runId: string;
   userId: string;
   taskBrief: string;
-  onProgress?: (type: import("@/lib/contracts").TimelineEventType, source: import("@/lib/contracts").TimelineSource, payload?: Record<string, unknown> | null) => void;
+  onProgress?: (
+    type: import("@/lib/contracts").TimelineEventType,
+    source: import("@/lib/contracts").TimelineSource,
+    payload?: Record<string, unknown> | null,
+  ) => void;
   /** Pre-connected sandbox (required). */
   sandbox: Sandbox;
   /** GitHub token for git push (optional — only needed if repo is bound). */
@@ -579,9 +585,7 @@ export async function runCodingTask(input: {
     });
     const escapedTask = input.taskBrief.replace(/'/g, "'\\''");
     // Resume the previous Claude Code session if one exists (maintains conversation context)
-    const sessionFlag = session.claudeSdkSessionId
-      ? ` --resume ${session.claudeSdkSessionId}`
-      : "";
+    const sessionFlag = session.claudeSdkSessionId ? ` --resume ${session.claudeSdkSessionId}` : "";
 
     // Refresh .env before each task (picks up secrets saved after the sandbox started)
     await writeRepoSecretsEnv(sandbox, session.workspacePath ?? DEFAULT_WORKSPACE_ROOT, session.repoBinding?.id);
@@ -612,7 +616,12 @@ export async function runCodingTask(input: {
     let cliExitCode = -1;
     let stderrCapture = "";
     let codingCostUsd: number | null = null;
-    let codingUsage: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number } | null = null;
+    let codingUsage: {
+      inputTokens: number;
+      outputTokens: number;
+      cacheReadTokens: number;
+      cacheWriteTokens: number;
+    } | null = null;
     let codingDurationMs: number | null = null;
 
     const cliEnvs: Record<string, string> = {
@@ -644,7 +653,7 @@ export async function runCodingTask(input: {
 
           try {
             const event = JSON.parse(line) as Record<string, unknown>;
-            console.log('Events From Coding Agent:', event);
+            console.log("Events From Coding Agent:", event);
             events.push(event);
 
             // Capture session ID and final result
@@ -658,34 +667,31 @@ export async function runCodingTask(input: {
               const subtype = event.subtype as string | undefined;
               if (subtype === "task_started") {
                 input.onProgress?.("coding.agent.task.started", "coding_agent", {
-                  taskId: event.task_id as string ?? null,
+                  taskId: (event.task_id as string) ?? null,
                   description: typeof event.description === "string" ? event.description : "task",
-                  subagentType: event.subagent_type as string ?? null,
+                  subagentType: (event.subagent_type as string) ?? null,
                 });
               }
               if (subtype === "task_progress") {
                 input.onProgress?.("coding.agent.task.progress", "coding_agent", {
-                  taskId: event.task_id as string ?? null,
+                  taskId: (event.task_id as string) ?? null,
                   description: typeof event.description === "string" ? event.description : "",
-                  lastToolName: event.last_tool_name as string ?? null,
+                  lastToolName: (event.last_tool_name as string) ?? null,
                   usage: event.usage ?? null,
                 });
               }
               if (subtype === "task_notification") {
                 input.onProgress?.("coding.agent.task.completed", "coding_agent", {
-                  taskId: event.task_id as string ?? null,
+                  taskId: (event.task_id as string) ?? null,
                   description: typeof event.description === "string" ? event.description : "task",
-                  status: event.status as string ?? "completed",
+                  status: (event.status as string) ?? "completed",
                   usage: event.usage ?? null,
                 });
               }
             }
 
             if (event.type === "result") {
-              finalResult =
-                typeof event.result === "string"
-                  ? event.result
-                  : JSON.stringify(event.result);
+              finalResult = typeof event.result === "string" ? event.result : JSON.stringify(event.result);
               sessionId = (event.session_id as string) ?? sessionId;
 
               // Capture usage/cost data from the result event
@@ -749,9 +755,10 @@ export async function runCodingTask(input: {
                   if (block.type === "tool_use") {
                     // Capture tool input — truncate to keep events manageable
                     const toolInput = block.input;
-                    const inputPreview = typeof toolInput === "string"
-                      ? toolInput.slice(0, 1000)
-                      : JSON.stringify(toolInput ?? {}).slice(0, 1000);
+                    const inputPreview =
+                      typeof toolInput === "string"
+                        ? toolInput.slice(0, 1000)
+                        : JSON.stringify(toolInput ?? {}).slice(0, 1000);
                     const inputSummary = formatToolInputSummary(block.name as string, toolInput);
                     const payload = {
                       toolName: block.name as string,
@@ -776,9 +783,7 @@ export async function runCodingTask(input: {
                     const toolUseId = block.tool_use_id as string;
                     const toolName = pendingToolUses.get(toolUseId) ?? "tool";
                     const rawContent = extractToolResultContent(block);
-                    const resultContent = rawContent
-                      ? truncateToolResult(toolName, rawContent)
-                      : null;
+                    const resultContent = rawContent ? truncateToolResult(toolName, rawContent) : null;
                     input.onProgress?.("tool.call.completed", "coding_agent", {
                       toolUseId,
                       toolName,
@@ -809,10 +814,7 @@ export async function runCodingTask(input: {
           const event = JSON.parse(lineBuf) as Record<string, unknown>;
           events.push(event);
           if (event.type === "result") {
-            finalResult =
-              typeof event.result === "string"
-                ? event.result
-                : JSON.stringify(event.result);
+            finalResult = typeof event.result === "string" ? event.result : JSON.stringify(event.result);
             sessionId = (event.session_id as string) ?? sessionId;
           }
         } catch {
@@ -856,10 +858,7 @@ export async function runCodingTask(input: {
         }
 
         if (fullDiff) {
-          const truncated =
-            fullDiff.length > 8000
-              ? fullDiff.slice(0, 8000) + "\n…diff truncated"
-              : fullDiff;
+          const truncated = fullDiff.length > 8000 ? fullDiff.slice(0, 8000) + "\n…diff truncated" : fullDiff;
           input.onProgress?.("coding.agent.diff", "coding_agent", {
             diffStat,
             diff: truncated,
@@ -895,10 +894,7 @@ export async function runCodingTask(input: {
     });
 
     return {
-      result:
-        finalResult ||
-        stderrCapture.slice(0, 2000) ||
-        "Agent completed with no output.",
+      result: finalResult || stderrCapture.slice(0, 2000) || "Agent completed with no output.",
       sessionId,
       exitCode: cliExitCode,
       sandboxId: session.sandboxId,
@@ -939,4 +935,3 @@ export async function runCodingTask(input: {
     throw error;
   }
 }
-

@@ -1,10 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireRequestUser } from "@/lib/server-auth";
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await requireRequestUser(request.headers);
     const { id } = await params;
@@ -36,11 +33,14 @@ export async function GET(
       return Response.json({ error: "Run not found." }, { status: 404 });
     }
 
-    return Response.json({ run }, {
-      headers: {
-        "Cache-Control": "private, max-age=5, stale-while-revalidate=30",
+    return Response.json(
+      { run },
+      {
+        headers: {
+          "Cache-Control": "private, max-age=5, stale-while-revalidate=30",
+        },
       },
-    });
+    );
   } catch (error) {
     return Response.json(
       {

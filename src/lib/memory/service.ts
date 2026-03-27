@@ -7,19 +7,12 @@ export async function searchMemoryEntries(input: {
   limit?: number;
 }) {
   const limit = Math.min(Math.max(input.limit ?? 5, 1), 10);
-  const terms = input.query
-    .trim()
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean);
+  const terms = input.query.trim().toLowerCase().split(/\s+/).filter(Boolean);
 
   const entries = await prisma.memoryEntry.findMany({
     where: {
       userId: input.userId,
-      OR: [
-        { conversationId: input.conversationId },
-        { conversationId: null },
-      ],
+      OR: [{ conversationId: input.conversationId }, { conversationId: null }],
     },
     orderBy: { updatedAt: "desc" },
     take: 50,

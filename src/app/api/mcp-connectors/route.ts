@@ -1,8 +1,8 @@
-import { Prisma } from "@/generated/prisma/client";
 import { z } from "zod";
+import type { Prisma } from "@/generated/prisma/client";
 
 import { env } from "@/lib/env";
-import { testMcpConnection, getOAuthCallbackUrl, registerOAuthClient } from "@/lib/mcp-connectors";
+import { getOAuthCallbackUrl, registerOAuthClient, testMcpConnection } from "@/lib/mcp-connectors";
 import { encryptToken } from "@/lib/mcp-token-crypto";
 import { prisma } from "@/lib/prisma";
 import { requireRequestUser } from "@/lib/server-auth";
@@ -133,10 +133,7 @@ export async function POST(request: Request) {
 
   // Server is unreachable (DNS failure, timeout, 404) — reject
   if (!result.reachable) {
-    return Response.json(
-      { error: result.error ?? "Could not reach MCP server" },
-      { status: 422 },
-    );
+    return Response.json({ error: result.error ?? "Could not reach MCP server" }, { status: 422 });
   }
 
   // Server is reachable but returned a non-success status (405, 406, 500, etc.)

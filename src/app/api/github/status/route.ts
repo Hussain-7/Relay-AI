@@ -1,5 +1,5 @@
-import { Octokit } from "octokit";
 import { createAppAuth } from "@octokit/auth-app";
+import { Octokit } from "octokit";
 
 import { env, hasGitHubAppConfig } from "@/lib/env";
 import { invalidateGithubRepoCache } from "@/lib/github/service";

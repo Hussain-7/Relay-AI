@@ -13,10 +13,7 @@ function buildErrorPrompt(userPrompt: string, errorMessage: string) {
   return `User asked: "${userPrompt.slice(0, 200)}"\n\nError encountered: ${errorMessage.slice(0, 300)}\n\nGenerate a user-friendly response.`;
 }
 
-async function generateViaOpenAI(
-  userPrompt: string,
-  errorMessage: string,
-): Promise<string | null> {
+async function generateViaOpenAI(userPrompt: string, errorMessage: string): Promise<string | null> {
   if (!env.OPENAI_API_KEY) return null;
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -39,7 +36,7 @@ async function generateViaOpenAI(
 
   if (!response.ok) return null;
 
-  const body = await response.json() as {
+  const body = (await response.json()) as {
     choices?: Array<{ message?: { content?: string } }>;
   };
 
@@ -56,9 +53,7 @@ async function generateViaAnthropic(
     max_tokens: 200,
     temperature: 0,
     system: ERROR_RECOVERY_SYSTEM,
-    messages: [
-      { role: "user", content: buildErrorPrompt(userPrompt, errorMessage) },
-    ],
+    messages: [{ role: "user", content: buildErrorPrompt(userPrompt, errorMessage) }],
   });
 
   const text = response.content
@@ -84,14 +79,18 @@ export async function generateErrorResponse(
   try {
     const openaiResult = await generateViaOpenAI(userPrompt, errorMessage);
     if (openaiResult) return openaiResult;
-  } catch { /* fall through */ }
+  } catch {
+    /* fall through */
+  }
 
   // Fallback to Anthropic Haiku
   if (anthropic) {
     try {
       const anthropicResult = await generateViaAnthropic(anthropic, userPrompt, errorMessage);
       if (anthropicResult) return anthropicResult;
-    } catch { /* fall through */ }
+    } catch {
+      /* fall through */
+    }
   }
 
   return STATIC_FALLBACK;

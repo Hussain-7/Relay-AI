@@ -9,8 +9,8 @@ import type {
 
 import type { AttachmentDto, TimelineEventEnvelope } from "@/lib/contracts";
 import { env } from "@/lib/env";
-import { serializeSseEvent } from "@/lib/run-events";
 import { getAssistantHistoryContent } from "@/lib/main-agent/citations";
+import { serializeSseEvent } from "@/lib/run-events";
 
 const encoder = new TextEncoder();
 
@@ -20,7 +20,9 @@ export function getAnthropicClient() {
   });
 }
 
-export function buildAttachmentBlocks(attachments: Array<{ anthropicFileId: string | null; kind: AttachmentDto["kind"]; filename: string }>) {
+export function buildAttachmentBlocks(
+  attachments: Array<{ anthropicFileId: string | null; kind: AttachmentDto["kind"]; filename: string }>,
+) {
   const blocks: Array<BetaImageBlockParam | BetaRequestDocumentBlock> = [];
 
   for (const attachment of attachments) {
@@ -145,10 +147,7 @@ export function inferServerToolName(block: BetaContentBlock) {
   }
 }
 
-export function emitSseEvent(
-  controller: ReadableStreamDefaultController<Uint8Array>,
-  event: TimelineEventEnvelope,
-) {
+export function emitSseEvent(controller: ReadableStreamDefaultController<Uint8Array>, event: TimelineEventEnvelope) {
   try {
     controller.enqueue(encoder.encode(serializeSseEvent(event)));
   } catch {

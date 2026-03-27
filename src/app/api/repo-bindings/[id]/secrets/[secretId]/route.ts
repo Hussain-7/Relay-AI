@@ -1,10 +1,7 @@
-import { requireRequestUser } from "@/lib/server-auth";
 import { deleteRepoSecret } from "@/lib/repo-secrets";
+import { requireRequestUser } from "@/lib/server-auth";
 
-export async function DELETE(
-  request: Request,
-  { params }: { params: Promise<{ id: string; secretId: string }> },
-) {
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string; secretId: string }> }) {
   try {
     const user = await requireRequestUser(request.headers);
     const { id, secretId } = await params;

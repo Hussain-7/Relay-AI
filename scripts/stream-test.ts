@@ -22,7 +22,9 @@ try {
       process.env[match[1]] = (match[2] ?? "").replace(/^["']|["']$/g, "");
     }
   }
-} catch { /* no .env file */ }
+} catch {
+  /* no .env file */
+}
 
 const API_KEY = process.env.ANTHROPIC_API_KEY;
 const MODEL = process.env.ANTHROPIC_MAIN_MODEL ?? "claude-sonnet-4-6";
@@ -59,9 +61,7 @@ async function main() {
         text: "You are a helpful assistant. Be concise and direct.",
       },
     ],
-    messages: [
-      { role: "user", content: prompt },
-    ],
+    messages: [{ role: "user", content: prompt }],
     tools: [],
   } as Parameters<typeof client.beta.messages.toolRunner>[0]);
 

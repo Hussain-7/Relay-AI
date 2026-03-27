@@ -1,7 +1,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 
 import type { TimelineEventEnvelope } from "@/lib/contracts";
-import { env, hasAnthropicApiKey } from "@/lib/env";
+import { env } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 import { invalidateCache } from "@/lib/server-cache";
 
@@ -28,7 +28,7 @@ export function buildFallbackConversationTitle(prompt: string) {
 
 export function normalizeConversationTitle(title: string, fallbackTitle: string) {
   const normalized = title
-    .replace(/[#*_~`>\[\](){}|\\]/g, "")
+    .replace(/[#*_~`>[\](){}|\\]/g, "")
     .replace(/\s+/g, " ")
     .replace(/^["'`]+|["'`]+$/g, "")
     .replace(/[.:;!?,]+$/g, "")
@@ -69,7 +69,7 @@ async function generateTitleViaOpenAI(prompt: string): Promise<string | null> {
 
     if (!response.ok) return null;
 
-    const body = await response.json() as {
+    const body = (await response.json()) as {
       choices?: Array<{ message?: { content?: string } }>;
     };
 
@@ -79,41 +79,35 @@ async function generateTitleViaOpenAI(prompt: string): Promise<string | null> {
   }
 }
 
-async function generateTitleViaAnthropic(
-  anthropic: Anthropic,
-  prompt: string,
-): Promise<string | null> {
+async function generateTitleViaAnthropic(anthropic: Anthropic, prompt: string): Promise<string | null> {
   try {
     const response = await anthropic.messages.create({
       model: env.ANTHROPIC_TITLE_MODEL,
       max_tokens: 12,
       temperature: 0,
       system: TITLE_SYSTEM_PROMPT,
-      messages: [
-        { role: "user", content: `[TITLE THIS MESSAGE]\n${prompt}` },
-      ],
+      messages: [{ role: "user", content: `[TITLE THIS MESSAGE]\n${prompt}` }],
     });
 
-    return response.content
-      .filter((block): block is Extract<(typeof response.content)[number], { type: "text" }> => block.type === "text")
-      .map((block) => block.text)
-      .join(" ")
-      .trim() || null;
+    return (
+      response.content
+        .filter((block): block is Extract<(typeof response.content)[number], { type: "text" }> => block.type === "text")
+        .map((block) => block.text)
+        .join(" ")
+        .trim() || null
+    );
   } catch {
     return null;
   }
 }
 
-export async function maybeGenerateConversationTitle(input: {
-  anthropic: Anthropic | null;
-  prompt: string;
-}) {
+export async function maybeGenerateConversationTitle(input: { anthropic: Anthropic | null; prompt: string }) {
   const fallbackTitle = buildFallbackConversationTitle(input.prompt);
 
   // Try GPT-4.1 Nano first (faster, cheaper), fall back to Haiku
   const title =
-    (await generateTitleViaOpenAI(input.prompt))
-    ?? (input.anthropic ? await generateTitleViaAnthropic(input.anthropic, input.prompt) : null);
+    (await generateTitleViaOpenAI(input.prompt)) ??
+    (input.anthropic ? await generateTitleViaAnthropic(input.anthropic, input.prompt) : null);
 
   if (!title) return fallbackTitle;
 

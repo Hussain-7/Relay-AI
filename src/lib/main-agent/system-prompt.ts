@@ -15,9 +15,15 @@ interface SystemPromptContext {
 }
 
 export function buildMainAgentSystemPrompt(ctx: SystemPromptContext) {
-  const mcpSection = ctx.mcpServerNames.length > 0
-    ? ctx.mcpServerNames.map((name) => `  - "${name}" — an external MCP server. Its tools appear with the mcp_toolset prefix. Use these when the task matches the server's domain.`).join("\n")
-    : "  No MCP servers are connected in this session.";
+  const mcpSection =
+    ctx.mcpServerNames.length > 0
+      ? ctx.mcpServerNames
+          .map(
+            (name) =>
+              `  - "${name}" — an external MCP server. Its tools appear with the mcp_toolset prefix. Use these when the task matches the server's domain.`,
+          )
+          .join("\n")
+      : "  No MCP servers are connected in this session.";
 
   const memorySection = ctx.memoryEnabled
     ? `<memory>
@@ -36,7 +42,8 @@ For any repo-related question (summarize, explore, explain code, find files, etc
 No repository is linked. If the user wants to work on an existing repo, suggest connecting it via the + menu. For new projects, use github_create_repo — it creates and auto-links the repo.
 </linked_repo>`;
 
-  const sandboxReady = ctx.codingSession?.sandboxId && ["READY", "RUNNING", "PAUSED"].includes(ctx.codingSession.status);
+  const _sandboxReady =
+    ctx.codingSession?.sandboxId && ["READY", "RUNNING", "PAUSED"].includes(ctx.codingSession.status);
   const codingSessionSection = ctx.codingSession
     ? `<coding_session status="${ctx.codingSession.status}"${ctx.codingSession.workspacePath ? ` workspace="${ctx.codingSession.workspacePath}"` : ""}${ctx.codingSession.branch ? ` branch="${ctx.codingSession.branch}"` : ""}>
 Sandbox is active. Call coding_agent_sandbox or bash_sandbox directly — they auto-reconnect. No need for prepare_sandbox or clone_repo_sandbox.

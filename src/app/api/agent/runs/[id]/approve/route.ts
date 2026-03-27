@@ -1,5 +1,5 @@
-import { Prisma } from "@/generated/prisma/client";
 import { z } from "zod";
+import type { Prisma } from "@/generated/prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { appendRunEvent } from "@/lib/run-events";
@@ -11,10 +11,7 @@ const approveSchema = z.object({
   responseJson: z.record(z.string(), z.unknown()).optional(),
 });
 
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await requireRequestUser(request.headers);
     const { id } = await params;

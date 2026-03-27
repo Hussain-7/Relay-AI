@@ -3,7 +3,7 @@
 import { useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
-import { IconPaperclip, IconConnector, IconGithub } from "@/components/icons";
+import { IconConnector, IconGithub, IconPaperclip } from "@/components/icons";
 
 export function ComposerPlusMenuPortal({
   anchor,

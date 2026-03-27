@@ -7,10 +7,7 @@ const patchSchema = z.object({
   enabled: z.boolean(),
 });
 
-export async function PATCH(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await requireRequestUser(request.headers);
   const { id } = await params;
   const body = patchSchema.parse(await request.json());
@@ -54,10 +51,7 @@ export async function PATCH(
   });
 }
 
-export async function DELETE(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await requireRequestUser(request.headers);
   const { id } = await params;
 

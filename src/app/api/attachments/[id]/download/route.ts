@@ -4,10 +4,7 @@ import { env } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 import { requireRequestUser } from "@/lib/server-auth";
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const user = await requireRequestUser(request.headers);
 
@@ -30,10 +27,7 @@ export async function GET(
   }
 
   const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
-  const fileContent = await client.beta.files.download(
-    attachment.anthropicFileId,
-    { betas: ["files-api-2025-04-14"] },
-  );
+  const fileContent = await client.beta.files.download(attachment.anthropicFileId, { betas: ["files-api-2025-04-14"] });
 
   return new Response(fileContent.body as ReadableStream, {
     headers: {

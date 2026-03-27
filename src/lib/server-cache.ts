@@ -4,11 +4,7 @@ import { getRedis } from "@/lib/redis";
  * Get a cached value from Redis, falling back to the fetcher if not cached.
  * Returns fetcher result directly if Redis is not configured.
  */
-export async function getCached<T>(
-  key: string,
-  ttlSeconds: number,
-  fetcher: () => Promise<T>,
-): Promise<T> {
+export async function getCached<T>(key: string, ttlSeconds: number, fetcher: () => Promise<T>): Promise<T> {
   const redis = getRedis();
   if (!redis) return fetcher();
 
