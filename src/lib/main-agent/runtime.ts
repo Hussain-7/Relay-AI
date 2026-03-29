@@ -312,7 +312,7 @@ export async function streamMainAgentRun(input: {
               { type: "anthropic" as const, skill_id: "pptx", version: "latest" },
               { type: "anthropic" as const, skill_id: "docx", version: "latest" },
               { type: "anthropic" as const, skill_id: "pdf", version: "latest" },
-              { type: "anthropic" as const, skill_id: "frontend-design", version: "latest" },
+              { type: "custom" as const, skill_id: "skill_01DZPZQDf4bdLePG81PVsfRq", version: "latest" },
             ],
           },
           metadata: {
