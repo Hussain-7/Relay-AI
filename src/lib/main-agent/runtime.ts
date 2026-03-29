@@ -97,7 +97,7 @@ export async function streamMainAgentRun(input: {
           messageHistory,
           configuredMcpServers,
           activeCodingSession,
-          priorOutputImages,
+          priorOutputAttachments,
         ] = await Promise.all([
           prisma.conversation.findUniqueOrThrow({
             where: { id: input.conversationId },
@@ -149,17 +149,16 @@ export async function streamMainAgentRun(input: {
             orderBy: { updatedAt: "desc" },
             select: { id: true, status: true, sandboxId: true, workspacePath: true, branch: true },
           }),
-          // Output attachments from previous runs (generated images, skill outputs)
+          // Output attachments from previous runs (generated images, documents, HTML, skill outputs)
           // so the agent can reference them by ID for editing/follow-up
           prisma.attachment.findMany({
             where: {
               conversationId: input.conversationId,
               metadataJson: { path: ["source"], not: "user_upload" },
-              kind: "IMAGE",
             },
-            select: { id: true, filename: true, mediaType: true, metadataJson: true },
+            select: { id: true, filename: true, mediaType: true, kind: true, metadataJson: true },
             orderBy: { createdAt: "desc" },
-            take: 10,
+            take: 20,
           }),
         ]);
 
@@ -194,18 +193,27 @@ export async function streamMainAgentRun(input: {
               ]
             : [];
 
-        // Include output images from previous runs so the agent can reference them for editing
+        // Include output files from previous runs so the agent can reference/edit them
         const outputAttachmentBlock: BetaContentBlockParam[] =
-          priorOutputImages.length > 0
+          priorOutputAttachments.length > 0
             ? [
                 {
                   type: "text" as const,
-                  text: `[Previously generated images in this conversation: ${priorOutputImages
+                  text: `[Previously generated files in this conversation: ${priorOutputAttachments
                     .map((a) => {
                       const meta = a.metadataJson as Record<string, unknown> | null;
-                      return `${a.filename} (id: ${a.id}, model: ${meta?.model ?? "unknown"})`;
+                      const details = [
+                        `id: ${a.id}`,
+                        `type: ${a.mediaType}`,
+                        meta?.model ? `model: ${meta.model}` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(", ");
+                      return `${a.filename} (${details})`;
                     })
-                    .join(", ")}. Use these IDs with imageAttachmentId to edit them.]`,
+                    .join(
+                      "; ",
+                    )}. For images, use the ID with imageAttachmentId to edit. For HTML/documents, read the existing content via the file ID and modify it rather than creating from scratch.]`,
                 },
               ]
             : [];
