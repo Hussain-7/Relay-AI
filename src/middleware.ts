@@ -11,6 +11,7 @@ export async function middleware(request: NextRequest) {
   if (
     PUBLIC_ROUTES.has(pathname) ||
     pathname.startsWith("/api/") ||
+    pathname.startsWith("/preview/") ||
     pathname.endsWith(".webmanifest") ||
     pathname.endsWith(".svg") ||
     pathname === "/icon.svg" ||

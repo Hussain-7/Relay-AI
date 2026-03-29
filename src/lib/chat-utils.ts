@@ -712,10 +712,15 @@ export function getFileTypeBadge(attachment: AttachmentDto) {
   if (attachment.kind === "PDF") return "PDF";
   if (attachment.kind === "IMAGE") return "IMG";
   const ext = attachment.filename.split(".").pop()?.toUpperCase() ?? "";
+  if (["HTML", "HTM"].includes(ext)) return "HTML";
   if (["DOC", "DOCX"].includes(ext)) return "DOC";
   if (["XLS", "XLSX"].includes(ext)) return "XLS";
   if (["TXT", "MD", "JSON", "CSV"].includes(ext)) return ext;
   return "FILE";
+}
+
+export function isHtmlAttachment(a: AttachmentDto): boolean {
+  return a.mediaType === "text/html" || /\.html?$/i.test(a.filename);
 }
 
 export function formatRelativeDate(isoString: string): string {

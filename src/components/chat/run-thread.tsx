@@ -7,12 +7,16 @@ import { Streamdown } from "streamdown";
 import { RunActivityAccordion } from "@/components/chat/activity-accordion";
 import { AttachmentChip } from "@/components/chat/attachment-chip";
 import { CopyButton } from "@/components/chat/copy-button";
-import { buildTimelineEntries, formatShortTime, groupEntriesIntoSegments } from "@/lib/chat-utils";
+import { HtmlPreviewModal } from "@/components/chat/html-preview-modal";
+import { buildTimelineEntries, formatShortTime, groupEntriesIntoSegments, isHtmlAttachment } from "@/lib/chat-utils";
 import type { AttachmentDto, TimelineEventEnvelope } from "@/lib/contracts";
 
 function getFileTypeBadge(filename: string): string {
   const ext = filename.split(".").pop()?.toLowerCase();
   switch (ext) {
+    case "html":
+    case "htm":
+      return "HTML";
     case "xlsx":
       return "Excel";
     case "pptx":
@@ -108,6 +112,7 @@ export function RunThread({
 }) {
   const entries = useMemo(() => buildTimelineEntries(events), [events]);
   const segments = useMemo(() => groupEntriesIntoSegments(entries), [entries]);
+  const [previewAttachment, setPreviewAttachment] = useState<AttachmentDto | null>(null);
   const showPendingDot = isLive && entries.length === 0 && !finalText;
   const hasAgentResponse = Boolean(finalText);
 
@@ -284,44 +289,97 @@ export function RunThread({
                   ? (() => {
                       // Images are already rendered inline via markdown by the model — skip them here
                       const fileOutputs = outputAttachments.filter((a) => a.kind !== "IMAGE");
-                      return (
-                        <>
-                          {fileOutputs.length > 0 ? (
-                            <div className="mt-3 flex flex-wrap gap-2">
-                              {fileOutputs.map((file) => (
-                                <a
-                                  key={file.id}
-                                  href={`/api/attachments/${file.id}/download`}
-                                  download={file.filename}
-                                  className="group/dl flex items-center gap-2 min-w-[120px] max-w-[240px] border border-[rgba(255,255,255,0.1)] rounded-[12px] bg-[rgba(255,255,255,0.04)] px-3 py-2.5 no-underline transition-[border-color,background] duration-[140ms] ease-linear hover:border-[rgba(181,103,69,0.4)] hover:bg-[rgba(181,103,69,0.06)]"
+                      return fileOutputs.length > 0 ? (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {fileOutputs.map((file) =>
+                            isHtmlAttachment(file) ? (
+                              <div
+                                key={file.id}
+                                className="flex items-center gap-2 min-w-[120px] max-w-[280px] border border-[rgba(255,255,255,0.1)] rounded-[12px] bg-[rgba(255,255,255,0.04)] px-3 py-2.5 transition-[border-color,background] duration-[140ms] ease-linear hover:border-[rgba(181,103,69,0.4)] hover:bg-[rgba(181,103,69,0.06)]"
+                              >
+                                <div className="flex flex-col min-w-0 flex-1">
+                                  <span className="text-[0.8rem] leading-[1.3] text-[rgba(245,240,232,0.86)] overflow-hidden text-ellipsis whitespace-nowrap">
+                                    {file.filename}
+                                  </span>
+                                  <span className="text-[0.65rem] text-[rgba(245,240,232,0.5)] uppercase tracking-[0.04em]">
+                                    HTML
+                                  </span>
+                                </div>
+                                {/* Preview button */}
+                                <button
+                                  type="button"
+                                  onClick={() => setPreviewAttachment(file)}
+                                  title="Preview"
+                                  className="shrink-0 flex items-center justify-center w-7 h-7 rounded-[6px] border-0 bg-transparent text-[rgba(245,240,232,0.5)] cursor-pointer transition-colors hover:bg-[rgba(255,255,255,0.08)] hover:text-[rgba(212,112,73,0.9)]"
                                 >
                                   <svg
-                                    width="16"
-                                    height="16"
+                                    width="15"
+                                    height="15"
                                     viewBox="0 0 16 16"
                                     fill="none"
                                     stroke="currentColor"
                                     strokeWidth="1.5"
                                     strokeLinecap="round"
                                     strokeLinejoin="round"
-                                    className="shrink-0 text-[rgba(245,240,232,0.5)] group-hover/dl:text-[rgba(212,112,73,0.8)]"
+                                  >
+                                    <path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5Z" />
+                                    <circle cx="8" cy="8" r="2" />
+                                  </svg>
+                                </button>
+                                {/* Download button */}
+                                <a
+                                  href={`/api/attachments/${file.id}/download`}
+                                  download={file.filename}
+                                  title="Download"
+                                  className="shrink-0 flex items-center justify-center w-7 h-7 rounded-[6px] bg-transparent text-[rgba(245,240,232,0.5)] no-underline transition-colors hover:bg-[rgba(255,255,255,0.08)] hover:text-[rgba(212,112,73,0.9)]"
+                                >
+                                  <svg
+                                    width="15"
+                                    height="15"
+                                    viewBox="0 0 16 16"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="1.5"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
                                   >
                                     <path d="M8 2v9m0 0-3-3m3 3 3-3M3 13h10" />
                                   </svg>
-                                  <div className="flex flex-col min-w-0 flex-1">
-                                    <span className="text-[0.8rem] leading-[1.3] text-[rgba(245,240,232,0.86)] overflow-hidden text-ellipsis whitespace-nowrap">
-                                      {file.filename}
-                                    </span>
-                                    <span className="text-[0.65rem] text-[rgba(245,240,232,0.5)] uppercase tracking-[0.04em]">
-                                      {getFileTypeBadge(file.filename)}
-                                    </span>
-                                  </div>
                                 </a>
-                              ))}
-                            </div>
-                          ) : null}
-                        </>
-                      );
+                              </div>
+                            ) : (
+                              <a
+                                key={file.id}
+                                href={`/api/attachments/${file.id}/download`}
+                                download={file.filename}
+                                className="group/dl flex items-center gap-2 min-w-[120px] max-w-[240px] border border-[rgba(255,255,255,0.1)] rounded-[12px] bg-[rgba(255,255,255,0.04)] px-3 py-2.5 no-underline transition-[border-color,background] duration-[140ms] ease-linear hover:border-[rgba(181,103,69,0.4)] hover:bg-[rgba(181,103,69,0.06)]"
+                              >
+                                <svg
+                                  width="16"
+                                  height="16"
+                                  viewBox="0 0 16 16"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="1.5"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  className="shrink-0 text-[rgba(245,240,232,0.5)] group-hover/dl:text-[rgba(212,112,73,0.8)]"
+                                >
+                                  <path d="M8 2v9m0 0-3-3m3 3 3-3M3 13h10" />
+                                </svg>
+                                <div className="flex flex-col min-w-0 flex-1">
+                                  <span className="text-[0.8rem] leading-[1.3] text-[rgba(245,240,232,0.86)] overflow-hidden text-ellipsis whitespace-nowrap">
+                                    {file.filename}
+                                  </span>
+                                  <span className="text-[0.65rem] text-[rgba(245,240,232,0.5)] uppercase tracking-[0.04em]">
+                                    {getFileTypeBadge(file.filename)}
+                                  </span>
+                                </div>
+                              </a>
+                            ),
+                          )}
+                        </div>
+                      ) : null;
                     })()
                   : null}
                 {isLive && !isInterrupted ? <div className="mt-2.5 text-muted text-[0.76rem]">Streaming</div> : null}
@@ -392,6 +450,10 @@ export function RunThread({
             document.body,
           )
         : null}
+
+      {previewAttachment && (
+        <HtmlPreviewModal attachment={previewAttachment} onClose={() => setPreviewAttachment(null)} />
+      )}
     </>
   );
 }
