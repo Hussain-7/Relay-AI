@@ -7,6 +7,8 @@ export async function GET(request: Request) {
   const code = searchParams.get("code");
   const next = searchParams.get("next") ?? "/chat/new";
 
+  const response = NextResponse.redirect(`${origin}${next}`);
+
   if (code) {
     const cookieStore = await cookies();
 
@@ -21,6 +23,8 @@ export async function GET(request: Request) {
           setAll(cookiesToSet) {
             for (const { name, value, options } of cookiesToSet) {
               cookieStore.set(name, value, options);
+              // Also set on the redirect response so the browser receives them
+              response.cookies.set(name, value, options);
             }
           },
         },
@@ -30,5 +34,5 @@ export async function GET(request: Request) {
     await supabase.auth.exchangeCodeForSession(code);
   }
 
-  return NextResponse.redirect(`${origin}${next}`);
+  return response;
 }
