@@ -653,7 +653,9 @@ export async function runCodingTask(input: {
 
           try {
             const event = JSON.parse(line) as Record<string, unknown>;
-            console.log("Events From Coding Agent:", event);
+            if (env.DEBUG_AGENT_EVENTS) {
+              console.log("[coding-agent-event]", JSON.stringify(event).slice(0, 500));
+            }
             events.push(event);
 
             // Capture session ID and final result
