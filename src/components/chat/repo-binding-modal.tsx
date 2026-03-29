@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconChevron, IconClose, IconGithub, IconRefresh, IconSearch } from "@/components/icons";
+import { ModalBackdrop, ModalPanel } from "@/components/ui/modal";
 import {
   type GithubRepoSearchResult,
   type RepoBindingListItem,
@@ -144,14 +145,12 @@ export function RepoBindingModal({
   const isSearching = searchQuery.trim().length > 0;
 
   return (
-    <div
+    <ModalBackdrop
+      onClose={onClose}
       className="fixed inset-0 z-200 flex items-start justify-center pt-[12vh] bg-[rgba(0,0,0,0.5)] backdrop-blur-xs"
-      style={{ contain: "layout" }}
-      onClick={onClose}
     >
-      <div
+      <ModalPanel
         className={`w-[min(560px,92vw)] flex flex-col border border-[rgba(255,255,255,0.08)] rounded-[20px] bg-[rgba(30,28,24,0.98)] shadow-[0_24px_64px_rgba(0,0,0,0.55)] overflow-hidden ${isGithubInstalled ? "h-[min(75vh,620px)]" : ""}`}
-        onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-4 pb-3">
@@ -327,7 +326,7 @@ export function RepoBindingModal({
             </div>
           </>
         )}
-      </div>
-    </div>
+      </ModalPanel>
+    </ModalBackdrop>
   );
 }

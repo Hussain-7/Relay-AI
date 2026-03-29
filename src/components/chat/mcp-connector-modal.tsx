@@ -2,7 +2,8 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
-import { IconClose, IconPlus } from "@/components/icons";
+import { IconPlus } from "@/components/icons";
+import { ModalBackdrop, ModalHeader, ModalPanel } from "@/components/ui/modal";
 import { Toggle } from "@/components/ui/toggle";
 import {
   type McpConnectorDto,
@@ -297,25 +298,9 @@ export function McpConnectorModal({ onClose }: { onClose: () => void }) {
   }, []);
 
   return (
-    <div
-      className="fixed inset-0 z-200 flex items-center justify-center bg-[rgba(0,0,0,0.5)] backdrop-blur-[4px]"
-      onClick={onClose}
-    >
-      <div
-        className="w-[min(480px,92vw)] max-h-[80vh] flex flex-col border border-[rgba(255,255,255,0.08)] rounded-[20px] bg-[rgba(30,28,24,0.98)] shadow-[0_24px_64px_rgba(0,0,0,0.55)] overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 pt-4 pb-3.5">
-          <h2 className="text-[rgba(245,240,232,0.92)] text-[1rem] font-semibold m-0">Connectors</h2>
-          <button
-            type="button"
-            className="inline-grid h-7 w-7 place-items-center border-0 bg-transparent text-[rgba(236,230,219,0.4)] cursor-pointer rounded-[8px] transition-[background,color] duration-[140ms] ease-linear hover:bg-[rgba(255,255,255,0.06)] hover:text-[rgba(247,242,233,0.8)]"
-            onClick={onClose}
-          >
-            <IconClose />
-          </button>
-        </div>
+    <ModalBackdrop onClose={onClose}>
+      <ModalPanel>
+        <ModalHeader title="Connectors" onClose={onClose} />
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-5 pb-5">
@@ -391,7 +376,7 @@ export function McpConnectorModal({ onClose }: { onClose: () => void }) {
             </>
           )}
         </div>
-      </div>
-    </div>
+      </ModalPanel>
+    </ModalBackdrop>
   );
 }

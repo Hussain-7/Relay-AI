@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconClose, IconPlus } from "@/components/icons";
+import { ModalBackdrop, ModalPanel } from "@/components/ui/modal";
 import { type RepoSecretDto, useDeleteRepoSecret, useRepoSecrets, useSaveRepoSecrets } from "@/lib/api-hooks";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -351,13 +352,11 @@ export function RepoSecretsModal({
   }, [displayRows, repoBindingId, saveMutation, onClose]);
 
   return (
-    <div
+    <ModalBackdrop
+      onClose={onClose}
       className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
     >
-      <div className="relative w-full max-w-[560px] mx-4 max-h-[85vh] flex flex-col rounded-[20px] border border-[rgba(255,255,255,0.08)] bg-[rgba(30,28,24,0.98)] shadow-[0_24px_80px_rgba(0,0,0,0.55)] overflow-hidden">
+      <ModalPanel className="relative w-full max-w-[560px] mx-4 max-h-[85vh] flex flex-col rounded-[20px] border border-[rgba(255,255,255,0.08)] bg-[rgba(30,28,24,0.98)] shadow-[0_24px_80px_rgba(0,0,0,0.55)] overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-5 pb-3">
           <div className="flex items-center gap-2.5">
@@ -453,7 +452,7 @@ export function RepoSecretsModal({
             {saveMutation.isPending ? "Saving..." : "Save"}
           </button>
         </div>
-      </div>
-    </div>
+      </ModalPanel>
+    </ModalBackdrop>
   );
 }
