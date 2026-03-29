@@ -414,6 +414,9 @@ export async function streamMainAgentRun(input: {
           const blockTextBuffer = new Map<number, string>();
 
           for await (const rawEvent of assistantIteration as AsyncIterable<BetaRawMessageStreamEvent>) {
+            if (env.DEBUG_AGENT_EVENTS) {
+              console.log("[agent-event]", JSON.stringify(rawEvent).slice(0, 500));
+            }
             // Check stop flag every ~10 events to avoid Redis spam
             if (++stopCheckCounter % 10 === 0) {
               const flagValue = await checkStopFlag(runId);
@@ -783,6 +786,10 @@ export async function streamMainAgentRun(input: {
         }
 
         const finalMessage: BetaMessage = await runner.done();
+
+        if (env.DEBUG_AGENT_EVENTS) {
+          console.log("[agent-final]", JSON.stringify(finalMessage).slice(0, 2000));
+        }
 
         // Emit MCP tool events from the final response that weren't already
         // emitted during streaming (toolRunner handles MCP between iterations)
