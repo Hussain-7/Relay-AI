@@ -312,6 +312,7 @@ export async function streamMainAgentRun(input: {
               { type: "anthropic" as const, skill_id: "pptx", version: "latest" },
               { type: "anthropic" as const, skill_id: "docx", version: "latest" },
               { type: "anthropic" as const, skill_id: "pdf", version: "latest" },
+              { type: "anthropic" as const, skill_id: "frontend-design", version: "latest" },
             ],
           },
           metadata: {
@@ -1176,7 +1177,9 @@ function inferOutputAttachmentKind(filename: string): AttachmentKind {
     ext === "csv" ||
     ext === "txt" ||
     ext === "md" ||
-    ext === "json"
+    ext === "json" ||
+    ext === "html" ||
+    ext === "htm"
   )
     return "DOCUMENT";
   return "OTHER";
