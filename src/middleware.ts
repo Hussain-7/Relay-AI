@@ -56,14 +56,24 @@ export async function middleware(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("next", pathname);
-    return NextResponse.redirect(url);
+    const redirectResponse = NextResponse.redirect(url);
+    // Carry forward cookie changes (e.g. cleared stale tokens) so the
+    // browser doesn't keep sending an invalid refresh token on every request.
+    for (const cookie of response.cookies.getAll()) {
+      redirectResponse.cookies.set(cookie);
+    }
+    return redirectResponse;
   }
 
   // Authenticated but not on the allowlist → redirect to waitlist
   if (!user.email || !ALLOWED_EMAILS.has(user.email.toLowerCase())) {
     const url = request.nextUrl.clone();
     url.pathname = "/waitlist";
-    return NextResponse.redirect(url);
+    const redirectResponse = NextResponse.redirect(url);
+    for (const cookie of response.cookies.getAll()) {
+      redirectResponse.cookies.set(cookie);
+    }
+    return redirectResponse;
   }
 
   // Authenticated + allowed user on /login → redirect to chat
