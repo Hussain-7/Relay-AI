@@ -892,11 +892,32 @@ export async function streamMainAgentRun(input: {
           );
         }
 
-        // Extract file IDs from skill-generated outputs (xlsx, pptx, docx, pdf)
-        const skillFileIds = extractSkillFileIds(finalMessage);
+        // Extract file IDs from skill-generated outputs.
+        // 1. Check code_execution_tool_result blocks for inline file_id references
+        // 2. Also list recent files from the Anthropic Files API (catches OUTPUT_DIR writes
+        //    from custom skills that don't embed file_id in the result content)
+        const skillFileIds = new Set(extractSkillFileIds(finalMessage));
+
+        // If we have a container, list files that may have been written to OUTPUT_DIR
+        if (containerId) {
+          try {
+            for await (const file of anthropic.beta.files.list({
+              betas: ["files-api-2025-04-14"],
+            })) {
+              // Only include downloadable files created in the last 5 minutes
+              const fileAge = Date.now() - new Date(file.created_at).getTime();
+              if (fileAge < 5 * 60 * 1000 && file.downloadable && !skillFileIds.has(file.id)) {
+                skillFileIds.add(file.id);
+              }
+            }
+          } catch (err) {
+            console.warn("Failed to list container files:", err);
+          }
+        }
+
         const outputAttachments: AttachmentDto[] = [];
 
-        if (skillFileIds.length > 0) {
+        if (skillFileIds.size > 0) {
           for (const fileId of skillFileIds) {
             try {
               const meta = await anthropic.beta.files.retrieveMetadata(fileId, {
