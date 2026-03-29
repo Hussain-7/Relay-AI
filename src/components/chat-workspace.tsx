@@ -26,11 +26,9 @@ import {
   queryKeys,
   useConversationDetail,
   useConversations,
-  useCreateConversation,
   useDeleteConversation,
   useDisconnectGithub,
   useGithubStatus,
-  useLinkRepoToConversation,
   useMcpConnectors,
   useModelCatalog,
   usePreferences,
@@ -39,21 +37,8 @@ import {
   useUpdateConversationModel,
   useUser,
 } from "@/lib/api-hooks";
-import type { LiveRunState } from "@/lib/chat-utils";
-import {
-  formatModelDisplayName,
-  formatRelativeDate,
-  normalizeApiErrorMessage,
-  previewText,
-  resizeComposer,
-} from "@/lib/chat-utils";
-import type {
-  AttachmentDto,
-  ConversationDetailDto,
-  ConversationSummaryDto,
-  RunDto,
-  TimelineEventEnvelope,
-} from "@/lib/contracts";
+import { formatModelDisplayName, formatRelativeDate, previewText, resizeComposer } from "@/lib/chat-utils";
+import type { ConversationDetailDto } from "@/lib/contracts";
 
 const McpConnectorModal = dynamic(
   () => import("@/components/chat/mcp-connector-modal").then((m) => ({ default: m.McpConnectorModal })),
@@ -68,9 +53,15 @@ const RepoSecretsModal = dynamic(
   { ssr: false },
 );
 
-import { AttachmentChip, type PendingFile } from "@/components/chat/attachment-chip";
+import { AttachmentChip } from "@/components/chat/attachment-chip";
 import { RunThread } from "@/components/chat/run-thread";
-import { consumePendingMessage, peekPendingMessage, setPendingMessage } from "@/lib/pending-message";
+import { useAgentStream } from "@/hooks/useAgentStream";
+import { useComposerState } from "@/hooks/useComposerState";
+import { useFileUpload } from "@/hooks/useFileUpload";
+import { useModalState } from "@/hooks/useModalState";
+import { usePendingMessage } from "@/hooks/usePendingMessage";
+import { useScrollManager } from "@/hooks/useScrollManager";
+import { peekPendingMessage, setPendingMessage } from "@/lib/pending-message";
 
 export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   const router = useRouter();
@@ -88,14 +79,32 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
     [router],
   );
 
+  const { preferences: userPreferences, savePreferences } = usePreferences();
+  const agentPreferences: AgentPreferences = {
+    thinking: userPreferences.agent.thinking,
+    effort: userPreferences.agent.effort,
+    memory: userPreferences.agent.memory,
+  };
+
+  const {
+    liveRun,
+    setLiveRun,
+    liveRunRef,
+    streamStartedForRef,
+    previewUrlMapRef,
+    errorMessage,
+    setErrorMessage,
+    isSending,
+    setIsSending,
+    startStream,
+    handleStop,
+    linkRepoMutation,
+  } = useAgentStream({ agentPreferences });
+
   // Suppress detail fetch only for genuinely new conversations that haven't been created yet.
   // If cached data exists (existing conversation), keep the query active so previous runs
   // remain visible while a new liveRun streams. The liveRunRef bridges the gap between
   // pending-message consumption and createMutation resolution for new conversations.
-  const liveRunRef = useRef(false);
-  // Tracks which conversation has had startStream() called — set inside the effect chain
-  // so it's visible to Strict Mode's second effect run (unlike liveRunRef which is render-time).
-  const streamStartedForRef = useRef<string | null>(null);
   const cachedDetail = activeConversationId
     ? queryClient.getQueryData<ConversationDetailDto>(queryKeys.conversation(activeConversationId))
     : null;
@@ -119,67 +128,58 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   const isLoadingDetail = isFetchingDetail && !activeConversation;
 
   // Mutations
-  const createMutation = useCreateConversation();
   const deleteMutation = useDeleteConversation();
   const updateModelMutation = useUpdateConversationModel();
 
-  const [composerValue, setComposerValue] = useState("");
-  const [composerAttachments, setComposerAttachments] = useState<AttachmentDto[]>([]);
+  const {
+    composerValue,
+    setComposerValue,
+    composerAttachments,
+    setComposerAttachments,
+    stagedRepoBinding,
+    setStagedRepoBinding,
+    composerInputRef,
+  } = useComposerState();
   const [sidebarQuery, setSidebarQuery] = useState("");
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [openConversationMenuId, setOpenConversationMenuId] = useState<string | null>(null);
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
-  const [liveRun, setLiveRunState] = useState<LiveRunState | null>(null);
-  // Keep ref in sync for hasPendingForThis (avoids declaration-order issues).
-  // Only suppress detail fetch while the run is actively running — once completed/failed,
-  // allow the fetch so `runs` populates and the liveRun can be cleared.
-  liveRunRef.current = liveRun !== null && liveRun.status === "running";
-  const setLiveRun = (v: LiveRunState | null | ((prev: LiveRunState | null) => LiveRunState | null)) => {
-    setLiveRunState(v);
-  };
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isSending, setIsSending] = useState(false);
   const [deletingConversationId, setDeletingConversationId] = useState<string | null>(null);
-  const [renamingConversation, setRenamingConversation] = useState<{ id: string; title: string } | null>(null);
   const renameMutation = useRenameConversation();
   const starMutation = useToggleConversationStar();
-  const [isDraggingOver, setIsDraggingOver] = useState(false);
-  // Files staged locally (not yet uploaded) — used on /chat/new where no conversation exists
-  const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
-  // Maps attachment ID → local object URL for image previews (avoids round-trip to Anthropic API)
-  const previewUrlMapRef = useRef<Map<string, string>>(new Map());
-  // Repo binding selected on /chat/new before conversation exists
-  const [stagedRepoBinding, setStagedRepoBinding] = useState<{ id: string; repoFullName: string } | null>(null);
-  const [plusMenuOpen, setPlusMenuOpen] = useState(false);
-  const [connectorModalOpen, setConnectorModalOpen] = useState(false);
-  const [repoModalOpen, setRepoModalOpen] = useState(false);
-  const [repoChipOpen, setRepoChipOpen] = useState(false);
-  const [secretsModalOpen, setSecretsModalOpen] = useState(false);
-  const linkRepoMutation = useLinkRepoToConversation();
+  const { pendingFiles, setPendingFiles, isDraggingOver, setIsDraggingOver, fileInputRef, handleUpload } =
+    useFileUpload({
+      activeConversationId,
+      activeConversation,
+      previewUrlMapRef,
+      setComposerAttachments,
+    });
+  const {
+    connectorModalOpen,
+    setConnectorModalOpen,
+    repoModalOpen,
+    setRepoModalOpen,
+    repoChipOpen,
+    setRepoChipOpen,
+    secretsModalOpen,
+    setSecretsModalOpen,
+    searchModalOpen,
+    setSearchModalOpen,
+    plusMenuOpen,
+    setPlusMenuOpen,
+    renamingConversation,
+    setRenamingConversation,
+  } = useModalState();
   const plusButtonRef = useRef<HTMLButtonElement | null>(null);
-  const { preferences: userPreferences, savePreferences } = usePreferences();
-  const agentPreferences: AgentPreferences = {
-    thinking: userPreferences.agent.thinking,
-    effort: userPreferences.agent.effort,
-    memory: userPreferences.agent.memory,
-  };
   const deferredSidebarQuery = useDeferredValue(sidebarQuery);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const profileRef = useRef<HTMLDivElement | null>(null);
-  const transcriptRef = useRef<HTMLDivElement | null>(null);
-  const stageRef = useRef<HTMLDivElement | null>(null);
-  const [showScrollDown, setShowScrollDown] = useState(false);
-  const latestRunRef = useRef<HTMLDivElement | null>(null);
-  const footerRef = useRef<HTMLElement | null>(null);
   const modelButtonRef = useRef<HTMLButtonElement | null>(null);
   const wasLandingRef = useRef(true);
   const [animateComposerDock, setAnimateComposerDock] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
-  const [searchModalOpen, setSearchModalOpen] = useState(false);
   const storedModel = activeConversation?.mainAgentModel;
   const availableIds = catalog?.availableMainModels.map((m) => m.id);
   const isStoredModelValid = storedModel && availableIds?.includes(storedModel);
@@ -209,10 +209,6 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   }, []);
 
   useEffect(() => {
-    resizeComposer(composerInputRef.current);
-  }, [composerValue]);
-
-  useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 980px)");
     const syncViewport = (event?: MediaQueryListEvent) => {
       const matches = event?.matches ?? mediaQuery.matches;
@@ -231,6 +227,10 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   }, []);
 
   const runs = useMemo(() => activeConversation?.runs ?? [], [activeConversation?.runs]);
+
+  const { showScrollDown, transcriptRef, stageRef, latestRunRef, footerRef, syncScrollShadows, scrollToBottom } =
+    useScrollManager({ liveRun, runs, activeConversationId });
+
   const isNewChat = !activeConversationId;
   const hasLiveContent = Boolean(liveRun);
   const isLandingState = !hasLiveContent && (isNewChat || (!isLoadingDetail && runs.length === 0));
@@ -259,122 +259,17 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
     wasLandingRef.current = isNewChat;
   }, [isLandingState, isNewChat]);
 
-  // Reset staged state on navigation — skip if a pending message targets this
-  // conversation (the sibling effect will consume pending state), or if startStream
-  // already ran for this conversation (guards against React Strict Mode's second
-  // effect run where the pending message was consumed but blob URLs must survive).
-  useEffect(() => {
-    const pendingForThis = activeConversationId && peekPendingMessage()?.conversationId === activeConversationId;
-    const streamForThis = streamStartedForRef.current === activeConversationId;
-    if (pendingForThis || streamForThis) return;
-
-    setPendingFiles((prev) => {
-      for (const pf of prev) {
-        if (pf.previewUrl) URL.revokeObjectURL(pf.previewUrl);
-      }
-      return [];
-    });
-    for (const url of previewUrlMapRef.current.values()) {
-      URL.revokeObjectURL(url);
-    }
-    previewUrlMapRef.current.clear();
-    setStagedRepoBinding(null);
-  }, [activeConversationId]);
-
-  // Clear staged repo binding once the real linked binding arrives
-  useEffect(() => {
-    if (activeConversation?.repoBinding && stagedRepoBinding) {
-      setStagedRepoBinding(null);
-    }
-  }, [activeConversation?.repoBinding, stagedRepoBinding]);
-
-  // Auto-send pending message when navigating to a new chat page
-  const handlePendingMessage = useEffectEvent((convId: string) => {
-    const pending = consumePendingMessage();
-    if (pending && pending.conversationId === convId) {
-      // Restore staged repo binding so the chip shows immediately (before mutation resolves)
-      if (pending.stagedRepoBindingId && pending.stagedRepoFullName) {
-        setStagedRepoBinding({ id: pending.stagedRepoBindingId, repoFullName: pending.stagedRepoFullName });
-      }
-      void startStream(convId, pending.prompt, pending.attachments, pending.isNew ?? true, {
-        stagedFiles: pending.stagedFiles,
-        stagedRepoBindingId: pending.stagedRepoBindingId,
-      });
-    }
+  usePendingMessage({
+    conversationId,
+    activeConversationId,
+    activeConversation,
+    streamStartedForRef,
+    setPendingFiles,
+    previewUrlMapRef,
+    setStagedRepoBinding,
+    stagedRepoBinding,
+    startStream,
   });
-
-  useEffect(() => {
-    if (!conversationId) return;
-    handlePendingMessage(conversationId);
-  }, [conversationId]);
-
-  function syncScrollShadows() {
-    const el = transcriptRef.current;
-    const stage = stageRef.current;
-    if (!el || !stage) return;
-
-    // Cap scroll: keep at least 200px of the last run's actual content visible.
-    // Uses the .run-thread element (not the min-height wrapper) to find the real content bottom.
-    const lastRunWrapper = latestRunRef.current;
-    if (lastRunWrapper) {
-      const runThread = lastRunWrapper.querySelector(".run-thread") ?? lastRunWrapper;
-      const containerTop = el.getBoundingClientRect().top;
-      const contentBottom = runThread.getBoundingClientRect().bottom - containerTop + el.scrollTop;
-      const maxScrollTop = contentBottom - 200;
-      if (maxScrollTop > 0 && el.scrollTop > maxScrollTop) {
-        el.scrollTop = maxScrollTop;
-      }
-    }
-
-    const scrollTop = el.scrollTop;
-    const scrollBottom = el.scrollHeight - el.clientHeight - scrollTop;
-    stage.dataset.scrollTop = scrollTop > 8 ? "true" : "false";
-    stage.dataset.scrollBottom = scrollBottom > 8 ? "true" : "false";
-    // Show scroll-down only when actual message content extends below the footer
-    if (footerRef.current && el) {
-      const lastThread = el.querySelector(".run-thread:last-of-type");
-      if (lastThread) {
-        const contentBottom = lastThread.getBoundingClientRect().bottom;
-        const footerTop = footerRef.current.getBoundingClientRect().top;
-        setShowScrollDown(contentBottom > footerTop);
-      } else {
-        setShowScrollDown(false);
-      }
-    }
-  }
-
-  // On new message send: scroll the latest user message to the top of the viewport
-  // No auto-scroll during streaming — user controls their own scroll pace
-  const scrollRafRef = useRef(0);
-  useEffect(() => {
-    if (!liveRun) return;
-    setShowScrollDown(false);
-    // Cancel any pending scroll from a previous run
-    cancelAnimationFrame(scrollRafRef.current);
-    const raf1 = requestAnimationFrame(() => {
-      const raf2 = requestAnimationFrame(() => {
-        if (latestRunRef.current && transcriptRef.current) {
-          const container = transcriptRef.current;
-          const el = latestRunRef.current;
-          const containerRect = container.getBoundingClientRect();
-          const elRect = el.getBoundingClientRect();
-          const scrollTarget = elRect.top - containerRect.top + container.scrollTop - 16;
-          container.scrollTo({ top: scrollTarget, behavior: "smooth" });
-        }
-        syncScrollShadows();
-      });
-      scrollRafRef.current = raf2;
-    });
-    scrollRafRef.current = raf1;
-    // Only scroll when a new run starts (runId changes), not on every streaming update
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveRun?.runId]);
-
-  // Recalculate scroll button visibility when content changes (e.g. after page refresh, data load)
-  // Double rAF ensures DOM has painted the new content before measuring
-  useEffect(() => {
-    requestAnimationFrame(() => requestAnimationFrame(() => syncScrollShadows()));
-  }, [runs, liveRun, activeConversationId]);
 
   useEffect(() => {
     setOpenConversationMenuId(null);
@@ -459,502 +354,6 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
     }
   }
 
-  function handleUpload(files: FileList | null) {
-    if (!files?.length) return;
-
-    const convId = activeConversation?.id ?? activeConversationId;
-
-    if (!convId) {
-      // /chat/new — no conversation exists. Stage files locally, upload on send.
-      const newEntries: PendingFile[] = Array.from(files).map((file) => ({
-        clientId: crypto.randomUUID(),
-        file,
-        previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : null,
-        status: "staged" as const,
-      }));
-      setPendingFiles((prev) => [...prev, ...newEntries]);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      return;
-    }
-
-    // Existing conversation — upload immediately
-    void uploadFiles(files, convId);
-  }
-
-  async function uploadFiles(files: FileList | File[], convId: string) {
-    const fileArray = Array.from(files);
-    const newPending: PendingFile[] = fileArray.map((file) => ({
-      clientId: crypto.randomUUID(),
-      file,
-      previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : null,
-      status: "uploading" as const,
-    }));
-    setPendingFiles((prev) => [...prev, ...newPending]);
-
-    const results = await Promise.allSettled(
-      newPending.map(async (pf) => {
-        const formData = new FormData();
-        formData.append("conversationId", convId);
-        formData.append("file", pf.file);
-        const body = await api.upload<{ attachment: AttachmentDto }>("/api/uploads", formData);
-        return { clientId: pf.clientId, attachment: body.attachment };
-      }),
-    );
-
-    const successAttachments: AttachmentDto[] = [];
-    const updatedStatuses = new Map<string, Partial<PendingFile>>();
-
-    for (const result of results) {
-      if (result.status === "fulfilled") {
-        const { clientId, attachment } = result.value;
-        successAttachments.push(attachment);
-        updatedStatuses.set(clientId, { status: "done", attachment });
-        const pf = newPending.find((p) => p.clientId === clientId);
-        if (pf?.previewUrl) {
-          previewUrlMapRef.current.set(attachment.id, pf.previewUrl);
-        }
-      } else {
-        const idx = results.indexOf(result);
-        const pf = newPending[idx];
-        if (pf) {
-          updatedStatuses.set(pf.clientId, {
-            status: "error",
-            error: result.reason instanceof Error ? result.reason.message : "Upload failed.",
-          });
-        }
-      }
-    }
-
-    setPendingFiles((prev) =>
-      prev
-        .map((pf) => {
-          const update = updatedStatuses.get(pf.clientId);
-          return update ? { ...pf, ...update } : pf;
-        })
-        .filter((pf) => pf.status !== "done"),
-    );
-
-    if (successAttachments.length > 0) {
-      setComposerAttachments((existing) => {
-        const existingIds = new Set(existing.map((a) => a.id));
-        const newOnes = successAttachments.filter((a) => !existingIds.has(a.id));
-        return [...existing, ...newOnes];
-      });
-    }
-
-    if (fileInputRef.current) fileInputRef.current.value = "";
-
-    return successAttachments;
-  }
-
-  function updateConversationTitle(conversationId: string, title: string) {
-    // Update detail cache
-    queryClient.setQueryData<ConversationDetailDto>(queryKeys.conversation(conversationId), (old) =>
-      old ? { ...old, title } : old,
-    );
-    // Update list cache
-    queryClient.setQueryData<ConversationSummaryDto[]>(queryKeys.conversations, (old) =>
-      (old ?? []).map((c) => (c.id === conversationId ? { ...c, title } : c)),
-    );
-  }
-
-  async function startStream(
-    conversationId: string,
-    prompt: string,
-    attachments: AttachmentDto[],
-    isNew: boolean,
-    opts?: {
-      stagedFiles?: Array<{ clientId: string; file: File; previewUrl: string | null }>;
-      stagedRepoBindingId?: string | null;
-    },
-  ) {
-    setIsSending(true);
-    setErrorMessage(null);
-    setComposerValue("");
-    setComposerAttachments([]);
-    // Mark this conversation so the cleanup effect skips revocation (survives Strict Mode re-runs)
-    streamStartedForRef.current = conversationId;
-    setPendingFiles([]);
-    // NOTE: preview URLs are NOT revoked here — the run thread still needs them.
-    // They are revoked on navigation (activeConversationId effect).
-    // NOTE: stagedRepoBinding is NOT cleared here — it bridges the gap until
-    // activeConversation.repoBinding is populated by the link mutation.
-    // Build placeholder AttachmentDtos from staged files so chips show immediately
-    // (before the upload round-trip completes). They'll be replaced with real ones after upload.
-    const placeholderAttachments: AttachmentDto[] = (opts?.stagedFiles ?? []).map((sf) => {
-      const mt = sf.file.type || "application/octet-stream";
-      const kind: AttachmentDto["kind"] = mt.startsWith("image/")
-        ? "IMAGE"
-        : mt === "application/pdf"
-          ? "PDF"
-          : "OTHER";
-      return {
-        id: sf.clientId,
-        kind,
-        filename: sf.file.name,
-        mediaType: mt,
-        sizeBytes: sf.file.size,
-        anthropicFileId: null,
-        createdAt: new Date().toISOString(),
-        metadataJson: sf.previewUrl ? { localPreviewUrl: sf.previewUrl } : null,
-      };
-    });
-    // Seed previewUrlMap with placeholder IDs so image thumbnails render during upload
-    for (const sf of opts?.stagedFiles ?? []) {
-      if (sf.previewUrl) {
-        previewUrlMapRef.current.set(sf.clientId, sf.previewUrl);
-      }
-    }
-    setLiveRun({
-      runId: null,
-      userPrompt: prompt,
-      attachments: [...attachments, ...placeholderAttachments],
-      outputAttachments: [],
-      events: [],
-      partialText: "",
-      status: "running",
-      error: null,
-    });
-
-    try {
-      // Create the conversation in DB if this is a new chat (atomically with repo binding)
-      if (isNew) {
-        await createMutation.mutateAsync({
-          id: conversationId,
-          repoBindingId: opts?.stagedRepoBindingId ?? undefined,
-        });
-      } else if (opts?.stagedRepoBindingId) {
-        // Existing conversation — link repo binding separately
-        await linkRepoMutation.mutateAsync({ conversationId, repoBindingId: opts.stagedRepoBindingId });
-      }
-
-      // Upload staged files now that conversation exists
-      let uploadedAttachments: AttachmentDto[] = [];
-      if (opts?.stagedFiles?.length) {
-        const stagedCount = opts.stagedFiles.length;
-        const results = await Promise.allSettled(
-          opts.stagedFiles.map(async (sf) => {
-            const formData = new FormData();
-            formData.append("conversationId", conversationId);
-            formData.append("file", sf.file);
-            const body = await api.upload<{ attachment: AttachmentDto }>("/api/uploads", formData);
-            if (sf.previewUrl) {
-              previewUrlMapRef.current.set(body.attachment.id, sf.previewUrl);
-            }
-            return body.attachment;
-          }),
-        );
-        uploadedAttachments = results
-          .filter((r): r is PromiseFulfilledResult<AttachmentDto> => r.status === "fulfilled")
-          .map((r) => r.value);
-
-        if (uploadedAttachments.length === 0 && stagedCount > 0) {
-          throw new Error("All file uploads failed.");
-        }
-      }
-
-      const allAttachments = [...attachments, ...uploadedAttachments];
-
-      // Update the live run to include the uploaded attachments
-      if (uploadedAttachments.length > 0) {
-        setLiveRun((prev) => (prev ? { ...prev, attachments: allAttachments } : prev));
-      }
-
-      const response = await api.stream(`/api/conversations/${conversationId}/messages`, {
-        prompt,
-        attachmentIds: allAttachments.map((attachment) => attachment.id),
-        preferences: agentPreferences,
-        ...(isNew ? { isNew: true } : {}),
-      });
-
-      const reader = response.body!.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let lastRunId: string | null = null;
-      let lastPartialText = "";
-      const allEvents: TimelineEventEnvelope[] = [];
-      const pendingEvents: TimelineEventEnvelope[] = [];
-      let rafScheduled = false;
-
-      while (true) {
-        const { done, value } = await reader.read();
-
-        if (done) {
-          break;
-        }
-
-        buffer += decoder.decode(value, { stream: true });
-        const segments = buffer.split("\n\n");
-        buffer = segments.pop() ?? "";
-
-        for (const segment of segments) {
-          const line = segment.split("\n").find((candidate) => candidate.startsWith("data: "));
-
-          if (!line) {
-            continue;
-          }
-
-          const event = JSON.parse(line.slice(6)) as TimelineEventEnvelope;
-          allEvents.push(event);
-          pendingEvents.push(event);
-
-          if (event.type === "conversation.updated" && typeof event.payload?.title === "string") {
-            updateConversationTitle(event.conversationId, event.payload.title);
-          }
-
-          // Batch state updates — flush at most once per animation frame
-          if (!rafScheduled) {
-            rafScheduled = true;
-            requestAnimationFrame(() => {
-              rafScheduled = false;
-              const batch = pendingEvents.splice(0);
-              if (batch.length === 0) return;
-
-              setLiveRun((current) => {
-                if (!current) return current;
-
-                let text = current.partialText;
-                let status = current.status;
-                let error = current.error;
-                let runId = current.runId;
-                let newOutputAttachments: AttachmentDto[] | null = null;
-                const extraEvents: TimelineEventEnvelope[] = [];
-
-                for (const ev of batch) {
-                  runId = ev.runId;
-                  // When a tool call starts and we have accumulated text,
-                  // flush it as an intermediate text timeline entry
-                  if (ev.type === "tool.call.started" && text.trim()) {
-                    extraEvents.push({
-                      id: `intermediate-${ev.id}`,
-                      runId: ev.runId,
-                      conversationId: ev.conversationId,
-                      type: "assistant.text.intermediate",
-                      source: "main_agent",
-                      ts: ev.ts,
-                      payload: { text: text.trim() },
-                    });
-                    text = "";
-                  }
-                  if (ev.type === "assistant.text.delta") {
-                    text += String(ev.payload?.delta ?? "");
-                  }
-                  if (ev.type === "assistant.message.completed" && typeof ev.payload?.text === "string") {
-                    text = ev.payload.text;
-                    if (Array.isArray(ev.payload.outputAttachments)) {
-                      newOutputAttachments = ev.payload.outputAttachments as AttachmentDto[];
-                    }
-                  }
-                  if (ev.type === "run.failed") {
-                    status = "failed";
-                    error = String(ev.payload?.error ?? "The agent run failed.");
-                  }
-                  if (ev.type === "run.cancelled") {
-                    status = "interrupted";
-                  }
-                }
-
-                lastRunId = runId;
-                lastPartialText = text;
-
-                // Only store events needed for timeline rendering (skip text deltas)
-                const timelineEvents = [
-                  ...extraEvents,
-                  ...batch.filter(
-                    (ev) => ev.type !== "assistant.text.delta" && ev.type !== "assistant.thinking.completed",
-                  ),
-                ];
-
-                return {
-                  ...current,
-                  runId,
-                  partialText: text,
-                  events: timelineEvents.length > 0 ? [...current.events, ...timelineEvents] : current.events,
-                  ...(newOutputAttachments ? { outputAttachments: newOutputAttachments } : {}),
-                  status,
-                  error,
-                };
-              });
-            });
-          }
-        }
-      }
-
-      // Flush any remaining batched events synchronously before transitioning
-      if (pendingEvents.length > 0) {
-        const batch = pendingEvents.splice(0);
-        setLiveRun((current) => {
-          if (!current) return current;
-          let text = current.partialText;
-          let status = current.status;
-          let error = current.error;
-          let runId = current.runId;
-          let newOutputAttachments: AttachmentDto[] | null = null;
-          const extraEvents: TimelineEventEnvelope[] = [];
-          for (const ev of batch) {
-            runId = ev.runId;
-            if (ev.type === "tool.call.started" && text.trim()) {
-              extraEvents.push({
-                id: `intermediate-${ev.id}`,
-                runId: ev.runId,
-                conversationId: ev.conversationId,
-                type: "assistant.text.intermediate",
-                source: "main_agent",
-                ts: ev.ts,
-                payload: { text: text.trim() },
-              });
-              text = "";
-            }
-            if (ev.type === "assistant.text.delta") {
-              text += String(ev.payload?.delta ?? "");
-            }
-            if (ev.type === "assistant.message.completed" && typeof ev.payload?.text === "string") {
-              text = ev.payload.text;
-              if (Array.isArray(ev.payload.outputAttachments)) {
-                newOutputAttachments = ev.payload.outputAttachments as AttachmentDto[];
-              }
-            }
-            if (ev.type === "run.failed") {
-              status = "failed";
-              error = String(ev.payload?.error ?? "The agent run failed.");
-            }
-            if (ev.type === "run.cancelled") {
-              status = "interrupted";
-            }
-          }
-          lastRunId = runId;
-          lastPartialText = text;
-          const timelineEvents = [
-            ...extraEvents,
-            ...batch.filter((ev) => ev.type !== "assistant.text.delta" && ev.type !== "assistant.thinking.completed"),
-          ];
-          return {
-            ...current,
-            runId,
-            partialText: text,
-            events: timelineEvents.length > 0 ? [...current.events, ...timelineEvents] : current.events,
-            ...(newOutputAttachments ? { outputAttachments: newOutputAttachments } : {}),
-            status,
-            error,
-          };
-        });
-      }
-
-      // Phase 5: Post-stream cache patch instead of refreshConversation()
-      if (lastRunId) {
-        const completedEvent = allEvents.find((e) => e.type === "run.completed");
-        const cancelledEvent = allEvents.find((e) => e.type === "run.cancelled");
-        const finalText = lastPartialText;
-        const now = new Date().toISOString();
-
-        const runStatus = completedEvent
-          ? ("COMPLETED" as const)
-          : cancelledEvent
-            ? ("CANCELLED" as const)
-            : ("FAILED" as const);
-
-        // Patch detail cache — append the completed run
-        queryClient.setQueryData<ConversationDetailDto>(queryKeys.conversation(conversationId), (old) => {
-          if (!old) return old;
-
-          // Extract output attachments from the completed event payload
-          const completedMsgEvent = allEvents.find((e) => e.type === "assistant.message.completed");
-          const patchOutputAttachments = Array.isArray(completedMsgEvent?.payload?.outputAttachments)
-            ? (completedMsgEvent.payload.outputAttachments as AttachmentDto[])
-            : [];
-
-          const newRun: RunDto = {
-            id: lastRunId!,
-            status: runStatus,
-            userPrompt: prompt,
-            finalText,
-            metadataJson: cancelledEvent ? { cancelled: true } : null,
-            createdAt: now,
-            updatedAt: now,
-            completedAt: completedEvent || cancelledEvent ? now : null,
-            cancelledAt: cancelledEvent ? now : null,
-            attachments: allAttachments,
-            outputAttachments: patchOutputAttachments,
-            approvals: [],
-            events: allEvents.filter((e) => e.runId === lastRunId),
-            codingSession: null,
-          };
-
-          // Replace the run if it already exists (background refetch may have added it
-          // while still RUNNING), otherwise append.
-          const existingIndex = old.runs.findIndex((r) => r.id === newRun.id);
-          const updatedRuns =
-            existingIndex >= 0 ? old.runs.map((r) => (r.id === newRun.id ? newRun : r)) : [...old.runs, newRun];
-
-          return {
-            ...old,
-            updatedAt: now,
-            runs: updatedRuns,
-          };
-        });
-
-        // Patch list cache — update snippet and timestamp
-        queryClient.setQueryData<ConversationSummaryDto[]>(queryKeys.conversations, (old) =>
-          (old ?? []).map((c) =>
-            c.id === conversationId
-              ? {
-                  ...c,
-                  updatedAt: now,
-                  latestSnippet: finalText || prompt,
-                  latestRunStatus: runStatus,
-                }
-              : c,
-          ),
-        );
-
-        // Mark liveRun as completed (stops cursor/spinner) but keep it rendered.
-        setLiveRun((prev) => (prev ? { ...prev, status: "completed" } : prev));
-
-        // Mark the conversations list stale for next navigation.
-        // NOTE: Do NOT invalidate the detail query here — the cache was just patched
-        // with the completed run. Invalidating would trigger a background refetch when
-        // the detail query re-enables (hasPendingForThis goes false), and if the server
-        // hasn't persisted the run yet, the refetch overwrites the patch and the run
-        // disappears. staleTime (30s) handles natural refresh on subsequent navigations.
-        void queryClient.invalidateQueries({
-          queryKey: queryKeys.conversations,
-          refetchType: "none",
-        });
-      }
-    } catch (error) {
-      const message = error instanceof Error ? normalizeApiErrorMessage(error.message) : "Failed to send prompt.";
-      // Show error inline in the run response, not as a top banner
-      setLiveRun((current) =>
-        current
-          ? {
-              ...current,
-              status: "failed",
-              error: message,
-              partialText: current.partialText || `Something went wrong: ${message}`,
-              events: current.events.some((event) => event.type === "run.failed")
-                ? current.events
-                : [
-                    ...current.events,
-                    {
-                      id: `client-run-failed-${Date.now()}`,
-                      runId: current.runId ?? "pending",
-                      conversationId,
-                      type: "run.failed",
-                      source: "system",
-                      ts: new Date().toISOString(),
-                      payload: {
-                        error: message,
-                      },
-                    },
-                  ],
-            }
-          : current,
-      );
-    } finally {
-      setIsSending(false);
-    }
-  }
-
   function handleSend() {
     if (!composerValue.trim() || isSending) return;
     // Block send while any files are actively uploading (on existing conversations)
@@ -962,6 +361,11 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
 
     const prompt = composerValue.trim();
     const attachments = composerAttachments;
+
+    // Clear composer state before streaming
+    setComposerValue("");
+    setComposerAttachments([]);
+    setPendingFiles([]);
 
     if (activeConversation) {
       // Existing chat — stream directly
@@ -984,12 +388,6 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
       setIsSending(true);
       router.push(`/chat/${newId}`);
     }
-  }
-
-  async function handleStop() {
-    const runId = liveRun?.runId;
-    if (!runId) return;
-    await api.post(`/api/agent/runs/${runId}/stop`).catch(() => {});
   }
 
   function handleSelectMainModel(modelId: string) {
@@ -1673,11 +1071,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                 aria-label="Scroll to bottom"
                 className="absolute left-1/2 -translate-x-1/2 -top-11 h-8 w-8 rounded-full border border-[rgba(255,255,255,0.1)] bg-[#30302e] shadow-[0_2px_8px_rgba(0,0,0,0.2)] flex items-center justify-center text-[rgba(236,230,219,0.5)] hover:text-[rgba(236,230,219,0.8)] hover:border-[rgba(255,255,255,0.18)] transition-all duration-150 cursor-pointer"
                 onClick={() => {
-                  setShowScrollDown(false);
-                  transcriptRef.current?.scrollTo({
-                    top: transcriptRef.current.scrollHeight,
-                    behavior: "smooth",
-                  });
+                  scrollToBottom();
                 }}
               >
                 <svg
