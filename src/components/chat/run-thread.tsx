@@ -1,13 +1,20 @@
 "use client";
 
 import { code } from "@streamdown/code";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Streamdown } from "streamdown";
 import { RunActivityAccordion } from "@/components/chat/activity-accordion";
 import { AttachmentChip } from "@/components/chat/attachment-chip";
 import { CopyButton } from "@/components/chat/copy-button";
-import { HtmlPreviewModal } from "@/components/chat/html-preview-modal";
+import { useTooltip } from "@/hooks/useTooltip";
+
+const HtmlPreviewModal = dynamic(
+  () => import("@/components/chat/html-preview-modal").then((m) => ({ default: m.HtmlPreviewModal })),
+  { ssr: false },
+);
+
 import { buildTimelineEntries, formatShortTime, groupEntriesIntoSegments, isHtmlAttachment } from "@/lib/chat-utils";
 import type { AttachmentDto, TimelineEventEnvelope } from "@/lib/contracts";
 
@@ -130,46 +137,8 @@ export function RunThread({
     return cost > 0 ? cost : null;
   }, [events]);
 
-  // Citation tooltip state
-  const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
-  const tooltipTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  function handleCitationMouseOver(e: React.MouseEvent) {
-    const anchor = (e.target as HTMLElement).closest("a[title], a[data-title]") as HTMLAnchorElement | null;
-    if (!anchor) {
-      if (tooltipTimeout.current) clearTimeout(tooltipTimeout.current);
-      tooltipTimeout.current = setTimeout(() => setTooltip(null), 100);
-      return;
-    }
-    // Swap title → data-title to suppress native tooltip
-    if (anchor.title) {
-      anchor.setAttribute("data-title", anchor.title);
-      anchor.removeAttribute("title");
-    }
-    const text = anchor.getAttribute("data-title");
-    if (!text) return;
-    if (tooltipTimeout.current) clearTimeout(tooltipTimeout.current);
-    const rect = anchor.getBoundingClientRect();
-    setTooltip({
-      text,
-      x: rect.left + rect.width / 2,
-      y: rect.top,
-    });
-  }
-
-  function handleCitationMouseOut(e: React.MouseEvent) {
-    const related = e.relatedTarget as HTMLElement | null;
-    if (related?.closest?.("a[data-title]")) return;
-    if (tooltipTimeout.current) clearTimeout(tooltipTimeout.current);
-    tooltipTimeout.current = setTimeout(() => setTooltip(null), 100);
-  }
-
-  useEffect(
-    () => () => {
-      if (tooltipTimeout.current) clearTimeout(tooltipTimeout.current);
-    },
-    [],
-  );
+  // Citation tooltip
+  const { tooltip, handleMouseOver: handleCitationMouseOver, handleMouseOut: handleCitationMouseOut } = useTooltip();
 
   // For the last run: if there's an agent response, show actions on agent row always; user row on hover.
   // If no agent response yet, user row is the last visible — show always.

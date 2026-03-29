@@ -2,7 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
-import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { useEmailAuth, useGoogleAuth } from "@/hooks/useAuth";
 
 /* ── Inline SVG icons ── */
 
@@ -242,40 +242,14 @@ export default function LoginPage() {
 function LoginContent() {
   const searchParams = useSearchParams();
   const next = searchParams.get("next") ?? "/chat/new";
-  const [isLoading, setIsLoading] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [authError, setAuthError] = useState<string | null>(null);
   const [showEmailForm, setShowEmailForm] = useState(false);
 
-  async function handleGoogleSignIn() {
-    setIsLoading(true);
-    const supabase = getSupabaseBrowserClient();
-    await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
-      },
-    });
-  }
-
-  async function handleEmailSignIn(e: React.FormEvent) {
-    e.preventDefault();
-    if (!email.trim() || !password.trim()) return;
-    setIsLoading(true);
-    setAuthError(null);
-    const supabase = getSupabaseBrowserClient();
-    const { error } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password: password.trim(),
-    });
-    if (error) {
-      setAuthError(error.message);
-      setIsLoading(false);
-    } else {
-      window.location.href = next;
-    }
-  }
+  const google = useGoogleAuth(next);
+  const emailAuth = useEmailAuth(next);
+  const isLoading = google.isLoading || emailAuth.isLoading;
+  const authError = emailAuth.error;
 
   return (
     <div className="bg-background text-foreground">
@@ -302,7 +276,7 @@ function LoginContent() {
             <div className="mt-10 flex flex-col gap-3">
               <button
                 type="button"
-                onClick={handleGoogleSignIn}
+                onClick={google.signIn}
                 disabled={isLoading}
                 className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-[rgba(255,255,255,0.12)] bg-[rgba(255,255,255,0.06)] px-5 py-3 text-[0.9rem] font-medium text-[rgba(245,240,232,0.92)] transition-all duration-150 hover:bg-[rgba(255,255,255,0.1)] hover:border-[rgba(255,255,255,0.18)] active:scale-[0.985] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
@@ -325,7 +299,13 @@ function LoginContent() {
                   Sign in with email
                 </button>
               ) : (
-                <form onSubmit={handleEmailSignIn} className="flex flex-col gap-2.5">
+                <form
+                  onSubmit={(e: React.FormEvent) => {
+                    e.preventDefault();
+                    emailAuth.signIn(email, password);
+                  }}
+                  className="flex flex-col gap-2.5"
+                >
                   <input
                     type="email"
                     placeholder="Email"
@@ -571,7 +551,7 @@ function LoginContent() {
           <div className="mt-8 max-w-[320px] mx-auto">
             <button
               type="button"
-              onClick={handleGoogleSignIn}
+              onClick={google.signIn}
               disabled={isLoading}
               className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-[rgba(255,255,255,0.12)] bg-[rgba(255,255,255,0.06)] px-5 py-3 text-[0.9rem] font-medium text-[rgba(245,240,232,0.92)] transition-all duration-150 hover:bg-[rgba(255,255,255,0.1)] hover:border-[rgba(255,255,255,0.18)] active:scale-[0.985] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >

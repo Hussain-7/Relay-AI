@@ -7,7 +7,11 @@ import { useRouter } from "next/navigation";
 import { useCallback, useDeferredValue, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { type AgentPreferences, ComposerModelMenuPortal } from "@/components/chat/composer-model-menu";
 import { ComposerPlusMenuPortal } from "@/components/chat/composer-plus-menu";
-import { RenameModal } from "@/components/chat/rename-modal";
+
+const RenameModal = dynamic(() => import("@/components/chat/rename-modal").then((m) => ({ default: m.RenameModal })), {
+  ssr: false,
+});
+
 import { SidebarMenuPortal } from "@/components/chat/sidebar-menu-portal";
 import {
   IconArrowUp,

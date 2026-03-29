@@ -1,13 +1,12 @@
 "use client";
 
-import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { IconPlus } from "@/components/icons";
 import { ModalBackdrop, ModalHeader, ModalPanel } from "@/components/ui/modal";
 import { Toggle } from "@/components/ui/toggle";
+import { useOAuthListener } from "@/hooks/useOAuthListener";
 import {
   type McpConnectorDto,
-  queryKeys,
   useCreateMcpConnector,
   useDeleteMcpConnector,
   useMcpConnectors,
@@ -268,34 +267,12 @@ function AddConnectorForm({ onBack, onCreated }: { onBack: () => void; onCreated
 // ── Modal ───────────────────────────────────────────────────────────────────
 
 export function McpConnectorModal({ onClose }: { onClose: () => void }) {
-  const queryClient = useQueryClient();
   const { data: connectors = [], isLoading } = useMcpConnectors();
   const deleteMutation = useDeleteMcpConnector();
   const toggleMutation = useToggleMcpConnector();
+  const { oauthError, authorize: handleAuthorize } = useOAuthListener();
 
   const [view, setView] = useState<"list" | "add">("list");
-  const [oauthError, setOauthError] = useState<string | null>(null);
-
-  // Listen for OAuth popup messages
-  useEffect(() => {
-    function handleMessage(event: MessageEvent) {
-      if (event.data?.type === "mcp-connector-linked") {
-        setOauthError(null);
-        void queryClient.invalidateQueries({ queryKey: queryKeys.mcpConnectors });
-      }
-      if (event.data?.type === "mcp-connector-error") {
-        setOauthError(String(event.data.error ?? "OAuth authorization failed"));
-        void queryClient.invalidateQueries({ queryKey: queryKeys.mcpConnectors });
-      }
-    }
-    window.addEventListener("message", handleMessage);
-    return () => window.removeEventListener("message", handleMessage);
-  }, [queryClient]);
-
-  const handleAuthorize = useCallback((id: string) => {
-    setOauthError(null);
-    window.open(`/api/mcp-connectors/${id}/authorize`, "mcp-oauth", "width=600,height=700,popup=yes");
-  }, []);
 
   return (
     <ModalBackdrop onClose={onClose}>

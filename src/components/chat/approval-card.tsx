@@ -2,48 +2,14 @@
 
 import { useState } from "react";
 
-import { api } from "@/lib/api-client";
+import { useApproval } from "@/hooks/useApproval";
 import type { RenderTimelineEntry } from "@/lib/chat-utils";
 
 type ApprovalEntry = Extract<RenderTimelineEntry, { kind: "approval" }>;
 
 export function ApprovalCard({ entry }: { entry: ApprovalEntry }) {
   const [freeformText, setFreeformText] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-
-  async function handleSubmit(selectedOption?: string) {
-    setSubmitting(true);
-    try {
-      const responseJson: Record<string, unknown> = {};
-      if (selectedOption != null) {
-        responseJson.selectedOption = selectedOption;
-        responseJson.answer = selectedOption;
-      } else {
-        responseJson.answer = freeformText.trim();
-      }
-
-      await api.post(`/api/agent/runs/${entry.runId}/approve`, {
-        approvalId: entry.approvalId,
-        status: "APPROVED",
-        responseJson,
-      });
-    } catch {
-      setSubmitting(false);
-    }
-  }
-
-  async function handleDismiss() {
-    setSubmitting(true);
-    try {
-      await api.post(`/api/agent/runs/${entry.runId}/approve`, {
-        approvalId: entry.approvalId,
-        status: "REJECTED",
-        responseJson: { reason: "dismissed" },
-      });
-    } catch {
-      setSubmitting(false);
-    }
-  }
+  const { submitting, submit, dismiss } = useApproval(entry.runId!, entry.approvalId!);
 
   // Answered state
   if (entry.status === "answered") {
@@ -90,7 +56,7 @@ export function ApprovalCard({ entry }: { entry: ApprovalEntry }) {
               key={option}
               type="button"
               disabled={submitting}
-              onClick={() => handleSubmit(option)}
+              onClick={() => submit(option)}
               className="rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.04)] px-3.5 py-1.5 text-[0.88rem] text-[rgba(245,240,232,0.85)] transition-colors hover:bg-[rgba(255,255,255,0.08)] hover:border-[rgba(255,255,255,0.16)] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
               {option}
@@ -108,7 +74,7 @@ export function ApprovalCard({ entry }: { entry: ApprovalEntry }) {
             onChange={(e) => setFreeformText(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && freeformText.trim() && !submitting) {
-                handleSubmit();
+                submit(undefined, freeformText);
               }
             }}
             disabled={submitting}
@@ -117,7 +83,7 @@ export function ApprovalCard({ entry }: { entry: ApprovalEntry }) {
           <button
             type="button"
             disabled={submitting || !freeformText.trim()}
-            onClick={() => handleSubmit()}
+            onClick={() => submit(undefined, freeformText)}
             className="inline-grid place-items-center rounded-lg bg-[rgba(255,255,255,0.08)] px-3.5 py-1.5 text-[0.88rem] text-[rgba(245,240,232,0.85)] transition-colors hover:bg-[rgba(255,255,255,0.12)] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
           >
             {submitting ? (
@@ -144,7 +110,7 @@ export function ApprovalCard({ entry }: { entry: ApprovalEntry }) {
         <button
           type="button"
           disabled={submitting}
-          onClick={handleDismiss}
+          onClick={dismiss}
           className="text-[0.78rem] text-[rgba(245,240,232,0.38)] hover:text-[rgba(245,240,232,0.55)] transition-colors cursor-pointer bg-transparent border-0 p-0 disabled:opacity-40 disabled:cursor-not-allowed"
         >
           Dismiss
