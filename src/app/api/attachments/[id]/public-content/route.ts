@@ -1,3 +1,6 @@
+import Anthropic from "@anthropic-ai/sdk";
+
+import { env } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -10,22 +13,35 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
   const attachment = await prisma.attachment.findUnique({
     where: { id },
-    select: { content: true, mediaType: true, filename: true },
+    select: { content: true, anthropicFileId: true, mediaType: true, filename: true },
   });
 
-  if (!attachment?.content || attachment.mediaType !== "text/html") {
+  if (!attachment || attachment.mediaType !== "text/html") {
     return Response.json({ error: "Not found" }, { status: 404 });
   }
 
-  const bytes = new Uint8Array(attachment.content);
+  const htmlHeaders = {
+    "Content-Type": "text/html; charset=utf-8",
+    "Content-Disposition": "inline",
+    "X-Content-Type-Options": "nosniff",
+    "Cache-Control": "public, max-age=3600",
+  };
 
-  return new Response(bytes, {
-    headers: {
-      "Content-Type": "text/html; charset=utf-8",
-      "Content-Disposition": "inline",
-      "X-Content-Type-Options": "nosniff",
-      "Cache-Control": "public, max-age=3600",
-      "Content-Length": String(bytes.byteLength),
-    },
-  });
+  // Prefer local content; fall back to streaming from Anthropic Files API
+  if (attachment.content) {
+    const bytes = new Uint8Array(attachment.content);
+    return new Response(bytes, {
+      headers: { ...htmlHeaders, "Content-Length": String(bytes.byteLength) },
+    });
+  }
+
+  if (attachment.anthropicFileId) {
+    const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+    const downloaded = await client.beta.files.download(attachment.anthropicFileId, {
+      betas: ["files-api-2025-04-14"],
+    });
+    return new Response(downloaded.body as ReadableStream, { headers: htmlHeaders });
+  }
+
+  return Response.json({ error: "Not found" }, { status: 404 });
 }

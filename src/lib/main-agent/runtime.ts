@@ -886,6 +886,19 @@ export async function streamMainAgentRun(input: {
               const meta = await anthropic.beta.files.retrieveMetadata(fileId, {
                 betas: ["files-api-2025-04-14"],
               });
+
+              // Download file content for local storage (enables preview & public sharing)
+              let contentBytes: Uint8Array<ArrayBuffer> | null = null;
+              try {
+                const downloaded = await anthropic.beta.files.download(fileId, {
+                  betas: ["files-api-2025-04-14"],
+                });
+                const ab = await new Response(downloaded.body as ReadableStream).arrayBuffer();
+                contentBytes = new Uint8Array(ab);
+              } catch (dlErr) {
+                console.warn(`Failed to download content for skill file ${fileId}:`, dlErr);
+              }
+
               const attachment = await prisma.attachment.create({
                 data: {
                   conversationId: input.conversationId,
@@ -895,6 +908,7 @@ export async function streamMainAgentRun(input: {
                   mediaType: meta.mime_type ?? "application/octet-stream",
                   sizeBytes: meta.size_bytes ?? null,
                   anthropicFileId: fileId,
+                  content: contentBytes,
                   metadataJson: { source: "skill_output", downloadable: true },
                 },
               });
