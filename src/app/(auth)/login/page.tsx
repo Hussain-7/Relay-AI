@@ -99,7 +99,7 @@ const CAPABILITIES = [
     ),
     title: "Remote Coding Sessions",
     description:
-      "Spin up persistent cloud sandboxes with full Git access. The coding agent reads, writes, tests, commits, and creates pull requests for you.",
+      "Spin up persistent cloud sandboxes that survive across turns. The coding agent reads, writes, tests, commits, and creates pull requests — with session resumption built in.",
   },
   {
     icon: (
@@ -138,7 +138,7 @@ const CAPABILITIES = [
     ),
     title: "GitHub Integration",
     description:
-      "Connect repositories directly. Clone, branch, commit, push, and open pull requests — all orchestrated by the AI agent inside cloud sandboxes.",
+      "Connect or create repositories. Clone, branch, commit, push, and open pull requests — with encrypted repo secrets injected into sandboxes automatically.",
   },
   {
     icon: (
@@ -213,12 +213,70 @@ const CAPABILITIES = [
         strokeLinejoin="round"
         className="h-6 w-6"
       >
+        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+      </svg>
+    ),
+    title: "Instant Preview URLs",
+    description:
+      "Get shareable public URLs for generated HTML artifacts and sandbox dev servers. Preview landing pages, apps, and dashboards instantly in your browser.",
+  },
+  {
+    icon: (
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="h-6 w-6"
+      >
+        <path d="M12 20h9" />
+        <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+      </svg>
+    ),
+    title: "Persistent Memory",
+    description:
+      "The agent remembers context across conversations with a workspace-level memory system. It reads, writes, and updates memory files to stay aligned with your work.",
+  },
+  {
+    icon: (
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="h-6 w-6"
+      >
+        <circle cx="12" cy="12" r="10" />
+        <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+        <path d="M12 17h.01" />
+      </svg>
+    ),
+    title: "Interactive Decisions",
+    description:
+      "The agent pauses to ask you clarifying questions when the path forward is ambiguous. Choose from options or type a freeform response to guide the work.",
+  },
+  {
+    icon: (
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="h-6 w-6"
+      >
         <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
       </svg>
     ),
     title: "MCP Connectors",
     description:
-      "Extend capabilities with Model Context Protocol servers. Connect external tools and data sources directly into your AI workspace.",
+      "Extend capabilities with Model Context Protocol servers. Connect external tools and data sources with OAuth support directly into your workspace.",
   },
 ];
 
