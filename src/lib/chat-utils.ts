@@ -205,48 +205,203 @@ export function formatToolStatusLabel(status: ToolTimelineEntry["status"]) {
   return status.slice(0, 1).toUpperCase() + status.slice(1);
 }
 
-function summarizeToolAction(name: string) {
+function summarizeToolAction(name: string, input?: string, status?: ToolTimelineEntry["status"]) {
+  const running = status === "running";
+  // Try to extract contextual info from tool input for richer summaries
+  const context = input ? extractToolContext(name, input, running) : null;
+  if (context) return context;
+
   switch (name) {
     case "web_search":
-      return "Searched the web";
+      return running ? "Searching the web" : "Searched the web";
     case "web_fetch":
-      return "Fetched source pages";
+      return running ? "Fetching source pages" : "Fetched source pages";
     case "memory":
-      return "Checked saved memory";
+      return running ? "Checking saved memory" : "Checked saved memory";
     case "code_execution":
-      return "Ran code";
+      return running ? "Writing code" : "Ran code";
     case "image_generation":
-      return "Generated an image";
+      return running ? "Generating an image" : "Generated an image";
+    case "text_editor":
+      return running ? "Editing a file" : "Edited a file";
     case "tool_search":
     case "tool_search_tool_regex":
-      return "Looked for tools";
+      return running ? "Looking for tools" : "Looked for tools";
     default:
-      return `Used ${formatToolDisplayName(name)}`;
+      return running ? `Using ${formatToolDisplayName(name)}` : `Used ${formatToolDisplayName(name)}`;
   }
 }
 
+/**
+ * Extract a contextual one-liner from tool input to make summaries dynamic.
+ * When `running` is true, uses present-progressive tense ("Searching for X").
+ * When false, uses past tense ("Searched for X").
+ * Returns null if no meaningful context can be extracted.
+ */
+function extractToolContext(toolName: string, input: string, running?: boolean): string | null {
+  try {
+    const parsed = JSON.parse(input);
+    switch (toolName) {
+      case "web_search": {
+        const query = parsed.query ?? parsed.q;
+        if (typeof query === "string" && query.trim()) {
+          const q = truncate(query.trim(), 50);
+          return running ? `Searching for "${q}"` : `Searched for "${q}"`;
+        }
+        return null;
+      }
+      case "web_fetch": {
+        const url = parsed.url;
+        if (typeof url === "string" && url.trim()) {
+          try {
+            const host = new URL(url).hostname.replace(/^www\./, "");
+            return running ? `Fetching from ${host}` : `Fetched content from ${host}`;
+          } catch {
+            return null;
+          }
+        }
+        return null;
+      }
+      case "memory": {
+        const command = parsed.command;
+        if (command === "read") return running ? "Reading saved memory" : "Read saved memory";
+        if (command === "write") return running ? "Saving to memory" : "Saved to memory";
+        if (command === "ls" || command === "list") return running ? "Browsing saved memory" : "Browsed saved memory";
+        return null;
+      }
+      case "code_execution": {
+        if (running) return "Writing code";
+        return null;
+      }
+      case "image_generation": {
+        const prompt = parsed.prompt ?? parsed.description;
+        if (typeof prompt === "string" && prompt.trim()) {
+          const p = truncate(prompt.trim(), 50);
+          return running ? `Generating "${p}"` : `Generated "${p}"`;
+        }
+        return null;
+      }
+      case "text_editor": {
+        const command = parsed.command;
+        const path = typeof parsed.path === "string" ? parsed.path : "";
+        // Skill files: /skills/<name>/SKILL.md
+        const skillMatch = path.match(/\/skills\/([^/]+)\//);
+        if (skillMatch) {
+          const skillName = skillMatch[1]!.replace(/[-_]+/g, " ");
+          return running ? `Reading ${skillName} skill` : `Loaded ${skillName} skill`;
+        }
+        // General file operations
+        const filename = path.split("/").pop() ?? path;
+        if (!filename) return null;
+        if (command === "view") return running ? `Reading ${truncate(filename, 40)}` : `Read ${truncate(filename, 40)}`;
+        if (command === "create")
+          return running ? `Creating ${truncate(filename, 40)}` : `Created ${truncate(filename, 40)}`;
+        if (command === "str_replace")
+          return running ? `Editing ${truncate(filename, 40)}` : `Edited ${truncate(filename, 40)}`;
+        if (command === "insert")
+          return running ? `Writing to ${truncate(filename, 40)}` : `Wrote to ${truncate(filename, 40)}`;
+        return null;
+      }
+      default:
+        return null;
+    }
+  } catch {
+    return null;
+  }
+}
+
+function truncate(text: string, maxLen: number): string {
+  return text.length > maxLen ? `${text.slice(0, maxLen)}…` : text;
+}
+
+/**
+ * Extract a concise status phrase from thinking text.
+ * Picks the last meaningful sentence and cleans it up for display.
+ */
+function extractThinkingSummary(thinkingText: string): string | null {
+  if (!thinkingText || thinkingText.length < 10) return null;
+
+  // Take the last ~500 chars to find the most recent thought
+  const tail = thinkingText.slice(-500).trim();
+
+  // Split into sentences (period, exclamation, question mark, or newline boundaries)
+  const sentences = tail
+    .split(/(?<=[.!?])\s+|\n{2,}/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 10 && s.length < 120);
+
+  if (sentences.length === 0) return null;
+
+  // Take the last complete sentence
+  let sentence = sentences[sentences.length - 1]!;
+
+  // Clean up: remove leading filler phrases
+  sentence = sentence
+    .replace(/^(okay|ok|so|well|now|alright|right|hmm|let me|i('ll| will| should| need to| think| can))\s*/i, "")
+    .replace(/^(let's|we should|we need to|we can|i'm going to)\s*/i, "")
+    .trim();
+
+  if (sentence.length < 8) return null;
+
+  // Capitalize first letter, remove trailing period for cleaner display
+  sentence = sentence.charAt(0).toUpperCase() + sentence.slice(1);
+  sentence = sentence.replace(/\.$/, "");
+
+  return truncate(sentence, 80);
+}
+
+/**
+ * Convert a thinking summary to past tense for completed runs.
+ * Simple heuristic: if it starts with a gerund (-ing), past-tense-ify it.
+ */
+function toCompletedForm(summary: string): string {
+  // "Crafting X" → "Crafted X", "Designing X" → "Designed X"
+  const match = summary.match(/^(\w+?)(ing)\b(.*)/);
+  if (match) {
+    const stem = match[1]!;
+    const rest = match[3] ?? "";
+    // Simple past tense: remove trailing consonant doubling artifacts
+    // "Crafting" → "Craft" + "ed" = "Crafted"
+    // "Running" → "Runn" → "Ran" (skip complex irregulars)
+    const pastStem = stem.endsWith(stem.charAt(stem.length - 1)) ? stem.slice(0, -1) : stem;
+    return `${pastStem}ed${rest}`;
+  }
+  return summary;
+}
+
 export function buildActivitySummary(entries: RenderTimelineEntry[], isLive: boolean) {
+  // --- Dynamic thinking summary ---
+  // Find the latest thinking entry and extract a contextual phrase
+  const thinkingEntries = entries.filter((e) => e.kind === "thinking");
+  const latestThinking = thinkingEntries[thinkingEntries.length - 1];
+  const thinkingSummary = latestThinking?.kind === "thinking" ? extractThinkingSummary(latestThinking.text) : null;
+
+  // --- Contextual tool summaries ---
+  const toolEntries = entries.filter((entry): entry is ToolTimelineEntry => entry.kind === "tool");
   const toolSummaries = Array.from(
-    new Set(
-      entries
-        .filter((entry): entry is ToolTimelineEntry => entry.kind === "tool")
-        .map((entry) => summarizeToolAction(entry.title)),
-    ),
+    new Set(toolEntries.map((entry) => summarizeToolAction(entry.title, entry.input, entry.status))),
   );
 
+  // If we have tool summaries, show them
   if (toolSummaries.length === 1) {
     return toolSummaries[0]!;
   }
 
   if (toolSummaries.length === 2) {
-    return `${toolSummaries[0]}, then ${toolSummaries[1].toLowerCase()}`;
+    return `${toolSummaries[0]}, then ${toolSummaries[1]!.charAt(0).toLowerCase()}${toolSummaries[1]!.slice(1)}`;
   }
 
   if (toolSummaries.length > 2) {
-    return `${toolSummaries[0]}, ${toolSummaries[1].toLowerCase()}, and ${toolSummaries.length - 2} more steps`;
+    return `${toolSummaries[0]}, ${toolSummaries[1]!.charAt(0).toLowerCase()}${toolSummaries[1]!.slice(1)}, and ${toolSummaries.length - 2} more`;
   }
 
-  if (entries.some((entry) => entry.kind === "thinking")) {
+  // If we have a thinking summary, show the dynamic contextual text
+  if (thinkingSummary) {
+    return isLive ? thinkingSummary : toCompletedForm(thinkingSummary);
+  }
+
+  // Fallback for thinking without extractable summary
+  if (thinkingEntries.length > 0) {
     return isLive ? "Thinking through the answer" : "Reasoned through the answer";
   }
 
