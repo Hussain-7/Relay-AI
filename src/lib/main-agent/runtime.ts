@@ -261,6 +261,8 @@ export async function streamMainAgentRun(input: {
           },
         ];
 
+        const activeModel = mainAgentSession.anthropicModel ?? env.ANTHROPIC_MAIN_MODEL;
+
         // Deferred DB writes: overlap with tool construction + API call startup
         const dbWritesPromise = Promise.all([
           prisma.agentRun.create({
@@ -271,6 +273,7 @@ export async function streamMainAgentRun(input: {
               mainAgentSessionId: mainAgentSession.id,
               status: RunStatus.RUNNING,
               userPrompt: input.prompt,
+              model: activeModel,
               attachments: input.attachmentIds.length
                 ? {
                     connect: input.attachmentIds.map((id) => ({ id })),
@@ -314,7 +317,6 @@ export async function streamMainAgentRun(input: {
         };
         const tools = getMainAgentTools(toolCtx, activeCodingSession);
 
-        const activeModel = mainAgentSession.anthropicModel ?? env.ANTHROPIC_MAIN_MODEL;
         const prefs = input.preferences ?? {};
         const thinkingEnabled = prefs.thinking !== false;
         const betas: string[] = [
