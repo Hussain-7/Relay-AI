@@ -377,22 +377,11 @@ export function buildActivitySummary(entries: RenderTimelineEntry[], isLive: boo
   const thinkingSummary = latestThinking?.kind === "thinking" ? extractThinkingSummary(latestThinking.text) : null;
 
   // --- Contextual tool summaries ---
+  // Show only the most recent tool action — this is a live status indicator, not a history log
   const toolEntries = entries.filter((entry): entry is ToolTimelineEntry => entry.kind === "tool");
-  const toolSummaries = Array.from(
-    new Set(toolEntries.map((entry) => summarizeToolAction(entry.title, entry.input, entry.status))),
-  );
-
-  // If we have tool summaries, show them
-  if (toolSummaries.length === 1) {
-    return toolSummaries[0]!;
-  }
-
-  if (toolSummaries.length === 2) {
-    return `${toolSummaries[0]}, then ${toolSummaries[1]!.charAt(0).toLowerCase()}${toolSummaries[1]!.slice(1)}`;
-  }
-
-  if (toolSummaries.length > 2) {
-    return `${toolSummaries[0]}, ${toolSummaries[1]!.charAt(0).toLowerCase()}${toolSummaries[1]!.slice(1)}, and ${toolSummaries.length - 2} more`;
+  if (toolEntries.length > 0) {
+    const latest = toolEntries[toolEntries.length - 1]!;
+    return summarizeToolAction(latest.title, latest.input, latest.status);
   }
 
   // If we have a thinking summary, show the dynamic contextual text
