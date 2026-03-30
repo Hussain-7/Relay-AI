@@ -813,6 +813,37 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                       )}
                     </div>
                   ) : null}
+                  <div className="pb-1 mb-1 border-b border-[rgba(255,255,255,0.08)]">
+                    <a
+                      href="/chat/analytics"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setProfileMenuOpen(false);
+                        router.push("/chat/analytics");
+                      }}
+                      className="flex w-full items-center gap-2.5 rounded-[8px] no-underline text-left text-[0.8rem] cursor-pointer py-[7px] px-1 transition-colors duration-100 group/stats"
+                    >
+                      <svg
+                        width="15"
+                        height="15"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="text-[rgba(245,240,232,0.5)] shrink-0"
+                        aria-hidden="true"
+                      >
+                        <path d="M18 20V10" />
+                        <path d="M12 20V4" />
+                        <path d="M6 20v-6" />
+                      </svg>
+                      <span className="flex-1 text-[rgba(245,240,232,0.55)] group-hover/stats:text-[rgba(245,240,232,0.85)]">
+                        Usage Analytics
+                      </span>
+                    </a>
+                  </div>
                   <button
                     type="button"
                     className="w-full rounded-[8px] border-0 bg-transparent text-left text-[0.8rem] text-[rgba(245,240,232,0.55)] cursor-pointer py-[7px] px-1 transition-colors duration-100 hover:text-[rgba(245,240,232,0.85)]"
