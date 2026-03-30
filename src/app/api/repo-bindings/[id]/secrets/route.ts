@@ -1,5 +1,19 @@
+import { z } from "zod";
+
 import { listRepoSecrets, upsertRepoSecrets } from "@/lib/repo-secrets";
 import { requireRequestUser } from "@/lib/server-auth";
+
+const putSecretsSchema = z.object({
+  secrets: z
+    .array(
+      z.object({
+        key: z.string().min(1).max(256),
+        value: z.string().min(1).max(10000),
+      }),
+    )
+    .min(1)
+    .max(50),
+});
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -19,11 +33,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   try {
     const user = await requireRequestUser(request.headers);
     const { id } = await params;
-    const body = (await request.json()) as { secrets?: { key: string; value: string }[] };
-
-    if (!Array.isArray(body.secrets)) {
-      return Response.json({ error: "secrets array is required." }, { status: 400 });
-    }
+    const body = putSecretsSchema.parse(await request.json());
 
     await upsertRepoSecrets(user.userId, id, body.secrets);
     const secrets = await listRepoSecrets(user.userId, id);

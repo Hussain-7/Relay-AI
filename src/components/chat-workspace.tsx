@@ -275,6 +275,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
     startStream,
   });
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: activeConversationId is an intentional trigger to reset menus on conversation switch
   useEffect(() => {
     setOpenConversationMenuId(null);
     setHeaderMenuOpen(false);

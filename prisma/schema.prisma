@@ -240,6 +240,7 @@ model RunEvent {
   run         AgentRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
 
   @@index([runId, ts])
+  @@index([runId, type])
 }
 
 model RunApproval {

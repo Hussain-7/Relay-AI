@@ -53,6 +53,7 @@ function CollapsibleText({ text }: { text: string }) {
   const [needsCollapse, setNeedsCollapse] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: text is an intentional trigger — when it changes the DOM re-renders and we need to re-measure scrollHeight
   useLayoutEffect(() => {
     const el = ref.current;
     if (el) setNeedsCollapse(el.scrollHeight > COLLAPSE_THRESHOLD);

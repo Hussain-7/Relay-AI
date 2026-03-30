@@ -33,7 +33,7 @@ export async function requireRequestUser(headers: Headers): Promise<RequestUser>
   }
 
   // 2. Fallback: dev header auth
-  const allowHeader = env.ALLOW_INSECURE_USER_HEADER || env.NODE_ENV === "development" || env.NODE_ENV === "test";
+  const allowHeader = env.ALLOW_INSECURE_USER_HEADER === true;
 
   if (!allowHeader) {
     throw new Error("Authentication required");

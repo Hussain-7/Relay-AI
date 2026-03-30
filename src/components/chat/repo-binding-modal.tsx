@@ -105,6 +105,7 @@ export function RepoBindingModal({
   }, []);
 
   // Fall back to GitHub Search API when local filter has 0 results and query >= 2 chars
+  // biome-ignore lint/correctness/useExhaustiveDependencies: searchMutation.mutate excluded — it's a new reference each render which would cause infinite loops
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     const q = searchQuery.trim();
@@ -116,7 +117,6 @@ export function RepoBindingModal({
         onSuccess: (repos) => setSearchResults(repos),
       });
     }, 400);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery, localFilteredRepos]);
 
   const handleConnect = useCallback(

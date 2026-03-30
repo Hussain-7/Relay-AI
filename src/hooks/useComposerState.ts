@@ -8,6 +8,7 @@ export function useComposerState() {
   const [stagedRepoBinding, setStagedRepoBinding] = useState<{ id: string; repoFullName: string } | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: composerValue is an intentional trigger to auto-resize textarea after content changes
   useEffect(() => {
     resizeComposer(composerInputRef.current);
   }, [composerValue]);

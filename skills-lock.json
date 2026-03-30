@@ -16,6 +16,11 @@
       "sourceType": "github",
       "computedHash": "58ce68f628890c3925aea2b5435a649251ac182057541045c68fc19a27aaa0ec"
     },
+    "before-and-after": {
+      "source": "vercel-labs/before-and-after",
+      "sourceType": "github",
+      "computedHash": "64034c2524068151d089e7d74fa744d1dbc73befa20d2d8b22eb261c2fba2fe5"
+    },
     "building-components": {
       "source": "vercel/components.build",
       "sourceType": "github",
@@ -111,6 +116,11 @@
       "sourceType": "github",
       "computedHash": "a3944954fcaabe06285ad866ca7ba19de0a8ab73ff988cbccd795a7694ecdcd6"
     },
+    "shadcn": {
+      "source": "shadcn/ui",
+      "sourceType": "github",
+      "computedHash": "507f011a70e8b3ae242bdc0bb5b39fd91a1d4049a0f3c281991ccf84973d591c"
+    },
     "streamdown": {
       "source": "vercel/streamdown",
       "sourceType": "github",
@@ -124,7 +134,7 @@
     "turborepo": {
       "source": "vercel/turborepo",
       "sourceType": "github",
-      "computedHash": "b5aaaabb937a6253241ba98e63ca7ab902767e52dcce6bbc9b376efd1cf7418c"
+      "computedHash": "753d6e471529e30c48bf6802b9531e6e86e5df8b4d25cfe542989cf414b3f4e2"
     },
     "vercel-cli-with-tokens": {
       "source": "vercel-labs/agent-skills",

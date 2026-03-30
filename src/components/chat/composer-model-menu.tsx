@@ -31,6 +31,7 @@ export function ComposerModelMenuPortal({
 }) {
   const panelRef = useRef<HTMLDivElement | null>(null);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: models.length is an intentional trigger to reposition panel when list height changes
   useLayoutEffect(() => {
     if (!anchor || !panelRef.current) return;
 

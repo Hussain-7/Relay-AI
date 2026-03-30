@@ -349,44 +349,58 @@ export async function startOrResumeCodingSession(input: {
 
   log.info("Sandbox created", { sandboxId: sandbox.sandboxId, template });
 
-  // Ensure /workspace exists and is writable
-  await safeRun(sandbox, `mkdir -p "${DEFAULT_WORKSPACE_ROOT}" && chmod 777 "${DEFAULT_WORKSPACE_ROOT}"`, {
-    user: "root",
-  });
+  try {
+    // Ensure /workspace exists and is writable
+    await safeRun(sandbox, `mkdir -p "${DEFAULT_WORKSPACE_ROOT}" && chmod 777 "${DEFAULT_WORKSPACE_ROOT}"`, {
+      user: "root",
+    });
 
-  // Only create workspace dir + CLAUDE.md when there's no repo binding.
-  // When a repo is bound, ensureRepoCloned handles directory creation via git clone.
-  if (!repoBinding) {
-    await sandbox.files.makeDir(workspacePath);
-    await sandbox.files.write(`${workspacePath}/CLAUDE.md`, SANDBOX_CLAUDE_MD);
-  }
+    // Only create workspace dir + CLAUDE.md when there's no repo binding.
+    // When a repo is bound, ensureRepoCloned handles directory creation via git clone.
+    if (!repoBinding) {
+      await sandbox.files.makeDir(workspacePath);
+      await sandbox.files.write(`${workspacePath}/CLAUDE.md`, SANDBOX_CLAUDE_MD);
+    }
 
-  codingSession = await prisma.codingSession.create({
-    data: {
-      conversationId: input.conversationId,
-      userId: input.userId,
-      repoBindingId: input.repoBindingId ?? null,
+    codingSession = await prisma.codingSession.create({
+      data: {
+        conversationId: input.conversationId,
+        userId: input.userId,
+        repoBindingId: input.repoBindingId ?? null,
+        sandboxId: sandbox.sandboxId,
+        workspacePath,
+        branch: input.branchStrategy ?? `chat/${input.conversationId}`,
+        status: CodingSessionStatus.READY,
+        lastActiveAt: new Date(),
+        claudeSdkSessionId: null,
+      },
+      include: { repoBinding: true },
+    });
+
+    log.info("Session created", {
+      sessionId: codingSession.id,
       sandboxId: sandbox.sandboxId,
       workspacePath,
-      branch: input.branchStrategy ?? `chat/${input.conversationId}`,
-      status: CodingSessionStatus.READY,
-      lastActiveAt: new Date(),
-      claudeSdkSessionId: null,
-    },
-    include: { repoBinding: true },
-  });
+    });
 
-  log.info("Session created", {
-    sessionId: codingSession.id,
-    sandboxId: sandbox.sandboxId,
-    workspacePath,
-  });
+    // Note: coding.session.created and coding.session.ready events are emitted
+    // via ctx.emitProgress in the calling tool (coding-session.ts), which handles
+    // both SSE delivery and DB persistence. No appendRunEvent needed here.
 
-  // Note: coding.session.created and coding.session.ready events are emitted
-  // via ctx.emitProgress in the calling tool (coding-session.ts), which handles
-  // both SSE delivery and DB persistence. No appendRunEvent needed here.
-
-  return { session: codingSession, sandbox };
+    return { session: codingSession, sandbox };
+  } catch (err) {
+    // Kill the sandbox to prevent orphaned E2B instances incurring compute costs
+    log.warn("Sandbox setup failed — killing orphaned sandbox", {
+      sandboxId: sandbox.sandboxId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    try {
+      await sandbox.kill();
+    } catch {
+      /* best-effort cleanup */
+    }
+    throw err;
+  }
 }
 
 /**
@@ -469,9 +483,10 @@ export async function ensureRepoCloned(
   );
 
   // Configure git credential helper so all remotes authenticate with the token
+  const escapedToken = token.replace(/'/g, "'\\''");
   await safeRun(
     sandbox,
-    `git config --global credential.helper '!f() { echo "username=x-access-token"; echo "password=${token}"; }; f'`,
+    `git config --global credential.helper '!f() { echo "username=x-access-token"; echo "password=${escapedToken}"; }; f'`,
     { user: "root" },
   );
 

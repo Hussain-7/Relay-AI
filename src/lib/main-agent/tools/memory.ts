@@ -163,7 +163,7 @@ export function createMemoryTool(ctx: ToolRuntimeContext): BetaRunnableTool<Memo
 
             await prisma.memoryEntry.update({
               where: { id: entry.id },
-              data: { value: entry.value.replace(command.old_str, command.new_str) },
+              data: { value: entry.value.replaceAll(command.old_str, command.new_str) },
             });
 
             result = `Updated ${command.path}`;

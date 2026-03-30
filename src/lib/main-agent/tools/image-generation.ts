@@ -174,30 +174,46 @@ async function generateWithGemini(prompt: string, modelId: string, inputImage?: 
  * Upload image buffer to Supabase Storage and return public URL.
  * Uses the service role key for server-side uploads to a public bucket.
  */
-async function uploadToSupabaseStorage(buffer: Buffer, filename: string): Promise<string> {
-  const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !serviceKey) {
-    throw new Error("Supabase is not configured (NEXT_PUBLIC_SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY required).");
-  }
-
-  const supabase = createClient(supabaseUrl, serviceKey);
-
-  // Auto-create bucket on first use
-  const { data: buckets } = await supabase.storage.listBuckets();
-  if (!buckets?.some((b) => b.name === STORAGE_BUCKET)) {
-    console.log(`[image_generation] Creating storage bucket: ${STORAGE_BUCKET}`);
-    const { error: bucketError } = await supabase.storage.createBucket(STORAGE_BUCKET, {
-      public: true,
-      fileSizeLimit: 10 * 1024 * 1024,
-      allowedMimeTypes: ["image/png", "image/jpeg", "image/webp"],
-    });
-    if (bucketError && !bucketError.message.includes("already exists")) {
-      console.error("[image_generation] Bucket creation error:", bucketError);
-      throw new Error(`Failed to create storage bucket: ${bucketError.message}`);
+// Singleton Supabase client for storage operations
+let _supabaseStorageClient: ReturnType<typeof createClient> | null = null;
+function getSupabaseStorageClient(): ReturnType<typeof createClient> {
+  if (!_supabaseStorageClient) {
+    const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!supabaseUrl || !serviceKey) {
+      throw new Error("Supabase is not configured (NEXT_PUBLIC_SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY required).");
     }
+    _supabaseStorageClient = createClient(supabaseUrl, serviceKey);
   }
+  return _supabaseStorageClient;
+}
+
+// Check-once pattern to prevent race condition on concurrent bucket creation
+let _bucketReady: Promise<void> | null = null;
+function ensureBucketExists(): Promise<void> {
+  if (!_bucketReady) {
+    _bucketReady = (async () => {
+      const supabase = getSupabaseStorageClient();
+      const { data: buckets } = await supabase.storage.listBuckets();
+      if (!buckets?.some((b) => b.name === STORAGE_BUCKET)) {
+        const { error: bucketError } = await supabase.storage.createBucket(STORAGE_BUCKET, {
+          public: true,
+          fileSizeLimit: 10 * 1024 * 1024,
+          allowedMimeTypes: ["image/png", "image/jpeg", "image/webp"],
+        });
+        if (bucketError && !bucketError.message.includes("already exists")) {
+          _bucketReady = null; // Reset so next call retries
+          throw new Error(`Failed to create storage bucket: ${bucketError.message}`);
+        }
+      }
+    })();
+  }
+  return _bucketReady;
+}
+
+async function uploadToSupabaseStorage(buffer: Buffer, filename: string): Promise<string> {
+  const supabase = getSupabaseStorageClient();
+  await ensureBucketExists();
 
   const storagePath = `${Date.now()}-${filename}`;
   console.log(

@@ -372,46 +372,52 @@ export async function deleteConversationForUser(input: { conversationId: string;
   }
 }
 
-export async function toggleConversationStar(input: { conversationId: string; userId: string; isStarred: boolean }) {
-  await prisma.conversation.updateMany({
-    where: { id: input.conversationId, userId: input.userId },
-    data: { isStarred: input.isStarred, updatedAt: new Date() },
-  });
-}
-
-export async function updateConversationTitle(input: { conversationId: string; userId: string; title: string }) {
-  await prisma.conversation.updateMany({
-    where: { id: input.conversationId, userId: input.userId },
-    data: { title: input.title },
-  });
-}
-
-export async function updateConversationRepoBinding(input: {
+export async function updateConversationFields(input: {
   conversationId: string;
   userId: string;
-  repoBindingId: string | null;
+  title?: string;
+  isStarred?: boolean;
+  mainAgentModel?: string;
+  repoBindingId?: string | null;
 }) {
-  await prisma.conversation.updateMany({
-    where: {
-      id: input.conversationId,
-      userId: input.userId,
-    },
-    data: {
-      repoBindingId: input.repoBindingId,
-    },
-  });
-}
+  await prisma.$transaction(async (tx) => {
+    // Build conversation-level updates in a single query
+    const convData: Record<string, unknown> = {};
+    if (input.title) convData.title = input.title;
+    if (input.isStarred !== undefined) {
+      convData.isStarred = input.isStarred;
+      convData.updatedAt = new Date();
+    }
+    if (input.repoBindingId !== undefined) convData.repoBindingId = input.repoBindingId;
 
-export async function updateConversationMainModel(input: { conversationId: string; userId: string; model: string }) {
-  const session = await ensureMainAgentSession({
-    conversationId: input.conversationId,
-    userId: input.userId,
-  });
+    if (Object.keys(convData).length > 0) {
+      await tx.conversation.updateMany({
+        where: { id: input.conversationId, userId: input.userId },
+        data: convData,
+      });
+    }
 
-  await prisma.mainAgentSession.update({
-    where: { id: session.id },
-    data: {
-      anthropicModel: input.model,
-    },
+    // Model lives on MainAgentSession — a separate table
+    if (input.mainAgentModel) {
+      const conversation = await tx.conversation.findUnique({
+        where: { id: input.conversationId },
+        include: { mainAgentSession: true },
+      });
+
+      if (!conversation || conversation.userId !== input.userId) {
+        throw new Error("Conversation not found.");
+      }
+
+      const session =
+        conversation.mainAgentSession ??
+        (await tx.mainAgentSession.create({
+          data: { conversationId: input.conversationId, userId: input.userId },
+        }));
+
+      await tx.mainAgentSession.update({
+        where: { id: session.id },
+        data: { anthropicModel: input.mainAgentModel },
+      });
+    }
   });
 }

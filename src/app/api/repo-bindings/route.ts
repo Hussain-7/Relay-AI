@@ -20,13 +20,19 @@ export async function GET(request: Request) {
 
     // If an owner is specified, fetch that owner's repos specifically
     if (ownerParam) {
-      const repos = await listGithubReposByOwnerCached(user.userId, ownerParam).catch(() => []);
+      const repos = await listGithubReposByOwnerCached(user.userId, ownerParam).catch((err) => {
+        console.warn("[repo-bindings] Failed to list repos for owner:", ownerParam, err.message);
+        return [];
+      });
       return Response.json({ repos });
     }
 
     const [bindings, owners] = await Promise.all([
       listKnownRepos(user.userId),
-      listGithubOwnersCached(user.userId).catch(() => []),
+      listGithubOwnersCached(user.userId).catch((err) => {
+        console.warn("[repo-bindings] Failed to list GitHub owners:", err.message);
+        return [];
+      }),
     ]);
     return Response.json({ bindings, available: [], owners });
   } catch (error) {

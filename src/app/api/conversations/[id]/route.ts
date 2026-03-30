@@ -1,13 +1,6 @@
 import { z } from "zod";
 
-import {
-  deleteConversationForUser,
-  getConversationDetail,
-  toggleConversationStar,
-  updateConversationMainModel,
-  updateConversationRepoBinding,
-  updateConversationTitle,
-} from "@/lib/conversations";
+import { deleteConversationForUser, getConversationDetail, updateConversationFields } from "@/lib/conversations";
 import { requireRequestUser } from "@/lib/server-auth";
 import { getCached, invalidateCache } from "@/lib/server-cache";
 
@@ -71,37 +64,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const { id } = await params;
     const body = patchConversationSchema.parse(await request.json());
 
-    if (body.title) {
-      await updateConversationTitle({
-        conversationId: id,
-        userId: user.userId,
-        title: body.title,
-      });
-    }
-
-    if (body.isStarred !== undefined) {
-      await toggleConversationStar({
-        conversationId: id,
-        userId: user.userId,
-        isStarred: body.isStarred,
-      });
-    }
-
-    if (body.mainAgentModel) {
-      await updateConversationMainModel({
-        conversationId: id,
-        userId: user.userId,
-        model: body.mainAgentModel,
-      });
-    }
-
-    if (body.repoBindingId !== undefined) {
-      await updateConversationRepoBinding({
-        conversationId: id,
-        userId: user.userId,
-        repoBindingId: body.repoBindingId,
-      });
-    }
+    await updateConversationFields({
+      conversationId: id,
+      userId: user.userId,
+      title: body.title,
+      isStarred: body.isStarred,
+      mainAgentModel: body.mainAgentModel,
+      repoBindingId: body.repoBindingId,
+    });
 
     const conversation = await getConversationDetail({
       conversationId: id,

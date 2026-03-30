@@ -47,11 +47,31 @@ export async function streamMainAgentRun(input: {
       let titleUpdatePromise: Promise<string> | null = null;
       const pendingWrites: Promise<unknown>[] = [];
       let eventSeq = 0;
+      let iterationCount = 0;
       // Hoisted so the catch block can access partial text on error
       let serverPartialText = "";
 
+      /** Remove already-settled promises from pendingWrites to bound memory usage. */
+      function drainSettledWrites() {
+        const pending: Promise<unknown>[] = [];
+        for (const p of pendingWrites) {
+          // Tag each promise as settled via race with an instant sentinel
+          let settled = false;
+          p.then(
+            () => (settled = true),
+            () => (settled = true),
+          );
+          // Microtask from then() above runs before this sync check only if already settled
+          if (!settled) pending.push(p);
+        }
+        pendingWrites.length = 0;
+        pendingWrites.push(...pending);
+      }
+
       // All events: send SSE to client immediately, persist to DB in background.
       // This eliminates DB round-trip latency from the streaming path.
+      // Track toolUseId → DB event ID for efficient backfill (avoids O(n²) queries)
+      const toolUseIdToEventId = new Map<string, Promise<string>>();
       const emit = (
         type: TimelineEventEnvelope["type"],
         source: TimelineEventEnvelope["source"],
@@ -75,15 +95,25 @@ export async function streamMainAgentRun(input: {
           type !== "assistant.thinking.delta" &&
           type !== "tool.call.input.delta"
         ) {
-          pendingWrites.push(
-            appendRunEvent({
-              runId,
-              conversationId: input.conversationId,
-              type,
-              source,
-              payload,
-            }).catch(() => {}),
-          );
+          const writePromise = appendRunEvent({
+            runId,
+            conversationId: input.conversationId,
+            type,
+            source,
+            payload,
+          }).catch((err) => {
+            console.warn("[runtime] event persist failed:", type, err.message);
+            return {} as TimelineEventEnvelope;
+          });
+          pendingWrites.push(writePromise);
+
+          // Track DB event IDs for tool.call.started so backfill can update by primary key
+          if (type === "tool.call.started" && payload?.toolUseId) {
+            toolUseIdToEventId.set(
+              payload.toolUseId as string,
+              writePromise.then((evt) => (evt as TimelineEventEnvelope).id ?? ""),
+            );
+          }
         }
       };
 
@@ -133,10 +163,13 @@ export async function streamMainAgentRun(input: {
                 orderBy: { createdAt: "asc" },
               })
             : Promise.resolve([]),
-          prisma.message.findMany({
-            where: { conversationId: input.conversationId },
-            orderBy: { createdAt: "asc" },
-          }),
+          prisma.message
+            .findMany({
+              where: { conversationId: input.conversationId },
+              orderBy: { createdAt: "desc" },
+              take: 200,
+            })
+            .then((msgs) => msgs.reverse()),
           getConfiguredMcpServers(input.userId).catch((err) => {
             console.warn("Failed to load MCP servers, continuing without:", err);
             return [] as Awaited<ReturnType<typeof getConfiguredMcpServers>>;
@@ -395,6 +428,10 @@ export async function streamMainAgentRun(input: {
         const emittedMcpToolIds = new Set<string>();
 
         for await (const assistantIteration of runner) {
+          iterationCount++;
+          // Periodically drain settled promises to bound memory
+          if (iterationCount % 5 === 0) drainSettledWrites();
+
           // Check stop flag between tool runner iterations
           if (await checkStopFlag(runId)) {
             stopped = true;
@@ -702,40 +739,38 @@ export async function streamMainAgentRun(input: {
           // Backfill tool inputs into persisted events after each iteration.
           // During streaming, tool_use blocks arrive with input: {} and the full
           // input is only available after all input_json_delta events are processed.
+          // Uses tracked event IDs to update by primary key (O(n) instead of O(n²)).
           if (toolUseInputs.size > 0) {
             pendingWrites.push(
               (async () => {
-                const startedEvents = await prisma.runEvent.findMany({
-                  where: { runId, type: "tool.call.started" },
-                });
-                const updates = startedEvents
-                  .filter((evt) => {
-                    const payload = evt.payloadJson as Record<string, unknown> | null;
-                    const toolUseId = payload?.toolUseId as string | undefined;
-                    return toolUseId && toolUseInputs.has(toolUseId);
-                  })
-                  .map((evt) => {
-                    const payload = evt.payloadJson as Record<string, unknown>;
-                    let parsedInput: unknown;
-                    try {
-                      parsedInput = JSON.parse(toolUseInputs.get(payload.toolUseId as string)!);
-                    } catch {
-                      parsedInput = toolUseInputs.get(payload.toolUseId as string);
-                    }
-                    return prisma.runEvent.update({
-                      where: { id: evt.id },
+                const updates: ReturnType<typeof prisma.runEvent.update>[] = [];
+                for (const [toolUseId, rawInput] of toolUseInputs) {
+                  const eventIdPromise = toolUseIdToEventId.get(toolUseId);
+                  if (!eventIdPromise) continue;
+                  const eventId = await eventIdPromise;
+                  if (!eventId) continue;
+                  let parsedInput: unknown;
+                  try {
+                    parsedInput = JSON.parse(rawInput);
+                  } catch {
+                    parsedInput = rawInput;
+                  }
+                  const evt = await prisma.runEvent.findUnique({ where: { id: eventId } });
+                  if (!evt) continue;
+                  const payload = evt.payloadJson as Record<string, unknown>;
+                  updates.push(
+                    prisma.runEvent.update({
+                      where: { id: eventId },
                       data: {
-                        payloadJson: {
-                          ...payload,
-                          input: parsedInput,
-                        } as Prisma.InputJsonValue,
+                        payloadJson: { ...payload, input: parsedInput } as Prisma.InputJsonValue,
                       },
-                    });
-                  });
+                    }),
+                  );
+                }
                 if (updates.length > 0) {
                   await prisma.$transaction(updates);
                 }
-              })().catch(() => {}),
+              })().catch((err) => console.warn("[runtime] tool input backfill failed:", err.message)),
             );
           }
 
@@ -773,7 +808,7 @@ export async function streamMainAgentRun(input: {
                 completedAt: new Date(),
               },
             }),
-          ]).catch(() => {});
+          ]).catch((err) => console.warn("[runtime] cancelled-state DB write failed:", err.message));
 
           emit("run.cancelled", "system", { status: "cancelled" });
           try {
@@ -847,34 +882,32 @@ export async function streamMainAgentRun(input: {
           }
         }
         if (toolInputMap.size > 0) {
-          // Update persisted tool.call.started events with full input (batched, background)
+          // Update persisted tool.call.started events with full input (batched, background).
+          // Uses tracked event IDs to update by primary key instead of scanning all events.
           pendingWrites.push(
             (async () => {
-              const startedEvents = await prisma.runEvent.findMany({
-                where: { runId, type: "tool.call.started" },
-              });
-              const updates = startedEvents
-                .filter((evt) => {
-                  const payload = evt.payloadJson as Record<string, unknown> | null;
-                  const toolUseId = payload?.toolUseId as string | undefined;
-                  return toolUseId && toolInputMap.has(toolUseId);
-                })
-                .map((evt) => {
-                  const payload = evt.payloadJson as Record<string, unknown>;
-                  return prisma.runEvent.update({
-                    where: { id: evt.id },
+              const updates: ReturnType<typeof prisma.runEvent.update>[] = [];
+              for (const [toolUseId, inputValue] of toolInputMap) {
+                const eventIdPromise = toolUseIdToEventId.get(toolUseId);
+                if (!eventIdPromise) continue;
+                const eventId = await eventIdPromise;
+                if (!eventId) continue;
+                const evt = await prisma.runEvent.findUnique({ where: { id: eventId } });
+                if (!evt) continue;
+                const payload = evt.payloadJson as Record<string, unknown>;
+                updates.push(
+                  prisma.runEvent.update({
+                    where: { id: eventId },
                     data: {
-                      payloadJson: {
-                        ...payload,
-                        input: toolInputMap.get(payload.toolUseId as string),
-                      } as Prisma.InputJsonValue,
+                      payloadJson: { ...payload, input: inputValue } as Prisma.InputJsonValue,
                     },
-                  });
-                });
+                  }),
+                );
+              }
               if (updates.length > 0) {
                 await prisma.$transaction(updates);
               }
-            })().catch(() => {}),
+            })().catch((err) => console.warn("[runtime] final tool input backfill failed:", err.message)),
           );
         }
 
@@ -888,7 +921,7 @@ export async function streamMainAgentRun(input: {
                 where: { id: mainAgentSession.id },
                 data: { metadataJson: { ...existingMeta, containerId } as Prisma.InputJsonValue },
               })
-              .catch(() => {}),
+              .catch((err) => console.warn("[runtime] container ID persist failed:", err.message)),
           );
         }
 
@@ -1091,7 +1124,7 @@ export async function streamMainAgentRun(input: {
         const message = getMainAgentErrorMessage(error);
 
         if (titleUpdatePromise) {
-          await titleUpdatePromise.catch(() => {});
+          await titleUpdatePromise.catch((err) => console.warn("[runtime] title update failed:", err.message));
         }
 
         emit("run.failed", "system", { error: message });
@@ -1131,7 +1164,7 @@ export async function streamMainAgentRun(input: {
                 contentJson: [{ type: "text", text: finalText }] as unknown as Prisma.InputJsonValue,
               },
             })
-            .catch(() => {}),
+            .catch((err) => console.warn("[runtime] error-recovery message persist failed:", err.message)),
         );
 
         try {
@@ -1153,7 +1186,7 @@ export async function streamMainAgentRun(input: {
               completedAt: new Date(),
             },
           })
-          .catch(() => {});
+          .catch((err) => console.error("[runtime] CRITICAL: failed to persist run failure status:", err.message));
       } finally {
         // Flush remaining background DB writes (event persistence)
         await Promise.allSettled(pendingWrites);

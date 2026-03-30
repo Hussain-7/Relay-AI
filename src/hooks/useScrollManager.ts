@@ -53,6 +53,7 @@ export function useScrollManager({ liveRun, runs, activeConversationId }: UseScr
 
   // On new message send: scroll the latest user message to the top of the viewport
   // No auto-scroll during streaming — user controls their own scroll pace
+  // biome-ignore lint/correctness/useExhaustiveDependencies: liveRun?.runId is intentionally more specific than liveRun — we only want to scroll when a NEW run starts, not on every streaming state change
   useEffect(() => {
     if (!liveRun) return;
     setShowScrollDown(false);
@@ -73,12 +74,11 @@ export function useScrollManager({ liveRun, runs, activeConversationId }: UseScr
       scrollRafRef.current = raf2;
     });
     scrollRafRef.current = raf1;
-    // Only scroll when a new run starts (runId changes), not on every streaming update
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveRun?.runId]);
+  }, [liveRun?.runId, syncScrollShadows]);
 
   // Recalculate scroll button visibility when content changes (e.g. after page refresh, data load)
   // Double rAF ensures DOM has painted the new content before measuring
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs, liveRun, activeConversationId are intentional triggers — hook params that signal content changes requiring scroll recalculation
   useEffect(() => {
     requestAnimationFrame(() => requestAnimationFrame(() => syncScrollShadows()));
   }, [runs, liveRun, activeConversationId, syncScrollShadows]);
