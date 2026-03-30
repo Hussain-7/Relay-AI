@@ -2,7 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
 import { ALLOWED_EMAILS } from "@/lib/allowed-emails";
 
-const PUBLIC_ROUTES = new Set(["/login", "/auth/callback", "/waitlist"]);
+const PUBLIC_ROUTES = new Set(["/", "/login", "/auth/callback", "/waitlist"]);
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
