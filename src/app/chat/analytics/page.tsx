@@ -207,6 +207,96 @@ function ModelDonut({ models }: { models: AnalyticsData["models"] }) {
   );
 }
 
+/* ── Skeleton (matches real layout dimensions) ── */
+
+function SkeletonPulse({ className, style }: { className?: string; style?: React.CSSProperties }) {
+  return <div className={`animate-pulse rounded-lg bg-[rgba(255,255,255,0.06)] ${className ?? ""}`} style={style} />;
+}
+
+function AnalyticsSkeleton() {
+  return (
+    <>
+      {/* Stat cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="rounded-2xl border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.02)] p-5">
+            <SkeletonPulse className="h-3 w-20 mb-4" />
+            <SkeletonPulse className="h-8 w-24 mb-2" />
+            <SkeletonPulse className="h-3 w-28" />
+          </div>
+        ))}
+      </div>
+
+      {/* Chart cards */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-10">
+        {Array.from({ length: 2 }).map((_, i) => (
+          <div key={i} className="rounded-2xl border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.02)] p-5">
+            <SkeletonPulse className="h-3 w-20 mb-6" />
+            <div className="flex items-end gap-[3px] h-[140px]">
+              {Array.from({ length: 12 }).map((_, j) => (
+                <SkeletonPulse
+                  key={j}
+                  className="flex-1 min-w-0 rounded-t-[3px]"
+                  style={{ height: `${20 + Math.random() * 60}%` } as React.CSSProperties}
+                />
+              ))}
+            </div>
+            <div className="flex justify-between mt-2">
+              <SkeletonPulse className="h-2.5 w-12" />
+              <SkeletonPulse className="h-2.5 w-12" />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Model + Token cards */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-10">
+        {/* Donut placeholder */}
+        <div className="rounded-2xl border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.02)] p-5">
+          <SkeletonPulse className="h-3 w-24 mb-6" />
+          <div className="flex items-center gap-8">
+            <SkeletonPulse className="h-[130px] w-[130px] shrink-0 !rounded-full" />
+            <div className="space-y-3 flex-1">
+              <SkeletonPulse className="h-3 w-32" />
+              <SkeletonPulse className="h-3 w-24" />
+            </div>
+          </div>
+        </div>
+        {/* Token bars placeholder */}
+        <div className="rounded-2xl border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.02)] p-5">
+          <SkeletonPulse className="h-3 w-28 mb-6" />
+          <div className="space-y-5">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i}>
+                <div className="flex justify-between mb-1.5">
+                  <SkeletonPulse className="h-3 w-16" />
+                  <SkeletonPulse className="h-3 w-12" />
+                </div>
+                <SkeletonPulse className="h-1.5 w-full" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Top conversations placeholder */}
+      <div className="rounded-2xl border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.02)] p-5">
+        <SkeletonPulse className="h-3 w-36 mb-5" />
+        <div className="space-y-3">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-3 px-3 py-2.5">
+              <SkeletonPulse className="h-3 w-4" />
+              <SkeletonPulse className="h-3 flex-1 max-w-[200px]" />
+              <SkeletonPulse className="h-3 w-14 ml-auto" />
+              <SkeletonPulse className="h-3 w-12" />
+            </div>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
 /* ── Page ── */
 
 export default function AnalyticsPage() {
@@ -266,7 +356,7 @@ export default function AnalyticsPage() {
         </div>
 
         {loading && !data ? (
-          <div className="text-center py-20 text-[rgba(245,240,232,0.4)]">Loading analytics...</div>
+          <AnalyticsSkeleton />
         ) : data ? (
           <>
             {/* Stat Cards */}

@@ -33,6 +33,16 @@ export async function GET(request: NextRequest) {
     },
   );
 
+  // Debug: log incoming cookies to diagnose PKCE verifier issues
+  const allCookies = request.cookies.getAll();
+  const verifierCookie = allCookies.find((c) => c.name.includes("code-verifier"));
+  if (!verifierCookie) {
+    console.warn(
+      "Auth callback: No code-verifier cookie found. Available cookies:",
+      allCookies.map((c) => c.name).join(", "),
+    );
+  }
+
   const { error } = await supabase.auth.exchangeCodeForSession(code);
 
   if (error) {
