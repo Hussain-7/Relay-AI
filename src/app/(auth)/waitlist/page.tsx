@@ -21,7 +21,7 @@ export default function WaitlistPage() {
 
   useEffect(() => {
     const supabase = getSupabaseBrowserClient();
-    supabase.auth.getUser().then(({ data }) => {
+    supabase.auth.getUser().then(({ data }: { data: { user: { email?: string } | null } }) => {
       setEmail(data.user?.email ?? null);
     });
   }, []);
