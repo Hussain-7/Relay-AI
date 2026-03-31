@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
 import { requireRequestUser } from "@/lib/server-auth";
+import { invalidateCache } from "@/lib/server-cache";
 
 const patchSchema = z.object({
   enabled: z.boolean(),
@@ -38,6 +39,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     data: { status: nextStatus },
   });
 
+  void invalidateCache(`mcp:${user.userId}`);
+
   return Response.json({
     connector: {
       id: updated.id,
@@ -61,6 +64,8 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   }
 
   await prisma.mcpConnector.delete({ where: { id } });
+
+  void invalidateCache(`mcp:${user.userId}`);
 
   return Response.json({ ok: true });
 }

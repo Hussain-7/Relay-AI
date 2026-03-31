@@ -6,6 +6,7 @@ import { getOAuthCallbackUrl, registerOAuthClient, testMcpConnection } from "@/l
 import { encryptToken } from "@/lib/mcp-token-crypto";
 import { prisma } from "@/lib/prisma";
 import { requireRequestUser } from "@/lib/server-auth";
+import { getCached, invalidateCache } from "@/lib/server-cache";
 
 const createSchema = z.object({
   name: z.string().min(1).max(100),
@@ -17,22 +18,21 @@ const createSchema = z.object({
 export async function GET(request: Request) {
   const user = await requireRequestUser(request.headers);
 
-  const connectors = await prisma.mcpConnector.findMany({
-    where: { userId: user.userId },
-    orderBy: { createdAt: "asc" },
-    select: {
-      id: true,
-      name: true,
-      url: true,
-      encryptedAccessToken: true,
-      status: true,
-      lastError: true,
-      createdAt: true,
-    },
-  });
-
-  return Response.json({
-    connectors: connectors.map((c) => ({
+  const connectors = await getCached(`mcp:${user.userId}`, 300, async () => {
+    const rows = await prisma.mcpConnector.findMany({
+      where: { userId: user.userId },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        name: true,
+        url: true,
+        encryptedAccessToken: true,
+        status: true,
+        lastError: true,
+        createdAt: true,
+      },
+    });
+    return rows.map((c) => ({
       id: c.id,
       name: c.name,
       url: c.url,
@@ -40,8 +40,10 @@ export async function GET(request: Request) {
       status: c.status,
       lastError: c.lastError,
       createdAt: c.createdAt.toISOString(),
-    })),
+    }));
   });
+
+  return Response.json({ connectors });
 }
 
 export async function POST(request: Request) {
@@ -76,6 +78,8 @@ export async function POST(request: Request) {
         ...tokenData,
       },
     });
+
+    void invalidateCache(`mcp:${user.userId}`);
 
     return Response.json({
       connector: {
@@ -117,6 +121,8 @@ export async function POST(request: Request) {
       },
     });
 
+    void invalidateCache(`mcp:${user.userId}`);
+
     return Response.json({
       connector: {
         id: connector.id,
@@ -154,6 +160,8 @@ export async function POST(request: Request) {
       ...tokenData,
     },
   });
+
+  void invalidateCache(`mcp:${user.userId}`);
 
   return Response.json({
     connector: {

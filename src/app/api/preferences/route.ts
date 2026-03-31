@@ -3,6 +3,7 @@ import type { Prisma } from "@/generated/prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { requireRequestUser } from "@/lib/server-auth";
+import { getCached, invalidateCache } from "@/lib/server-cache";
 
 const preferencesSchema = z
   .object({
@@ -21,16 +22,17 @@ const preferencesSchema = z
 export async function GET(request: Request) {
   try {
     const user = await requireRequestUser(request.headers);
-    const profile = await prisma.userProfile.findUnique({
-      where: { userId: user.userId },
-      select: { preferencesJson: true },
+    const defaultPrefs = { agent: { model: "claude-sonnet-4-6", thinking: false, effort: "low", memory: false } };
+
+    const preferences = await getCached(`prefs:${user.userId}`, 300, async () => {
+      const profile = await prisma.userProfile.findUnique({
+        where: { userId: user.userId },
+        select: { preferencesJson: true },
+      });
+      return profile?.preferencesJson ?? defaultPrefs;
     });
 
-    return Response.json({
-      preferences: profile?.preferencesJson ?? {
-        agent: { model: "claude-sonnet-4-6", thinking: false, effort: "low", memory: false },
-      },
-    });
+    return Response.json({ preferences });
   } catch (error) {
     return Response.json(
       { error: error instanceof Error ? error.message : "Failed to load preferences." },
@@ -59,6 +61,8 @@ export async function PATCH(request: Request) {
       where: { userId: user.userId },
       data: { preferencesJson: merged as Prisma.InputJsonValue },
     });
+
+    void invalidateCache(`prefs:${user.userId}`);
 
     return Response.json({ preferences: merged });
   } catch (error) {

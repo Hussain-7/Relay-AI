@@ -5,6 +5,7 @@ import { env, hasGitHubAppConfig } from "@/lib/env";
 import { invalidateGithubRepoCache } from "@/lib/github/service";
 import { prisma } from "@/lib/prisma";
 import { requireRequestUser } from "@/lib/server-auth";
+import { getCached, invalidateCache } from "@/lib/server-cache";
 
 // Octokit + createAppAuth are used by the DELETE handler for uninstalling
 
@@ -16,25 +17,22 @@ export async function GET(request: Request) {
       return Response.json({ configured: false, installed: false });
     }
 
-    // Check if this user has a linked GitHub installation (created during the install callback)
-    const existing = await prisma.githubInstallation.findFirst({
-      where: { userId: user.userId },
-    });
-
-    if (existing) {
-      return Response.json({
-        configured: true,
-        installed: true,
-        account: existing.accountLogin ?? null,
-        installUrl: `/api/github/install`,
+    const status = await getCached(`github-status:${user.userId}`, 120, async () => {
+      const existing = await prisma.githubInstallation.findFirst({
+        where: { userId: user.userId },
       });
-    }
-
-    return Response.json({
-      configured: true,
-      installed: false,
-      installUrl: `/api/github/install`,
+      if (existing) {
+        return {
+          configured: true,
+          installed: true,
+          account: existing.accountLogin ?? null,
+          installUrl: "/api/github/install",
+        };
+      }
+      return { configured: true, installed: false, installUrl: "/api/github/install" };
     });
+
+    return Response.json(status);
   } catch {
     return Response.json({ configured: false, installed: false });
   }
@@ -75,8 +73,9 @@ export async function DELETE(request: Request) {
       where: { userId: user.userId },
     });
 
-    // Clear cached repo list
+    // Clear cached repo list + status
     await invalidateGithubRepoCache(user.userId);
+    void invalidateCache(`github-status:${user.userId}`);
 
     return Response.json({ ok: true });
   } catch {
