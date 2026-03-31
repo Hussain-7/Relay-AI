@@ -38,6 +38,7 @@ import {
   usePreferences,
   useRenameConversation,
   useToggleConversationStar,
+  useToggleMcpConnector,
   useUpdateConversationModel,
   useUser,
 } from "@/lib/api-hooks";
@@ -125,6 +126,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
   const { data: githubStatus } = useGithubStatus();
   const { data: mcpConnectors = [] } = useMcpConnectors();
   const activeMcpCount = mcpConnectors.filter((c) => c.status === "ACTIVE").length;
+  const toggleConnector = useToggleMcpConnector();
   const disconnectGithub = useDisconnectGithub();
   const { data: activeConversation, isFetching: isFetchingDetail } = useConversationDetail(
     hasPendingForThis ? null : activeConversationId,
@@ -1239,6 +1241,8 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                   <ComposerPlusMenuPortal
                     anchor={plusButtonRef.current}
                     hasLinkedRepo={Boolean(activeConversation?.repoBinding || stagedRepoBinding)}
+                    connectors={mcpConnectors}
+                    onToggleConnector={(id, enabled) => toggleConnector.mutate({ id, enabled })}
                     onAddFiles={() => {
                       setPlusMenuOpen(false);
                       fileInputRef.current?.click();
