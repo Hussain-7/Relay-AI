@@ -89,6 +89,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
     thinking: userPreferences.agent.thinking,
     effort: userPreferences.agent.effort,
     memory: userPreferences.agent.memory,
+    model: userPreferences.agent.model,
   };
 
   const {

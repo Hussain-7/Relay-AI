@@ -38,6 +38,7 @@ export async function streamMainAgentRun(input: {
     thinking?: boolean;
     effort?: "low" | "medium" | "high";
     memory?: boolean;
+    model?: string;
   };
 }) {
   // Pre-generate runId so we can return it immediately and defer DB writes
@@ -261,7 +262,7 @@ export async function streamMainAgentRun(input: {
           },
         ];
 
-        const activeModel = mainAgentSession.anthropicModel ?? env.ANTHROPIC_MAIN_MODEL;
+        const activeModel = input.preferences?.model ?? mainAgentSession.anthropicModel ?? env.ANTHROPIC_MAIN_MODEL;
 
         // Deferred DB writes: overlap with tool construction + API call startup
         const dbWritesPromise = Promise.all([

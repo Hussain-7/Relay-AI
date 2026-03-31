@@ -10,6 +10,7 @@ export interface AgentPreferences {
   thinking: boolean;
   effort: "low" | "medium" | "high";
   memory: boolean;
+  model?: string;
 }
 
 export function ComposerModelMenuPortal({

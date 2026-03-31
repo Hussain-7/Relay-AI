@@ -15,6 +15,7 @@ const createMessageSchema = z.object({
       thinking: z.boolean().default(false),
       effort: z.enum(["low", "medium", "high"]).default("low"),
       memory: z.boolean().default(false),
+      model: z.string().optional(),
     })
     .optional(),
 });
