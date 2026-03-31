@@ -1216,7 +1216,11 @@ function extractSkillFileIds(message: BetaMessage): string[] {
   for (const block of message.content) {
     const blockAny = block as unknown as Record<string, unknown>;
     const blockType = blockAny.type as string;
-    if (blockType === "bash_code_execution_tool_result" || blockType === "code_execution_tool_result") {
+    if (
+      blockType === "bash_code_execution_tool_result" ||
+      blockType === "code_execution_tool_result" ||
+      blockType === "text_editor_code_execution_tool_result"
+    ) {
       collectFileIds(blockAny.content, fileIds);
     }
   }
