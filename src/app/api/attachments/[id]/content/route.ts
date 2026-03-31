@@ -41,8 +41,22 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const encodedFilename = encodeURIComponent(rawFilename).replace(/'/g, "%27");
   const dispositionHeader = `inline; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`;
 
-  // Prefer Supabase Storage URL — redirect to CDN
+  // Prefer Supabase Storage URL
   if (attachment.storageUrl) {
+    // HTML files must be proxied (not redirected) for iframe rendering and correct Content-Type
+    if (attachment.mediaType === "text/html") {
+      const res = await fetch(attachment.storageUrl);
+      if (res.ok) {
+        return new Response(res.body, {
+          headers: {
+            "Content-Type": "text/html; charset=utf-8",
+            "Content-Disposition": dispositionHeader,
+            "Cache-Control": "private, max-age=3600",
+          },
+        });
+      }
+    }
+    // Non-HTML: redirect to CDN (images, PDFs, etc.)
     return Response.redirect(attachment.storageUrl, 302);
   }
 

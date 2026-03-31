@@ -20,9 +20,19 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     return Response.json({ error: "Not found" }, { status: 404 });
   }
 
-  // Prefer Supabase Storage URL (fast CDN redirect)
+  // Proxy HTML from Supabase Storage (redirect doesn't work in sandboxed iframes)
   if (attachment.storageUrl) {
-    return Response.redirect(attachment.storageUrl, 302);
+    const res = await fetch(attachment.storageUrl);
+    if (res.ok) {
+      return new Response(res.body, {
+        headers: {
+          "Content-Type": "text/html; charset=utf-8",
+          "Content-Disposition": "inline",
+          "X-Content-Type-Options": "nosniff",
+          "Cache-Control": "public, max-age=3600",
+        },
+      });
+    }
   }
 
   // Fall back to streaming from Anthropic Files API (old pre-migration attachments)
