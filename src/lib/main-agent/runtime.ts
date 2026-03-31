@@ -299,7 +299,6 @@ export async function streamMainAgentRun(input: {
         ]);
 
         titleUpdatePromise = maybeUpdateConversationTitle({
-          anthropic,
           conversationId: input.conversationId,
           currentTitle: conversation.title,
           prompt: input.prompt,
@@ -1157,11 +1156,7 @@ export async function streamMainAgentRun(input: {
           // Nothing was streamed yet — generate a user-friendly fallback.
           // Uses OpenAI gpt-4o-mini first (different provider, unaffected by Anthropic issues),
           // falls back to Anthropic Haiku, then a static message.
-          finalText = await generateErrorResponse(
-            hasAnthropicApiKey() ? getAnthropicClient() : null,
-            input.prompt,
-            message,
-          );
+          finalText = await generateErrorResponse(null, input.prompt, message);
         }
 
         emit("assistant.message.completed", "main_agent", {

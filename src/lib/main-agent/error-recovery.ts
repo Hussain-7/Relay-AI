@@ -1,6 +1,4 @@
-import type Anthropic from "@anthropic-ai/sdk";
-
-import { env } from "@/lib/env";
+import { generateCompletionWithFallback } from "@/lib/ai";
 
 const ERROR_RECOVERY_SYSTEM =
   "You are a helpful AI assistant. The main AI model encountered an error while processing the user's request. " +
@@ -9,89 +7,29 @@ const ERROR_RECOVERY_SYSTEM =
 
 const STATIC_FALLBACK = "I ran into an issue processing your request. Please try again in a moment.";
 
-function buildErrorPrompt(userPrompt: string, errorMessage: string) {
-  return `User asked: "${userPrompt.slice(0, 200)}"\n\nError encountered: ${errorMessage.slice(0, 300)}\n\nGenerate a user-friendly response.`;
-}
-
-async function generateViaOpenAI(userPrompt: string, errorMessage: string): Promise<string | null> {
-  if (!env.OPENAI_API_KEY) return null;
-
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${env.OPENAI_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      max_tokens: 200,
-      temperature: 0,
-      messages: [
-        { role: "system", content: ERROR_RECOVERY_SYSTEM },
-        { role: "user", content: buildErrorPrompt(userPrompt, errorMessage) },
-      ],
-    }),
-    signal: AbortSignal.timeout(8_000),
-  });
-
-  if (!response.ok) return null;
-
-  const body = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
-
-  return body.choices?.[0]?.message?.content?.trim() || null;
-}
-
-async function generateViaAnthropic(
-  anthropic: Anthropic,
-  userPrompt: string,
-  errorMessage: string,
-): Promise<string | null> {
-  const response = await anthropic.messages.create({
-    model: env.ANTHROPIC_TITLE_MODEL,
-    max_tokens: 200,
-    temperature: 0,
-    system: ERROR_RECOVERY_SYSTEM,
-    messages: [{ role: "user", content: buildErrorPrompt(userPrompt, errorMessage) }],
-  });
-
-  const text = response.content
-    .filter((b): b is Extract<(typeof response.content)[number], { type: "text" }> => b.type === "text")
-    .map((b) => b.text)
-    .join("")
-    .trim();
-
-  return text || null;
-}
+// Avoid Anthropic here since the error likely originated from their API.
+// Cerebras (different infra) → OpenAI (different provider) → static fallback.
+const ERROR_MODELS = ["llama3.1-8b", "gpt-4o-mini"];
 
 /**
  * Generate a user-friendly error response when the main agent fails.
- * Tries OpenAI gpt-4o-mini first (different provider, unaffected by Anthropic issues),
- * falls back to Anthropic Haiku, then returns a static message.
+ * Uses fastest available non-Anthropic model to avoid cascading failures.
  */
 export async function generateErrorResponse(
-  anthropic: Anthropic | null,
+  _anthropic: unknown,
   userPrompt: string,
   errorMessage: string,
 ): Promise<string> {
-  // Try OpenAI first (different provider = likely unaffected by Anthropic outage/rate limit)
-  try {
-    const openaiResult = await generateViaOpenAI(userPrompt, errorMessage);
-    if (openaiResult) return openaiResult;
-  } catch {
-    /* fall through */
-  }
+  const prompt = `User asked: "${userPrompt.slice(0, 200)}"\n\nError encountered: ${errorMessage.slice(0, 300)}\n\nGenerate a user-friendly response.`;
 
-  // Fallback to Anthropic Haiku
-  if (anthropic) {
-    try {
-      const anthropicResult = await generateViaAnthropic(anthropic, userPrompt, errorMessage);
-      if (anthropicResult) return anthropicResult;
-    } catch {
-      /* fall through */
-    }
-  }
+  const result = await generateCompletionWithFallback({
+    models: ERROR_MODELS,
+    system: ERROR_RECOVERY_SYSTEM,
+    prompt,
+    maxTokens: 200,
+    temperature: 0,
+    timeoutMs: 8_000,
+  });
 
-  return STATIC_FALLBACK;
+  return result ?? STATIC_FALLBACK;
 }
