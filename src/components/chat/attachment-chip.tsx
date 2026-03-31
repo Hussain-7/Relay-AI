@@ -85,7 +85,9 @@ export function AttachmentChip(props: AttachmentCardProps) {
     filename = pf.file.name;
     isImage = pf.file.type.startsWith("image/");
     badge = isImage ? "IMG" : pf.file.type === "application/pdf" ? "PDF" : getExtBadge(pf.file.name);
-    thumbnailSrc = pf.previewUrl;
+    // Staged (not yet uploaded, e.g. /chat/new): show blob preview so user sees the image
+    // Uploading: show skeleton — storageUrl will replace it when upload completes
+    thumbnailSrc = pf.status === "staged" ? pf.previewUrl : null;
     isUploading = pf.status === "uploading";
     isError = pf.status === "error";
   } else {
@@ -94,11 +96,12 @@ export function AttachmentChip(props: AttachmentCardProps) {
     badge = getFileTypeBadge(att);
     isImage = att.kind === "IMAGE" && isImageMediaType(att.mediaType);
     if (isImage) {
-      // Prefer local object URL (fast, no API round-trip) over Anthropic Files API download.
-      // localPreviewUrl in metadataJson is set by placeholder attachments (staged files during
-      // /chat/new → /chat/[id] transition) and avoids relying on the mutable previewUrlMap ref.
-      const localUrl = (att.metadataJson as Record<string, unknown> | null)?.localPreviewUrl as string | undefined;
-      thumbnailSrc = props.previewUrl ?? localUrl ?? `/api/attachments/${att.id}/content`;
+      // Priority: storageUrl (CDN) > publicUrl (generated images) > API fallback
+      // Skip blob URLs — only use persistent URLs that survive page reload
+      const meta = att.metadataJson as Record<string, unknown> | null;
+      const publicUrl = meta?.publicUrl as string | undefined;
+      const previewUrl = props.previewUrl?.startsWith("blob:") ? undefined : props.previewUrl;
+      thumbnailSrc = previewUrl ?? att.storageUrl ?? publicUrl ?? `/api/attachments/${att.id}/content`;
     }
   }
 
@@ -113,7 +116,13 @@ export function AttachmentChip(props: AttachmentCardProps) {
     >
       {/* Thumbnail / icon area */}
       <div className="relative flex-1 min-h-0 overflow-hidden">
-        {isImage && thumbnailSrc ? <Thumbnail src={thumbnailSrc} alt={filename} /> : <FileIcon badge={badge} />}
+        {isImage && thumbnailSrc ? (
+          <Thumbnail src={thumbnailSrc} alt={filename} />
+        ) : isImage && isUploading ? (
+          <div className="absolute inset-0 bg-[rgba(255,255,255,0.04)] animate-pulse" />
+        ) : (
+          <FileIcon badge={badge} />
+        )}
         {isUploading && <LoadingOverlay />}
         {isError && <ErrorOverlay />}
       </div>

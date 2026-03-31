@@ -1,8 +1,8 @@
 import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
-import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
-import { env, hasGoogleAiConfig } from "@/lib/env";
+import { ensureBucketExists, getSupabaseStorageClient } from "@/lib/attachment-storage";
+import { hasGoogleAiConfig } from "@/lib/env";
 import { getGoogleAiClient } from "@/lib/google-ai";
 import { prisma } from "@/lib/prisma";
 import type { ToolCatalogEntry, ToolRuntimeContext } from "./context";
@@ -51,7 +51,7 @@ async function resolveInputImage(attachmentId: string, userId: string) {
     where: { id: attachmentId },
     select: {
       id: true,
-      content: true,
+      storageUrl: true,
       mediaType: true,
       metadataJson: true,
       conversation: { select: { userId: true } },
@@ -68,25 +68,16 @@ async function resolveInputImage(attachmentId: string, userId: string) {
     throw new Error("You do not have access to this attachment.");
   }
 
-  // If content bytes are stored in DB, use them directly
-  if (attachment.content) {
-    return {
-      base64: Buffer.from(attachment.content).toString("base64"),
-      mimeType: attachment.mediaType,
-    };
-  }
-
-  // Fall back to downloading from publicUrl (generated images are stored in Supabase Storage)
+  // Resolve a URL to download the image from — storageUrl (uploaded files) or publicUrl (generated images)
   const meta = attachment.metadataJson as Record<string, unknown> | null;
-  const publicUrl = meta?.publicUrl as string | undefined;
-  if (!publicUrl) {
-    throw new Error(`Attachment ${attachmentId} has no content and no public URL.`);
+  const url = attachment.storageUrl ?? (meta?.publicUrl as string | undefined);
+  if (!url) {
+    throw new Error(`Attachment ${attachmentId} has no storage URL.`);
   }
 
-  console.log(`[image_generation] Downloading input image from public URL: ${publicUrl}`);
-  const response = await fetch(publicUrl);
+  const response = await fetch(url);
   if (!response.ok) {
-    throw new Error(`Failed to download image from ${publicUrl}: ${response.status}`);
+    throw new Error(`Failed to download image from ${url}: ${response.status}`);
   }
   const buffer = Buffer.from(await response.arrayBuffer());
   return {
@@ -174,46 +165,12 @@ async function generateWithGemini(prompt: string, modelId: string, inputImage?: 
  * Upload image buffer to Supabase Storage and return public URL.
  * Uses the service role key for server-side uploads to a public bucket.
  */
-// Singleton Supabase client for storage operations
-let _supabaseStorageClient: ReturnType<typeof createClient> | null = null;
-function getSupabaseStorageClient(): ReturnType<typeof createClient> {
-  if (!_supabaseStorageClient) {
-    const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL;
-    const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
-    if (!supabaseUrl || !serviceKey) {
-      throw new Error("Supabase is not configured (NEXT_PUBLIC_SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY required).");
-    }
-    _supabaseStorageClient = createClient(supabaseUrl, serviceKey);
-  }
-  return _supabaseStorageClient;
-}
-
-// Check-once pattern to prevent race condition on concurrent bucket creation
-let _bucketReady: Promise<void> | null = null;
-function ensureBucketExists(): Promise<void> {
-  if (!_bucketReady) {
-    _bucketReady = (async () => {
-      const supabase = getSupabaseStorageClient();
-      const { data: buckets } = await supabase.storage.listBuckets();
-      if (!buckets?.some((b) => b.name === STORAGE_BUCKET)) {
-        const { error: bucketError } = await supabase.storage.createBucket(STORAGE_BUCKET, {
-          public: true,
-          fileSizeLimit: 10 * 1024 * 1024,
-          allowedMimeTypes: ["image/png", "image/jpeg", "image/webp"],
-        });
-        if (bucketError && !bucketError.message.includes("already exists")) {
-          _bucketReady = null; // Reset so next call retries
-          throw new Error(`Failed to create storage bucket: ${bucketError.message}`);
-        }
-      }
-    })();
-  }
-  return _bucketReady;
-}
-
 async function uploadToSupabaseStorage(buffer: Buffer, filename: string): Promise<string> {
   const supabase = getSupabaseStorageClient();
-  await ensureBucketExists();
+  await ensureBucketExists(STORAGE_BUCKET, {
+    fileSizeLimit: 10 * 1024 * 1024,
+    allowedMimeTypes: ["image/png", "image/jpeg", "image/webp"],
+  });
 
   const storagePath = `${Date.now()}-${filename}`;
   console.log(

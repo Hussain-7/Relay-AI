@@ -128,7 +128,7 @@ model Attachment {
   mediaType        String
   sizeBytes        Int?
   anthropicFileId  String?
-  content          Bytes?
+  storageUrl       String?
   metadataJson     Json?
   createdAt        DateTime      @default(now())
   conversation     Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)

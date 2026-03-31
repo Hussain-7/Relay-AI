@@ -22,27 +22,12 @@ export function useFileUpload({
 
   function handleUpload(files: FileList | null) {
     if (!files?.length) return;
-
-    const convId = activeConversation?.id ?? activeConversationId;
-
-    if (!convId) {
-      // /chat/new — no conversation exists. Stage files locally, upload on send.
-      const newEntries: PendingFile[] = Array.from(files).map((file) => ({
-        clientId: crypto.randomUUID(),
-        file,
-        previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : null,
-        status: "staged" as const,
-      }));
-      setPendingFiles((prev) => [...prev, ...newEntries]);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      return;
-    }
-
-    // Existing conversation — upload immediately
+    // Upload immediately — conversationId is optional in the API
+    const convId = activeConversation?.id ?? activeConversationId ?? undefined;
     void uploadFiles(files, convId);
   }
 
-  async function uploadFiles(files: FileList | File[], convId: string) {
+  async function uploadFiles(files: FileList | File[], convId?: string) {
     const fileArray = Array.from(files);
     const newPending: PendingFile[] = fileArray.map((file) => ({
       clientId: crypto.randomUUID(),
@@ -55,7 +40,7 @@ export function useFileUpload({
     const results = await Promise.allSettled(
       newPending.map(async (pf) => {
         const formData = new FormData();
-        formData.append("conversationId", convId);
+        if (convId) formData.append("conversationId", convId);
         formData.append("file", pf.file);
         const body = await api.upload<{ attachment: AttachmentDto }>("/api/uploads", formData);
         return { clientId: pf.clientId, attachment: body.attachment };
@@ -71,7 +56,11 @@ export function useFileUpload({
         successAttachments.push(attachment);
         updatedStatuses.set(clientId, { status: "done", attachment });
         const pf = newPending.find((p) => p.clientId === clientId);
-        if (pf?.previewUrl) {
+        // Use storageUrl (persistent CDN) for preview instead of blob URL
+        if (attachment.storageUrl) {
+          previewUrlMapRef.current.set(attachment.id, attachment.storageUrl);
+          if (pf?.previewUrl) URL.revokeObjectURL(pf.previewUrl);
+        } else if (pf?.previewUrl) {
           previewUrlMapRef.current.set(attachment.id, pf.previewUrl);
         }
       } else {

@@ -58,6 +58,7 @@ export interface AttachmentDto {
   mediaType: string;
   sizeBytes: number | null;
   anthropicFileId: string | null;
+  storageUrl: string | null;
   createdAt: string;
   metadataJson: JsonRecord | null;
 }

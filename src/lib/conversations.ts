@@ -22,8 +22,7 @@ import type {
 } from "@/lib/contracts";
 import { prisma } from "@/lib/prisma";
 
-/** Select all Attachment columns except `content` (large binary blob). */
-const attachmentFieldsWithoutContent = {
+const attachmentFields = {
   id: true,
   conversationId: true,
   runId: true,
@@ -32,6 +31,7 @@ const attachmentFieldsWithoutContent = {
   mediaType: true,
   sizeBytes: true,
   anthropicFileId: true,
+  storageUrl: true,
   metadataJson: true,
   createdAt: true,
 } satisfies Prisma.AttachmentSelect;
@@ -40,7 +40,7 @@ const conversationDetailInclude = {
   mainAgentSession: true,
   repoBinding: true,
   attachments: {
-    select: attachmentFieldsWithoutContent,
+    select: attachmentFields,
     orderBy: { createdAt: "asc" as const },
   },
   messages: {
@@ -50,7 +50,7 @@ const conversationDetailInclude = {
     orderBy: { createdAt: "asc" as const },
     include: {
       attachments: {
-        select: attachmentFieldsWithoutContent,
+        select: attachmentFields,
         orderBy: { createdAt: "asc" as const },
       },
       approvals: {
@@ -75,16 +75,16 @@ const conversationDetailInclude = {
   },
 } satisfies Prisma.ConversationInclude;
 
-type AttachmentWithoutContent = Omit<Attachment, "content">;
+type AttachmentRecord = Attachment;
 
 type ConversationDetailRecord = Conversation & {
   mainAgentSession: MainAgentSession | null;
   repoBinding: RepoBinding | null;
-  attachments: AttachmentWithoutContent[];
+  attachments: AttachmentRecord[];
   messages: Message[];
   runs: Array<
     AgentRun & {
-      attachments: AttachmentWithoutContent[];
+      attachments: AttachmentRecord[];
       approvals: RunApproval[];
       events: RunEvent[];
       codingSession:
@@ -105,7 +105,7 @@ function toJsonRecord(value: unknown) {
   return (value ?? null) as Record<string, unknown> | null;
 }
 
-function mapAttachment(attachment: AttachmentWithoutContent): AttachmentDto {
+function mapAttachment(attachment: AttachmentRecord): AttachmentDto {
   return {
     id: attachment.id,
     kind: attachment.kind,
@@ -113,6 +113,7 @@ function mapAttachment(attachment: AttachmentWithoutContent): AttachmentDto {
     mediaType: attachment.mediaType,
     sizeBytes: attachment.sizeBytes,
     anthropicFileId: attachment.anthropicFileId,
+    storageUrl: attachment.storageUrl,
     createdAt: attachment.createdAt.toISOString(),
     metadataJson: toJsonRecord(attachment.metadataJson),
   };

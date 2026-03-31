@@ -361,7 +361,7 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
 
   function handleSend() {
     if (!composerValue.trim() || isSending) return;
-    // Block send while any files are actively uploading (on existing conversations)
+    // Block send while any files are actively uploading
     if (pendingFiles.some((pf) => pf.status === "uploading")) return;
 
     const prompt = composerValue.trim();
@@ -376,17 +376,13 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
       // Existing chat — stream directly
       void startStream(activeConversation.id, prompt, attachments, false);
     } else {
-      // /chat/new — carry staged files + repo binding through navigation
-      const stagedFiles = pendingFiles
-        .filter((pf) => pf.status === "staged")
-        .map(({ clientId, file, previewUrl }) => ({ clientId, file, previewUrl }));
-
+      // /chat/new — files are already uploaded (no stagedFiles needed)
+      // Just pass the attachment DTOs through navigation
       const newId = crypto.randomUUID();
       setPendingMessage({
         conversationId: newId,
         prompt,
         attachments,
-        stagedFiles: stagedFiles.length > 0 ? stagedFiles : undefined,
         stagedRepoBindingId: stagedRepoBinding?.id ?? undefined,
         stagedRepoFullName: stagedRepoBinding?.repoFullName ?? undefined,
       });

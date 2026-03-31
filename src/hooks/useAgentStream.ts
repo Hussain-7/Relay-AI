@@ -83,6 +83,7 @@ export function useAgentStream({ agentPreferences }: UseAgentStreamParams) {
         mediaType: mt,
         sizeBytes: sf.file.size,
         anthropicFileId: null,
+        storageUrl: null,
         createdAt: new Date().toISOString(),
         metadataJson: sf.previewUrl ? { localPreviewUrl: sf.previewUrl } : null,
       };
@@ -126,7 +127,11 @@ export function useAgentStream({ agentPreferences }: UseAgentStreamParams) {
             formData.append("conversationId", conversationId);
             formData.append("file", sf.file);
             const body = await api.upload<{ attachment: AttachmentDto }>("/api/uploads", formData);
-            if (sf.previewUrl) {
+            // Use storageUrl (persistent CDN) for preview instead of blob URL
+            if (body.attachment.storageUrl) {
+              previewUrlMapRef.current.set(body.attachment.id, body.attachment.storageUrl);
+              if (sf.previewUrl) URL.revokeObjectURL(sf.previewUrl);
+            } else if (sf.previewUrl) {
               previewUrlMapRef.current.set(body.attachment.id, sf.previewUrl);
             }
             return body.attachment;

@@ -5,6 +5,7 @@ import type {
 } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 import { type AttachmentKind, type Prisma, RunStatus } from "@/generated/prisma/client";
 
+import { uploadAttachment } from "@/lib/attachment-storage";
 import type { AttachmentDto, TimelineEventEnvelope } from "@/lib/contracts";
 import { env, hasAnthropicApiKey } from "@/lib/env";
 import { getDomain, getTextWithCitations } from "@/lib/main-agent/citations";
@@ -146,7 +147,6 @@ export async function streamMainAgentRun(input: {
             ? prisma.attachment.findMany({
                 where: {
                   id: { in: input.attachmentIds },
-                  conversationId: input.conversationId,
                 },
                 select: {
                   id: true,
@@ -281,6 +281,13 @@ export async function streamMainAgentRun(input: {
                 : undefined,
             },
           }),
+          // Link any unlinked attachments (uploaded before conversation existed, e.g. from /chat/new)
+          input.attachmentIds.length
+            ? prisma.attachment.updateMany({
+                where: { id: { in: input.attachmentIds }, conversationId: null },
+                data: { conversationId: input.conversationId },
+              })
+            : Promise.resolve(),
           prisma.message.create({
             data: {
               conversationId: input.conversationId,
@@ -959,16 +966,20 @@ export async function streamMainAgentRun(input: {
                 betas: ["files-api-2025-04-14"],
               });
 
-              // Download file content for local storage (enables preview & public sharing)
-              let contentBytes: Uint8Array<ArrayBuffer> | null = null;
+              // Download file content and upload to Supabase Storage for fast serving
+              let storageUrl: string | null = null;
               try {
                 const downloaded = await anthropic.beta.files.download(fileId, {
                   betas: ["files-api-2025-04-14"],
                 });
                 const ab = await new Response(downloaded.body as ReadableStream).arrayBuffer();
-                contentBytes = new Uint8Array(ab);
+                storageUrl = await uploadAttachment(
+                  Buffer.from(ab),
+                  meta.filename,
+                  meta.mime_type ?? "application/octet-stream",
+                );
               } catch (dlErr) {
-                console.warn(`Failed to download content for skill file ${fileId}:`, dlErr);
+                console.warn(`Failed to upload skill file ${fileId} to storage:`, dlErr);
               }
 
               const attachment = await prisma.attachment.create({
@@ -980,7 +991,7 @@ export async function streamMainAgentRun(input: {
                   mediaType: meta.mime_type ?? "application/octet-stream",
                   sizeBytes: meta.size_bytes ?? null,
                   anthropicFileId: fileId,
-                  content: contentBytes,
+                  storageUrl,
                   metadataJson: { source: "skill_output", downloadable: true },
                 },
               });
@@ -991,6 +1002,7 @@ export async function streamMainAgentRun(input: {
                 mediaType: attachment.mediaType,
                 sizeBytes: attachment.sizeBytes,
                 anthropicFileId: attachment.anthropicFileId,
+                storageUrl: attachment.storageUrl,
                 createdAt: attachment.createdAt.toISOString(),
                 metadataJson: attachment.metadataJson as Record<string, unknown> | null,
               });
