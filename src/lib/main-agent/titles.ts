@@ -57,8 +57,8 @@ async function generateTitleViaOpenAI(prompt: string): Promise<string | null> {
       },
       body: JSON.stringify({
         model: "gpt-4.1-nano",
-        max_tokens: 12,
-        temperature: 0,
+        max_tokens: 16,
+        temperature: 0.5,
         messages: [
           { role: "system", content: TITLE_SYSTEM_PROMPT },
           { role: "user", content: `[TITLE THIS MESSAGE]\n${prompt}` },
