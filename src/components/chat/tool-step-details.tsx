@@ -85,6 +85,88 @@ function LogEntryExpandable({ log }: { log: ToolLogEntry }) {
   );
 }
 
+/** For code_execution / text_editor tools, extract the meaningful content from raw JSON input. */
+function formatToolInput(title: string, rawInput: string): { label: string; code: string } | null {
+  try {
+    const parsed = JSON.parse(rawInput);
+
+    if (title === "code_execution" && typeof parsed.code === "string") {
+      return { label: parsed.language ?? "python", code: parsed.code };
+    }
+
+    if (title === "text_editor") {
+      const cmd = parsed.command as string | undefined;
+      const path = parsed.path as string | undefined;
+      if (cmd === "view" && path) return { label: `view ${path}`, code: "" };
+      if (cmd === "create" && path && typeof parsed.file_text === "string") {
+        return { label: `create ${path}`, code: parsed.file_text };
+      }
+      if (cmd === "str_replace" && path) {
+        const old = parsed.old_str as string | undefined;
+        const replacement = parsed.new_str as string | undefined;
+        if (old && replacement) {
+          return { label: `edit ${path}`, code: `- ${old}\n+ ${replacement}` };
+        }
+      }
+      if (cmd === "insert" && path && typeof parsed.insert_line === "number" && typeof parsed.new_str === "string") {
+        return { label: `insert at ${path}:${parsed.insert_line}`, code: parsed.new_str };
+      }
+    }
+
+    if (title === "web_search" && typeof parsed.query === "string") {
+      return { label: "query", code: parsed.query };
+    }
+
+    if (title === "web_fetch" && typeof parsed.url === "string") {
+      return { label: "url", code: parsed.url };
+    }
+  } catch {
+    // Not JSON — return null to use raw display
+  }
+  return null;
+}
+
+function ToolInputSection({ entry }: { entry: ToolTimelineEntry }) {
+  const formatted = formatToolInput(entry.title, entry.input);
+
+  if (formatted?.code) {
+    return (
+      <section className="border border-[rgba(255,255,255,0.08)] rounded-[18px] bg-[rgba(255,255,255,0.03)] p-3 min-w-0 overflow-hidden">
+        <div className="mb-2 flex items-center gap-2">
+          <span className="text-[rgba(245,240,232,0.5)] text-[0.72rem] tracking-[0.12em] uppercase">Request</span>
+          <span className="text-[rgba(245,240,232,0.3)] text-[0.7rem] font-mono">{formatted.label}</span>
+        </div>
+        <pre className="overflow-auto m-0 rounded-[16px] bg-[rgba(8,8,8,0.5)] px-4 py-3 text-[rgba(255,255,255,0.88)] text-[0.78rem] leading-[1.6] whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-mono max-h-[400px] border border-[rgba(255,255,255,0.05)]">
+          <code>{formatted.code}</code>
+        </pre>
+      </section>
+    );
+  }
+
+  if (formatted && !formatted.code) {
+    // Simple display for view/search commands with no code body
+    return (
+      <section className="border border-[rgba(255,255,255,0.08)] rounded-[18px] bg-[rgba(255,255,255,0.03)] p-3 min-w-0 overflow-hidden">
+        <div className="mb-2 text-[rgba(245,240,232,0.5)] text-[0.72rem] tracking-[0.12em] uppercase">Request</div>
+        <div className="px-3.5 py-2.5 text-[rgba(255,255,255,0.75)] text-[0.82rem] font-mono">{formatted.label}</div>
+      </section>
+    );
+  }
+
+  // Fallback: raw JSON
+  return (
+    <section className="border border-[rgba(255,255,255,0.08)] rounded-[18px] bg-[rgba(255,255,255,0.03)] p-3 min-w-0 overflow-hidden">
+      <div className="mb-2 text-[rgba(245,240,232,0.5)] text-[0.72rem] tracking-[0.12em] uppercase">Request</div>
+      <pre
+        className="overflow-auto m-0 rounded-[16px] bg-[rgba(8,8,8,0.4)] px-3.5 py-3 text-[rgba(255,255,255,0.82)] text-[0.78rem] leading-[1.55] whitespace-pre-wrap break-words [overflow-wrap:anywhere]"
+        aria-label={`${entry.title} input`}
+      >
+        {entry.input}
+      </pre>
+    </section>
+  );
+}
+
 export function ToolStepDetails({ entry }: { entry: ToolTimelineEntry }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const hasInput = Boolean(entry.input.trim());
@@ -114,19 +196,7 @@ export function ToolStepDetails({ entry }: { entry: ToolTimelineEntry }) {
 
       {isExpanded ? (
         <div className="grid gap-3 mt-3 min-w-0">
-          {hasInput ? (
-            <section className="border border-[rgba(255,255,255,0.08)] rounded-[18px] bg-[rgba(255,255,255,0.03)] p-3 min-w-0 overflow-hidden">
-              <div className="mb-2 text-[rgba(245,240,232,0.5)] text-[0.72rem] tracking-[0.12em] uppercase">
-                Request
-              </div>
-              <pre
-                className="overflow-auto m-0 rounded-[16px] bg-[rgba(8,8,8,0.4)] px-3.5 py-3 text-[rgba(255,255,255,0.82)] text-[0.78rem] leading-[1.55] whitespace-pre-wrap break-words [overflow-wrap:anywhere]"
-                aria-label={`${entry.title} input`}
-              >
-                {entry.input}
-              </pre>
-            </section>
-          ) : null}
+          {hasInput ? <ToolInputSection entry={entry} /> : null}
           {hasLogs ? (
             <section className="border border-[rgba(255,255,255,0.08)] rounded-[18px] bg-[rgba(255,255,255,0.03)] p-3 min-w-0 overflow-hidden">
               <div className="mb-2 text-[rgba(245,240,232,0.5)] text-[0.72rem] tracking-[0.12em] uppercase">
