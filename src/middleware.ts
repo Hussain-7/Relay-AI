@@ -2,14 +2,17 @@ import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
 import { ALLOWED_EMAILS } from "@/lib/allowed-emails";
 
-const PUBLIC_ROUTES = new Set(["/", "/login", "/auth/callback", "/waitlist"]);
+// Routes that don't require auth at all — skip entirely
+const SKIP_AUTH = new Set(["/auth/callback", "/waitlist"]);
+// Routes that are public but should redirect to /chat/new if already authenticated
+const REDIRECT_IF_AUTHED = new Set(["/", "/login"]);
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Skip auth for public routes, API routes, and static assets
+  // Skip auth completely for callbacks, static assets, API routes
   if (
-    PUBLIC_ROUTES.has(pathname) ||
+    SKIP_AUTH.has(pathname) ||
     pathname.startsWith("/api/") ||
     pathname.startsWith("/preview/") ||
     pathname.endsWith(".webmanifest") ||
@@ -51,14 +54,16 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Not authenticated → redirect to login
   if (!user) {
+    // Public routes (/, /login) — show the page as-is
+    if (REDIRECT_IF_AUTHED.has(pathname)) {
+      return response;
+    }
+    // Protected routes — redirect to login
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("next", pathname);
     const redirectResponse = NextResponse.redirect(url);
-    // Carry forward cookie changes (e.g. cleared stale tokens) so the
-    // browser doesn't keep sending an invalid refresh token on every request.
     for (const cookie of response.cookies.getAll()) {
       redirectResponse.cookies.set(cookie);
     }
@@ -76,8 +81,8 @@ export async function middleware(request: NextRequest) {
     return redirectResponse;
   }
 
-  // Authenticated + allowed user on /login → redirect to chat
-  if (pathname === "/login") {
+  // Authenticated + allowed user on / or /login → redirect to chat
+  if (REDIRECT_IF_AUTHED.has(pathname)) {
     const url = request.nextUrl.clone();
     url.pathname = "/chat/new";
     return NextResponse.redirect(url);

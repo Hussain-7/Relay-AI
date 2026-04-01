@@ -34,7 +34,7 @@ const envSchema = z.object({
   INNGEST_EVENT_KEY: z.string().optional(),
   INNGEST_SIGNING_KEY: z.string().optional(),
   RESEND_API_KEY: z.string().optional(),
-  RESEND_FROM_EMAIL: z.string().default("Relay AI <notifications@relay-ai.com>"),
+  RESEND_FROM_EMAIL: z.string().default("Relay AI <onboarding@resend.dev>"),
   DEBUG_AGENT_EVENTS: booleanLike,
 });
 
