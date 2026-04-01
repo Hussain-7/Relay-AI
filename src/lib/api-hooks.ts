@@ -14,6 +14,8 @@ export const queryKeys = {
   mcpConnectors: ["mcp-connectors"] as const,
   repoBindings: ["repo-bindings"] as const,
   repoSecrets: (repoBindingId: string) => ["repo-secrets", repoBindingId] as const,
+  scheduledPrompts: ["scheduled-prompts"] as const,
+  scheduledPrompt: (id: string) => ["scheduled-prompt", id] as const,
 };
 
 export interface AuthUser {
@@ -725,5 +727,153 @@ export function useDeleteRepoSecret() {
     },
     // No onSettled invalidation — the optimistic update already removed the secret
     // from cache. An eager refetch here can race with the delete and return stale data.
+  });
+}
+
+// ─── Scheduled Prompts ──────────────────────────────────────────────────────
+
+export interface ScheduledPromptDto {
+  id: string;
+  prompt: string;
+  cronExpression: string;
+  cronDescription: string;
+  timezone: string;
+  status: "ACTIVE" | "PAUSED" | "COMPLETED" | "CANCELLED";
+  maxRuns: number | null;
+  totalRuns: number;
+  nextRunAt: string | null;
+  lastRunAt: string | null;
+  label: string | null;
+  conversationId: string | null;
+  conversationTitle: string | null;
+  repoBinding: { id: string; repoFullName: string } | null;
+  preferencesJson: Record<string, unknown> | null;
+  mcpConnectorIds: string[] | null;
+  executionCount: number;
+  createdAt: string;
+}
+
+export interface ScheduledExecutionDto {
+  id: string;
+  status: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  errorMessage: string | null;
+  run: {
+    id: string;
+    status: string;
+    finalText: string | null;
+    model: string | null;
+    costUsd: number | null;
+    createdAt: string;
+    completedAt: string | null;
+  } | null;
+}
+
+export interface ScheduledPromptDetailDto extends Omit<ScheduledPromptDto, "executionCount"> {
+  executions: ScheduledExecutionDto[];
+}
+
+export function useScheduledPrompts(range?: { from?: string; to?: string }) {
+  const params = new URLSearchParams();
+  if (range?.from) params.set("from", range.from);
+  if (range?.to) params.set("to", range.to);
+  const qs = params.toString();
+
+  return useQuery({
+    queryKey: [...queryKeys.scheduledPrompts, qs],
+    queryFn: async () => {
+      const data = await api.get<{ schedules: ScheduledPromptDto[] }>(`/api/scheduled-prompts${qs ? `?${qs}` : ""}`);
+      return data.schedules;
+    },
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useScheduledPromptDetail(id: string | null) {
+  return useQuery({
+    queryKey: queryKeys.scheduledPrompt(id ?? ""),
+    queryFn: async () => {
+      const data = await api.get<{ schedule: ScheduledPromptDetailDto }>(`/api/scheduled-prompts/${id}`);
+      return data.schedule;
+    },
+    enabled: id !== null,
+    staleTime: 15 * 1000,
+  });
+}
+
+export function useCreateScheduledPrompt() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: {
+      prompt: string;
+      cronExpression: string;
+      timezone?: string;
+      maxRuns?: number;
+      label?: string;
+      repoBindingId?: string;
+      preferencesJson?: Record<string, unknown>;
+      mcpConnectorIds?: string[];
+    }) => {
+      const data = await api.post<{ schedule: ScheduledPromptDto }>("/api/scheduled-prompts", input);
+      return data.schedule;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.scheduledPrompts });
+    },
+  });
+}
+
+export function useUpdateScheduledPrompt() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      id,
+      ...updates
+    }: {
+      id: string;
+      prompt?: string;
+      cronExpression?: string;
+      timezone?: string;
+      maxRuns?: number | null;
+      label?: string | null;
+      status?: "ACTIVE" | "PAUSED";
+    }) => {
+      const data = await api.patch<{ schedule: ScheduledPromptDto }>(`/api/scheduled-prompts/${id}`, updates);
+      return data.schedule;
+    },
+    onSuccess: (schedule) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.scheduledPrompts });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.scheduledPrompt(schedule.id) });
+    },
+  });
+}
+
+export function useDeleteScheduledPrompt() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await api.del(`/api/scheduled-prompts/${id}`);
+      return id;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.scheduledPrompts });
+    },
+  });
+}
+
+export function useRunScheduledPromptNow() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await api.post(`/api/scheduled-prompts/${id}/run-now`, {});
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.scheduledPrompts });
+    },
   });
 }

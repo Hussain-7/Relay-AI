@@ -6,7 +6,7 @@ import { generateText, type LanguageModel } from "ai";
 
 /**
  * Resolve a model string to a Vercel AI SDK LanguageModel instance.
- * Detects the provider from the model name prefix or known patterns.
+ * Detects the provider from the model nacame prefix or known patterns.
  *
  * Examples:
  *   "llama3.1-8b"           → cerebras("llama3.1-8b")

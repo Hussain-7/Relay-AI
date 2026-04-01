@@ -70,6 +70,7 @@ model UserProfile {
   workspaceSnapshots  WorkspaceSnapshot[]
   githubInstallations GithubInstallation[]
   mcpConnectors       McpConnector[]
+  scheduledPrompts    ScheduledPrompt[]
 }
 
 model Conversation {
@@ -89,6 +90,7 @@ model Conversation {
   repoBinding       RepoBinding?      @relation(fields: [repoBindingId], references: [id], onDelete: SetNull)
   attachments       Attachment[]
   memoryEntries     MemoryEntry[]
+  scheduledPrompt   ScheduledPrompt?
 
   @@index([userId, updatedAt])
 }
@@ -156,6 +158,7 @@ model RepoBinding {
   codingSessions      CodingSession[]
   workspaceSnapshots  WorkspaceSnapshot[]
   secrets             RepoSecret[]
+  scheduledPrompts    ScheduledPrompt[]
 
   @@unique([userId, provider, repoFullName])
   @@index([userId, updatedAt])
@@ -225,6 +228,7 @@ model AgentRun {
   events              RunEvent[]
   approvals           RunApproval[]
   attachments         Attachment[]
+  scheduledExecution  ScheduledExecution?
 
   @@index([conversationId, createdAt])
   @@index([userId, createdAt])
@@ -292,6 +296,58 @@ model WorkspaceSnapshot {
 
   @@index([userId, createdAt])
   @@index([repoBindingId, createdAt])
+}
+
+enum ScheduledPromptStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+model ScheduledPrompt {
+  id              String                @id @default(uuid())
+  userId          String
+  conversationId  String?               @unique
+  repoBindingId   String?
+  prompt          String
+  cronExpression  String
+  timezone        String                @default("UTC")
+  status          ScheduledPromptStatus @default(ACTIVE)
+  maxRuns         Int?
+  totalRuns       Int                   @default(0)
+  nextRunAt       DateTime?
+  lastRunAt       DateTime?
+  preferencesJson Json?
+  mcpConnectorIds Json?
+  label           String?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  user            UserProfile           @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  conversation    Conversation?         @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  repoBinding     RepoBinding?          @relation(fields: [repoBindingId], references: [id], onDelete: SetNull)
+  executions      ScheduledExecution[]
+
+  @@index([userId, status])
+  @@index([status, nextRunAt])
+  @@index([userId, nextRunAt])
+}
+
+model ScheduledExecution {
+  id                String          @id @default(uuid())
+  scheduledPromptId String
+  runId             String?         @unique
+  status            RunStatus       @default(PENDING)
+  startedAt         DateTime?
+  completedAt       DateTime?
+  errorMessage      String?
+  createdAt         DateTime        @default(now())
+
+  scheduledPrompt   ScheduledPrompt @relation(fields: [scheduledPromptId], references: [id], onDelete: Cascade)
+  run               AgentRun?       @relation(fields: [runId], references: [id], onDelete: SetNull)
+
+  @@index([scheduledPromptId, createdAt])
 }
 
 enum McpConnectorStatus {

@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useDeferredValue, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { type AgentPreferences, ComposerModelMenuPortal } from "@/components/chat/composer-model-menu";
 import { ComposerPlusMenuPortal } from "@/components/chat/composer-plus-menu";
+import { SchedulePopoverPortal } from "@/components/chat/schedule-popover";
 
 const RenameModal = dynamic(() => import("@/components/chat/rename-modal").then((m) => ({ default: m.RenameModal })), {
   ssr: false,
@@ -15,7 +16,9 @@ const RenameModal = dynamic(() => import("@/components/chat/rename-modal").then(
 import { SidebarMenuPortal } from "@/components/chat/sidebar-menu-portal";
 import {
   IconArrowUp,
+  IconCalendar,
   IconChevron,
+  IconClock,
   IconClose,
   IconGithub,
   IconKey,
@@ -30,6 +33,7 @@ import {
   queryKeys,
   useConversationDetail,
   useConversations,
+  useCreateScheduledPrompt,
   useDeleteConversation,
   useDisconnectGithub,
   useGithubStatus,
@@ -58,8 +62,10 @@ const RepoSecretsModal = dynamic(
   { ssr: false },
 );
 
+import { toast } from "sonner";
 import { AttachmentChip } from "@/components/chat/attachment-chip";
 import { RunThread } from "@/components/chat/run-thread";
+import { ScheduleCalendar } from "@/components/schedules/schedule-calendar";
 import { useAgentStream } from "@/hooks/useAgentStream";
 import { useComposerState } from "@/hooks/useComposerState";
 import { useFileUpload } from "@/hooks/useFileUpload";
@@ -68,7 +74,13 @@ import { usePendingMessage } from "@/hooks/usePendingMessage";
 import { useScrollManager } from "@/hooks/useScrollManager";
 import { peekPendingMessage, setPendingMessage } from "@/lib/pending-message";
 
-export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
+export function ChatWorkspace({
+  conversationId,
+  view = "chat",
+}: {
+  conversationId?: string;
+  view?: "chat" | "schedules";
+}) {
   const router = useRouter();
   const queryClient = useQueryClient();
 
@@ -179,6 +191,16 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
     setRenamingConversation,
   } = useModalState();
   const plusButtonRef = useRef<HTMLButtonElement | null>(null);
+  const scheduleButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [schedulePopoverOpen, setSchedulePopoverOpen] = useState(false);
+  const [stagedSchedule, setStagedSchedule] = useState<{
+    cronExpression: string;
+    cronDescription: string;
+    timezone: string;
+    maxRuns?: number;
+    label?: string;
+  } | null>(null);
+  const createScheduleMutation = useCreateScheduledPrompt();
   const deferredSidebarQuery = useDeferredValue(sidebarQuery);
   const profileRef = useRef<HTMLDivElement | null>(null);
   const modelButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -368,6 +390,46 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
     if (pendingFiles.some((pf) => pf.status === "uploading")) return;
 
     const prompt = composerValue.trim();
+
+    // If a schedule is staged, create the scheduled prompt instead of sending
+    if (stagedSchedule) {
+      const activeMcpIds = mcpConnectors.filter((c) => c.status === "ACTIVE").map((c) => c.id);
+      createScheduleMutation.mutate(
+        {
+          prompt,
+          cronExpression: stagedSchedule.cronExpression,
+          timezone: stagedSchedule.timezone,
+          maxRuns: stagedSchedule.maxRuns,
+          label: stagedSchedule.label,
+          repoBindingId: stagedRepoBinding?.id,
+          preferencesJson: {
+            model: selectedMainModelId,
+            thinking: agentPreferences.thinking,
+            effort: agentPreferences.effort,
+            memory: agentPreferences.memory,
+          },
+          mcpConnectorIds: activeMcpIds.length > 0 ? activeMcpIds : undefined,
+        },
+        {
+          onSuccess: (schedule) => {
+            toast.success("Prompt scheduled", {
+              description: schedule.cronDescription,
+            });
+            setComposerValue("");
+            setComposerAttachments([]);
+            setPendingFiles([]);
+            setStagedSchedule(null);
+          },
+          onError: (err) => {
+            toast.error("Failed to schedule prompt", {
+              description: err instanceof Error ? err.message : "Unknown error",
+            });
+          },
+        },
+      );
+      return;
+    }
+
     const attachments = composerAttachments;
 
     // Clear composer state before streaming
@@ -392,6 +454,17 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
       setIsSending(true);
       router.push(`/chat/${newId}`);
     }
+  }
+
+  function handleStageSchedule(config: {
+    cronExpression: string;
+    cronDescription: string;
+    timezone: string;
+    maxRuns?: number;
+    label?: string;
+  }) {
+    setStagedSchedule(config);
+    setSchedulePopoverOpen(false);
   }
 
   function handleSelectMainModel(modelId: string) {
@@ -548,6 +621,25 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
                 <IconSearch />
               </span>
               <span>Search</span>
+            </button>
+
+            <button
+              type="button"
+              className={`group flex items-center gap-3 w-full border-0 rounded-[10px] cursor-pointer py-[9px] px-2.5 text-left text-[0.9rem] leading-[1.25] transition-[background,color] duration-[140ms] ease-linear hover:bg-[#2f2f2d] hover:text-[rgba(247,242,233,0.96)] ${
+                view === "schedules"
+                  ? "bg-[#2f2f2d] text-[rgba(247,242,233,0.96)]"
+                  : "bg-transparent text-[rgba(236,230,219,0.82)]"
+              }`}
+              onClick={() => router.push("/chat/schedules")}
+            >
+              <span
+                className={`inline-grid shrink-0 w-5 h-5 place-items-center group-hover:text-[rgba(247,242,233,0.92)] ${
+                  view === "schedules" ? "text-[rgba(247,242,233,0.92)]" : "text-[rgba(236,230,219,0.72)]"
+                }`}
+              >
+                <IconCalendar />
+              </span>
+              <span>Schedules</span>
             </button>
 
             <div className="sidebar-conversation-list flex flex-1 min-h-0 flex-col gap-px overflow-y-auto overflow-x-hidden -mx-1 px-1">
@@ -862,633 +954,689 @@ export function ChatWorkspace({ conversationId }: { conversationId?: string }) {
         )}
       </aside>
 
-      <main className="grid min-h-0 h-dvh grid-rows-[auto_minmax(0,1fr)] overflow-hidden min-w-0 max-[980px]:h-dvh max-[980px]:min-h-dvh max-[980px]:w-full max-[980px]:max-w-full">
-        <header className="flex items-center justify-start gap-[18px] p-3 max-[980px]:gap-2 max-[980px]:pt-3 max-[980px]:pb-1 max-[980px]:px-[18px]">
-          <div className="flex min-w-0 w-full items-center gap-0 max-[980px]:w-full max-[980px]:gap-2">
-            {isMobileViewport ? (
-              <button
-                type="button"
-                className="hidden max-[980px]:inline-grid h-10 w-10 place-items-center border-0 bg-transparent text-[rgba(236,230,219,0.56)] cursor-pointer rounded-[10px] transition-[background,color] duration-140 ease-linear hover:bg-[#2f2f2d] hover:text-[rgba(247,242,233,0.92)] shrink-0"
-                aria-label={mobileSidebarOpen ? "Close navigation" : "Open navigation"}
-                aria-expanded={mobileSidebarOpen}
-                onClick={() => setMobileSidebarOpen((current) => !current)}
-              >
-                <IconSidebarToggle />
-              </button>
-            ) : null}
-
-            {activeConversation ? (
-              <div
-                className="relative min-w-0 max-w-full max-[980px]:flex-auto max-[980px]:min-w-0 max-[980px]:max-w-[calc(100%-48px)]"
-                data-chat-action-menu
-              >
+      {view === "schedules" ? (
+        <main className="min-h-0 h-dvh overflow-hidden min-w-0 max-[980px]:h-dvh max-[980px]:min-h-dvh max-[980px]:w-full max-[980px]:max-w-full">
+          <ScheduleCalendar />
+        </main>
+      ) : (
+        <main className="grid min-h-0 h-dvh grid-rows-[auto_minmax(0,1fr)] overflow-hidden min-w-0 max-[980px]:h-dvh max-[980px]:min-h-dvh max-[980px]:w-full max-[980px]:max-w-full">
+          <header className="flex items-center justify-start gap-[18px] p-3 max-[980px]:gap-2 max-[980px]:pt-3 max-[980px]:pb-1 max-[980px]:px-[18px]">
+            <div className="flex min-w-0 w-full items-center gap-0 max-[980px]:w-full max-[980px]:gap-2">
+              {isMobileViewport ? (
                 <button
                   type="button"
-                  className={`inline-flex items-center gap-1.5 w-auto max-w-[min(100%,42rem)] min-w-0 border-0 rounded-[10px] bg-transparent text-[rgba(235,230,220,0.82)] cursor-pointer py-1.5 px-2.5 overflow-hidden transition-[color,background] duration-[140ms] ease-linear hover:bg-[#2f2f2d] hover:text-[rgba(245,240,232,0.96)] max-[980px]:max-w-full max-[980px]:border-0 max-[980px]:rounded-none max-[980px]:bg-transparent max-[980px]:p-0`}
-                  aria-label={`Open menu for ${activeConversation.title}`}
-                  aria-expanded={headerMenuOpen}
-                  data-header-menu-trigger
-                  onClick={() => {
-                    setOpenConversationMenuId(null);
-                    setHeaderMenuOpen((current) => !current);
-                  }}
+                  className="hidden max-[980px]:inline-grid h-10 w-10 place-items-center border-0 bg-transparent text-[rgba(236,230,219,0.56)] cursor-pointer rounded-[10px] transition-[background,color] duration-140 ease-linear hover:bg-[#2f2f2d] hover:text-[rgba(247,242,233,0.92)] shrink-0"
+                  aria-label={mobileSidebarOpen ? "Close navigation" : "Open navigation"}
+                  aria-expanded={mobileSidebarOpen}
+                  onClick={() => setMobileSidebarOpen((current) => !current)}
                 >
-                  {activeConversation.title === "New chat" && liveRun ? (
-                    <span className="min-w-0 flex-[0_1_auto] p-0 text-[0.96rem] font-[430] leading-[1.2] whitespace-nowrap overflow-hidden text-ellipsis max-[980px]:text-[0.92rem]">
-                      <span className="inline-block w-[140px] h-[1em] rounded-[4px] bg-[rgba(255,255,255,0.08)] animate-pulse" />
-                    </span>
-                  ) : (
-                    <span className="min-w-0 flex-[0_1_auto] p-0 text-[0.96rem] font-[430] leading-[1.2] whitespace-nowrap overflow-hidden text-ellipsis max-[980px]:text-[0.92rem] max-[980px]:p-0 max-[980px]:whitespace-nowrap">
-                      {activeConversation.title}
-                    </span>
-                  )}
-                  <span className="hidden" aria-hidden="true" />
-                  <span
-                    className={`inline-grid w-auto place-items-center text-[rgba(245,240,232,0.54)] transition-[transform,color] duration-[180ms] ease-linear max-[980px]:w-auto ${headerMenuOpen ? "rotate-180 text-[rgba(245,240,232,0.9)]" : ""}`}
-                    aria-hidden="true"
-                  >
-                    <IconChevron />
-                  </span>
+                  <IconSidebarToggle />
                 </button>
+              ) : null}
 
-                {headerMenuOpen ? (
-                  <SidebarMenuPortal
-                    triggerSelector={`[data-header-menu-trigger]`}
-                    isStarred={activeConversation.isStarred}
-                    onToggleStar={() => {
-                      setHeaderMenuOpen(false);
-                      starMutation.mutate({ id: activeConversation.id, isStarred: !activeConversation.isStarred });
+              {activeConversation ? (
+                <div
+                  className="relative min-w-0 max-w-full max-[980px]:flex-auto max-[980px]:min-w-0 max-[980px]:max-w-[calc(100%-48px)]"
+                  data-chat-action-menu
+                >
+                  <button
+                    type="button"
+                    className={`inline-flex items-center gap-1.5 w-auto max-w-[min(100%,42rem)] min-w-0 border-0 rounded-[10px] bg-transparent text-[rgba(235,230,220,0.82)] cursor-pointer py-1.5 px-2.5 overflow-hidden transition-[color,background] duration-[140ms] ease-linear hover:bg-[#2f2f2d] hover:text-[rgba(245,240,232,0.96)] max-[980px]:max-w-full max-[980px]:border-0 max-[980px]:rounded-none max-[980px]:bg-transparent max-[980px]:p-0`}
+                    aria-label={`Open menu for ${activeConversation.title}`}
+                    aria-expanded={headerMenuOpen}
+                    data-header-menu-trigger
+                    onClick={() => {
+                      setOpenConversationMenuId(null);
+                      setHeaderMenuOpen((current) => !current);
                     }}
-                    onRename={() => {
-                      setHeaderMenuOpen(false);
-                      setRenamingConversation({ id: activeConversation.id, title: activeConversation.title });
-                    }}
-                    onDelete={(event) => {
-                      event.stopPropagation();
-                      void handleDeleteConversation(activeConversation.id);
-                    }}
-                    isDeleting={deletingConversationId === activeConversation.id}
-                  />
-                ) : null}
-              </div>
-            ) : activeConversationId ? (
-              <div className="min-w-0 flex-[0_1_auto] py-1.5 px-2.5 text-[0.96rem] leading-[1.2]">
-                <span className="inline-block w-[140px] h-[1em] rounded-[4px] bg-[rgba(255,255,255,0.08)] animate-pulse align-middle" />
-              </div>
-            ) : null}
-          </div>
-        </header>
+                  >
+                    {activeConversation.title === "New chat" && liveRun ? (
+                      <span className="min-w-0 flex-[0_1_auto] p-0 text-[0.96rem] font-[430] leading-[1.2] whitespace-nowrap overflow-hidden text-ellipsis max-[980px]:text-[0.92rem]">
+                        <span className="inline-block w-[140px] h-[1em] rounded-[4px] bg-[rgba(255,255,255,0.08)] animate-pulse" />
+                      </span>
+                    ) : (
+                      <span className="min-w-0 flex-[0_1_auto] p-0 text-[0.96rem] font-[430] leading-[1.2] whitespace-nowrap overflow-hidden text-ellipsis max-[980px]:text-[0.92rem] max-[980px]:p-0 max-[980px]:whitespace-nowrap">
+                        {activeConversation.title}
+                      </span>
+                    )}
+                    <span className="hidden" aria-hidden="true" />
+                    <span
+                      className={`inline-grid w-auto place-items-center text-[rgba(245,240,232,0.54)] transition-[transform,color] duration-[180ms] ease-linear max-[980px]:w-auto ${headerMenuOpen ? "rotate-180 text-[rgba(245,240,232,0.9)]" : ""}`}
+                      aria-hidden="true"
+                    >
+                      <IconChevron />
+                    </span>
+                  </button>
 
-        <div className="chat-stage relative min-h-0 overflow-hidden min-w-0" ref={stageRef}>
-          {isLoadingDetail && !hasLiveContent ? (
-            <div className="h-full pt-6 px-[30px] max-[980px]:px-[18px]">
-              <div className="max-w-[860px] mx-auto flex flex-col gap-5">
-                <div className="flex justify-end">
-                  <div className="h-[42px] w-[160px] rounded-[20px] bg-[rgba(255,255,255,0.06)] animate-pulse" />
+                  {headerMenuOpen ? (
+                    <SidebarMenuPortal
+                      triggerSelector={`[data-header-menu-trigger]`}
+                      isStarred={activeConversation.isStarred}
+                      onToggleStar={() => {
+                        setHeaderMenuOpen(false);
+                        starMutation.mutate({ id: activeConversation.id, isStarred: !activeConversation.isStarred });
+                      }}
+                      onRename={() => {
+                        setHeaderMenuOpen(false);
+                        setRenamingConversation({ id: activeConversation.id, title: activeConversation.title });
+                      }}
+                      onDelete={(event) => {
+                        event.stopPropagation();
+                        void handleDeleteConversation(activeConversation.id);
+                      }}
+                      isDeleting={deletingConversationId === activeConversation.id}
+                    />
+                  ) : null}
                 </div>
-                <div className="flex flex-col gap-[10px] mt-2">
-                  <div
-                    className="h-[13px] rounded-[4px] bg-[rgba(255,255,255,0.07)] animate-pulse"
-                    style={{ width: "82%" }}
-                  />
-                  <div
-                    className="h-[13px] rounded-[4px] bg-[rgba(255,255,255,0.06)] animate-pulse"
-                    style={{ width: "95%" }}
-                  />
-                  <div
-                    className="h-[13px] rounded-[4px] bg-[rgba(255,255,255,0.07)] animate-pulse"
-                    style={{ width: "88%" }}
-                  />
-                  <div
-                    className="h-[13px] rounded-[4px] bg-[rgba(255,255,255,0.06)] animate-pulse"
-                    style={{ width: "74%" }}
-                  />
-                  <div
-                    className="h-[13px] rounded-[4px] bg-[rgba(255,255,255,0.07)] animate-pulse"
-                    style={{ width: "91%" }}
-                  />
-                  <div
-                    className="h-[13px] rounded-[4px] bg-[rgba(255,255,255,0.06)] animate-pulse"
-                    style={{ width: "80%" }}
-                  />
-                  <div
-                    className="h-[13px] rounded-[4px] bg-[rgba(255,255,255,0.05)] animate-pulse"
-                    style={{ width: "65%" }}
-                  />
-                  <div
-                    className="h-[13px] rounded-[4px] bg-[rgba(255,255,255,0.06)] animate-pulse"
-                    style={{ width: "72%" }}
-                  />
-                </div>
-                <div className="h-[13px] w-[120px] rounded-[4px] bg-[rgba(255,255,255,0.04)] animate-pulse mt-4" />
-              </div>
-            </div>
-          ) : isLandingState ? (
-            <section className="chat-landing flex h-full flex-col items-center justify-center gap-4 pt-9 px-[30px] pb-[280px] text-center overflow-hidden max-[980px]:px-[18px] max-[980px]:pt-0 max-[980px]:pb-[140px] max-[980px]:gap-3">
-              {errorMessage ? (
-                <div className="max-w-[720px] mx-auto mb-[18px] border border-[rgba(181,103,69,0.3)] rounded-[18px] bg-[rgba(181,103,69,0.12)] text-[#f3c7b4] px-4 py-3.5">
-                  {errorMessage}
+              ) : activeConversationId ? (
+                <div className="min-w-0 flex-[0_1_auto] py-1.5 px-2.5 text-[0.96rem] leading-[1.2]">
+                  <span className="inline-block w-[140px] h-[1em] rounded-[4px] bg-[rgba(255,255,255,0.08)] animate-pulse align-middle" />
                 </div>
               ) : null}
-              <div className="inline-flex items-center justify-center rounded-full bg-[rgba(10,10,10,0.42)] text-[rgba(245,240,232,0.64)] py-2.5 px-4 text-[0.82rem] tracking-[0.12em] uppercase max-[980px]:text-[0.72rem] max-[980px]:py-[7px] max-[980px]:px-3">
-                AI chat
+            </div>
+          </header>
+
+          <div className="chat-stage relative min-h-0 overflow-hidden min-w-0" ref={stageRef}>
+            {isLoadingDetail && !hasLiveContent ? (
+              <div className="h-full pt-6 px-[30px] max-[980px]:px-[18px]">
+                <div className="max-w-[860px] mx-auto flex flex-col gap-5">
+                  <div className="flex justify-end">
+                    <div className="h-[42px] w-[160px] rounded-[20px] bg-[rgba(255,255,255,0.06)] animate-pulse" />
+                  </div>
+                  <div className="flex flex-col gap-[10px] mt-2">
+                    <div
+                      className="h-[13px] rounded-[4px] bg-[rgba(255,255,255,0.07)] animate-pulse"
+                      style={{ width: "82%" }}
+                    />
+                    <div
+                      className="h-[13px] rounded-[4px] bg-[rgba(255,255,255,0.06)] animate-pulse"
+                      style={{ width: "95%" }}
+                    />
+                    <div
+                      className="h-[13px] rounded-[4px] bg-[rgba(255,255,255,0.07)] animate-pulse"
+                      style={{ width: "88%" }}
+                    />
+                    <div
+                      className="h-[13px] rounded-[4px] bg-[rgba(255,255,255,0.06)] animate-pulse"
+                      style={{ width: "74%" }}
+                    />
+                    <div
+                      className="h-[13px] rounded-[4px] bg-[rgba(255,255,255,0.07)] animate-pulse"
+                      style={{ width: "91%" }}
+                    />
+                    <div
+                      className="h-[13px] rounded-[4px] bg-[rgba(255,255,255,0.06)] animate-pulse"
+                      style={{ width: "80%" }}
+                    />
+                    <div
+                      className="h-[13px] rounded-[4px] bg-[rgba(255,255,255,0.05)] animate-pulse"
+                      style={{ width: "65%" }}
+                    />
+                    <div
+                      className="h-[13px] rounded-[4px] bg-[rgba(255,255,255,0.06)] animate-pulse"
+                      style={{ width: "72%" }}
+                    />
+                  </div>
+                  <div className="h-[13px] w-[120px] rounded-[4px] bg-[rgba(255,255,255,0.04)] animate-pulse mt-4" />
+                </div>
               </div>
-              <div className="flex items-center gap-3.5 max-[980px]:flex-col max-[980px]:gap-2">
-                <span className="inline-grid h-8 w-8 place-items-center text-[#cf6d43] max-[980px]:h-6 max-[980px]:w-6">
-                  <IconSpark />
-                </span>
-                <h1 className="m-0 font-serif text-[clamp(2rem,4vw,4.2rem)] leading-[0.94] tracking-[-0.04em]">
-                  {authUser?.fullName
-                    ? `What shall we think through, ${authUser.fullName.split(" ")[0]}?`
-                    : "What shall we think through?"}
-                </h1>
-              </div>
-              <p className="max-w-[58rem] m-0 text-[rgba(245,240,232,0.6)] text-base leading-[1.7] max-[980px]:text-[0.88rem] max-[980px]:leading-[1.55]">
-                Ask questions, upload files, research ideas, and move from planning to execution in one conversation.
-              </p>
-            </section>
-          ) : (
-            <div
-              className="chat-stage-inner h-full overflow-y-auto overflow-x-hidden overscroll-contain [overflow-anchor:none] pt-6 px-[30px] pb-[236px] min-w-0 max-[980px]:px-[6px] max-[980px]:w-full max-[980px]:max-w-full max-[980px]:pb-[180px]"
-              ref={transcriptRef}
-              onScroll={syncScrollShadows}
-            >
-              <div className="chat-transcript-inner min-h-0 min-w-0 max-w-3xl! mx-auto px-1 sm:px-5">
+            ) : isLandingState ? (
+              <section className="chat-landing flex h-full flex-col items-center justify-center gap-4 pt-9 px-[30px] pb-[280px] text-center overflow-hidden max-[980px]:px-[18px] max-[980px]:pt-0 max-[980px]:pb-[140px] max-[980px]:gap-3">
                 {errorMessage ? (
-                  <div className="max-w-[860px] mx-auto mb-[18px] border border-[rgba(181,103,69,0.3)] rounded-[18px] bg-[rgba(181,103,69,0.12)] text-[#f3c7b4] px-4 py-3.5">
+                  <div className="max-w-[720px] mx-auto mb-[18px] border border-[rgba(181,103,69,0.3)] rounded-[18px] bg-[rgba(181,103,69,0.12)] text-[#f3c7b4] px-4 py-3.5">
                     {errorMessage}
                   </div>
                 ) : null}
-
-                {(() => {
-                  const isLiveRunSeparate = liveRun && !runs.some((r) => r.id === liveRun.runId);
-                  const lastRunIndex = runs.length - 1;
-
-                  return runs.map((run, index) => {
-                    const isLastCompleted = index === lastRunIndex && !isLiveRunSeparate;
-
-                    if (isLastCompleted) {
-                      // Keep min-height only when liveRun just completed for this run (prevents
-                      // scroll jump during the liveRun→fetched swap). On page load or navigation
-                      // liveRun is null so no excessive scrollable space is created.
-                      const justStreamed = liveRun?.runId === run.id;
-                      return (
-                        <div
-                          key={run.id}
-                          ref={latestRunRef}
-                          style={justStreamed ? { minHeight: "calc(100vh - 140px)" } : undefined}
-                        >
-                          <RunThread
-                            runId={run.id}
-                            userPrompt={run.userPrompt}
-                            attachments={run.attachments}
-                            outputAttachments={run.outputAttachments}
-                            events={run.events}
-                            finalText={run.finalText}
-                            createdAt={run.createdAt}
-                            isLast
-                            isInterrupted={run.status === "CANCELLED"}
-                          />
-                        </div>
-                      );
-                    }
-
-                    return (
-                      <RunThread
-                        key={run.id}
-                        runId={run.id}
-                        userPrompt={run.userPrompt}
-                        attachments={run.attachments}
-                        outputAttachments={run.outputAttachments}
-                        events={run.events}
-                        finalText={run.finalText}
-                        createdAt={run.createdAt}
-                        isInterrupted={run.status === "CANCELLED"}
-                      />
-                    );
-                  });
-                })()}
-
-                {liveRun && !runs.some((r) => r.id === liveRun.runId) ? (
-                  <div ref={latestRunRef} style={{ minHeight: "calc(100vh - 180px)" }}>
-                    <RunThread
-                      runId={liveRun.runId}
-                      userPrompt={liveRun.userPrompt}
-                      attachments={liveRun.attachments}
-                      outputAttachments={liveRun.outputAttachments}
-                      events={liveRun.events}
-                      finalText={liveRun.partialText || null}
-                      createdAt={new Date().toISOString()}
-                      isLive={liveRun.status === "running"}
-                      isInterrupted={liveRun.status === "interrupted" || liveRun.status === "failed"}
-                      previewUrls={previewUrlMapRef.current}
-                    />
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          )}
-
-          <footer
-            ref={footerRef}
-            className={[
-              "absolute left-0 right-0 z-20 pb-1 transition-[transform,opacity] duration-[420ms] [transition-timing-function:cubic-bezier(0.2,0.9,0.2,1)]",
-              isLandingState && isNewChat
-                ? "bottom-1/2 px-[30px] translate-y-[120px] max-[980px]:bottom-0  max-[980px]:translate-y-0 max-[980px]:px-[18px]"
-                : "bottom-0 px-[30px]  bg-background max-[980px]:px-[18px] ",
-              animateComposerDock ? "composer-panel-animate-dock" : "",
-            ].join(" ")}
-          >
-            {/* Scroll-to-bottom button — anchored 12px above the composer shell */}
-            {showScrollDown && !isLandingState && (
-              <button
-                type="button"
-                aria-label="Scroll to bottom"
-                className="absolute left-1/2 -translate-x-1/2 -top-11 h-8 w-8 rounded-full border border-[rgba(255,255,255,0.1)] bg-[#30302e] shadow-[0_2px_8px_rgba(0,0,0,0.2)] flex items-center justify-center text-[rgba(236,230,219,0.5)] hover:text-[rgba(236,230,219,0.8)] hover:border-[rgba(255,255,255,0.18)] transition-all duration-150 cursor-pointer"
-                onClick={() => {
-                  scrollToBottom();
-                }}
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 16 16"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M8 3v10M3 8.5l5 5 5-5" />
-                </svg>
-              </button>
-            )}
-            <div
-              className={`composer-shell flex max-w-3xl w-full min-w-0 min-h-[96px] flex-col gap-3 mx-auto border rounded-[22px] bg-[#30302e] pt-[14px] px-[18px] pb-3.5 shadow-[0_4px_16px_rgba(0,0,0,0.12)] max-[980px]:w-full max-[980px]:max-w-full max-[980px]:m-0 max-[980px]:min-h-0 max-[980px]:gap-2.5 max-[980px]:pt-3 max-[980px]:px-3.5 max-[980px]:pb-2.5 max-[980px]:rounded-[18px] transition-[border-color] duration-150 ${isDraggingOver ? "border-[rgba(212,112,73,0.6)]" : "border-[rgba(255,255,255,0.08)]"}`}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setIsDraggingOver(true);
-              }}
-              onDragLeave={() => setIsDraggingOver(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setIsDraggingOver(false);
-                if (e.dataTransfer?.files?.length) {
-                  void handleUpload(e.dataTransfer.files);
-                }
-              }}
-            >
-              {composerAttachments.length > 0 || pendingFiles.length > 0 ? (
-                <div className="flex flex-wrap gap-2 mb-2">
-                  {composerAttachments.map((attachment) => (
-                    <AttachmentChip
-                      key={attachment.id}
-                      attachment={attachment}
-                      previewUrl={previewUrlMapRef.current.get(attachment.id)}
-                      onRemove={() => {
-                        // Revoke cached preview URL when removing
-                        const cached = previewUrlMapRef.current.get(attachment.id);
-                        if (cached) {
-                          URL.revokeObjectURL(cached);
-                          previewUrlMapRef.current.delete(attachment.id);
-                        }
-                        setComposerAttachments((prev) => prev.filter((a) => a.id !== attachment.id));
-                        // Delete from Anthropic Files API + DB (fire-and-forget)
-                        void api.del(`/api/attachments/${attachment.id}`);
-                      }}
-                    />
-                  ))}
-                  {pendingFiles.map((pf) => (
-                    <AttachmentChip
-                      key={pf.clientId}
-                      pendingFile={pf}
-                      onRemove={
-                        pf.status !== "uploading"
-                          ? () => {
-                              setPendingFiles((prev) => {
-                                const removed = prev.find((p) => p.clientId === pf.clientId);
-                                if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl);
-                                return prev.filter((p) => p.clientId !== pf.clientId);
-                              });
-                            }
-                          : undefined
-                      }
-                    />
-                  ))}
+                <div className="inline-flex items-center justify-center rounded-full bg-[rgba(10,10,10,0.42)] text-[rgba(245,240,232,0.64)] py-2.5 px-4 text-[0.82rem] tracking-[0.12em] uppercase max-[980px]:text-[0.72rem] max-[980px]:py-[7px] max-[980px]:px-3">
+                  AI chat
                 </div>
-              ) : null}
+                <div className="flex items-center gap-3.5 max-[980px]:flex-col max-[980px]:gap-2">
+                  <span className="inline-grid h-8 w-8 place-items-center text-[#cf6d43] max-[980px]:h-6 max-[980px]:w-6">
+                    <IconSpark />
+                  </span>
+                  <h1 className="m-0 font-serif text-[clamp(2rem,4vw,4.2rem)] leading-[0.94] tracking-[-0.04em]">
+                    {authUser?.fullName
+                      ? `What shall we think through, ${authUser.fullName.split(" ")[0]}?`
+                      : "What shall we think through?"}
+                  </h1>
+                </div>
+                <p className="max-w-[58rem] m-0 text-[rgba(245,240,232,0.6)] text-base leading-[1.7] max-[980px]:text-[0.88rem] max-[980px]:leading-[1.55]">
+                  Ask questions, upload files, research ideas, and move from planning to execution in one conversation.
+                </p>
+              </section>
+            ) : (
+              <div
+                className="chat-stage-inner h-full overflow-y-auto overflow-x-hidden overscroll-contain [overflow-anchor:none] pt-6 px-[30px] pb-[236px] min-w-0 max-[980px]:px-[6px] max-[980px]:w-full max-[980px]:max-w-full max-[980px]:pb-[180px]"
+                ref={transcriptRef}
+                onScroll={syncScrollShadows}
+              >
+                <div className="chat-transcript-inner min-h-0 min-w-0 max-w-3xl! mx-auto px-1 sm:px-5">
+                  {errorMessage ? (
+                    <div className="max-w-[860px] mx-auto mb-[18px] border border-[rgba(181,103,69,0.3)] rounded-[18px] bg-[rgba(181,103,69,0.12)] text-[#f3c7b4] px-4 py-3.5">
+                      {errorMessage}
+                    </div>
+                  ) : null}
 
-              <textarea
-                ref={composerInputRef}
-                className="composer-input max-h-[220px] resize-none border-0 bg-transparent text-foreground outline-0 p-0 text-base leading-[1.55] overflow-y-auto max-[980px]:max-h-[160px] max-[980px]:text-[0.95rem]"
-                placeholder={isLandingState ? "How can I help today?" : "Reply..."}
-                value={composerValue}
-                onChange={(event) => {
-                  setComposerValue(event.target.value);
-                  resizeComposer(event.currentTarget);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    void handleSend();
-                  }
-                }}
-                onPaste={(event) => {
-                  const items = event.clipboardData?.items;
-                  if (!items) return;
+                  {(() => {
+                    const isLiveRunSeparate = liveRun && !runs.some((r) => r.id === liveRun.runId);
+                    const lastRunIndex = runs.length - 1;
 
-                  const files: File[] = [];
-                  for (const item of Array.from(items)) {
-                    if (item.kind === "file") {
-                      const file = item.getAsFile();
-                      if (file) files.push(file);
-                    }
-                  }
+                    return runs.map((run, index) => {
+                      const isLastCompleted = index === lastRunIndex && !isLiveRunSeparate;
 
-                  if (files.length > 0) {
-                    event.preventDefault();
-                    const dt = new DataTransfer();
-                    for (const f of files) dt.items.add(f);
-                    void handleUpload(dt.files);
-                  }
-                }}
-                rows={1}
-              />
+                      if (isLastCompleted) {
+                        // Keep min-height only when liveRun just completed for this run (prevents
+                        // scroll jump during the liveRun→fetched swap). On page load or navigation
+                        // liveRun is null so no excessive scrollable space is created.
+                        const justStreamed = liveRun?.runId === run.id;
+                        return (
+                          <div
+                            key={run.id}
+                            ref={latestRunRef}
+                            style={justStreamed ? { minHeight: "calc(100vh - 140px)" } : undefined}
+                          >
+                            <RunThread
+                              runId={run.id}
+                              userPrompt={run.userPrompt}
+                              attachments={run.attachments}
+                              outputAttachments={run.outputAttachments}
+                              events={run.events}
+                              finalText={run.finalText}
+                              createdAt={run.createdAt}
+                              isLast
+                              isInterrupted={run.status === "CANCELLED"}
+                            />
+                          </div>
+                        );
+                      }
 
-              <div className="flex items-center justify-between gap-[18px] max-[980px]:gap-2">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  hidden
-                  multiple
-                  accept="image/*,.pdf,.txt,.md,.json"
-                  onChange={(event) => {
-                    void handleUpload(event.target.files);
-                  }}
-                />
+                      return (
+                        <RunThread
+                          key={run.id}
+                          runId={run.id}
+                          userPrompt={run.userPrompt}
+                          attachments={run.attachments}
+                          outputAttachments={run.outputAttachments}
+                          events={run.events}
+                          finalText={run.finalText}
+                          createdAt={run.createdAt}
+                          isInterrupted={run.status === "CANCELLED"}
+                        />
+                      );
+                    });
+                  })()}
 
+                  {liveRun && !runs.some((r) => r.id === liveRun.runId) ? (
+                    <div ref={latestRunRef} style={{ minHeight: "calc(100vh - 180px)" }}>
+                      <RunThread
+                        runId={liveRun.runId}
+                        userPrompt={liveRun.userPrompt}
+                        attachments={liveRun.attachments}
+                        outputAttachments={liveRun.outputAttachments}
+                        events={liveRun.events}
+                        finalText={liveRun.partialText || null}
+                        createdAt={new Date().toISOString()}
+                        isLive={liveRun.status === "running"}
+                        isInterrupted={liveRun.status === "interrupted" || liveRun.status === "failed"}
+                        previewUrls={previewUrlMapRef.current}
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            )}
+
+            <footer
+              ref={footerRef}
+              className={[
+                "absolute left-0 right-0 z-20 pb-1 transition-[transform,opacity] duration-[420ms] [transition-timing-function:cubic-bezier(0.2,0.9,0.2,1)]",
+                isLandingState && isNewChat
+                  ? "bottom-1/2 px-[30px] translate-y-[120px] max-[980px]:bottom-0  max-[980px]:translate-y-0 max-[980px]:px-[18px]"
+                  : "bottom-0 px-[30px]  bg-background max-[980px]:px-[18px] ",
+                animateComposerDock ? "composer-panel-animate-dock" : "",
+              ].join(" ")}
+            >
+              {/* Scroll-to-bottom button — anchored 12px above the composer shell */}
+              {showScrollDown && !isLandingState && (
                 <button
                   type="button"
-                  className="inline-grid h-8 w-8 place-items-center rounded-full border-0 bg-transparent text-[rgba(255,255,255,0.6)] cursor-pointer hover:bg-[#2f2f2d] hover:text-[rgba(255,255,255,0.88)]"
-                  ref={plusButtonRef}
-                  onClick={() => setPlusMenuOpen((v) => !v)}
-                  title="Add files, connectors, and more"
-                  aria-label="Add files, connectors, and more"
+                  aria-label="Scroll to bottom"
+                  className="absolute left-1/2 -translate-x-1/2 -top-11 h-8 w-8 rounded-full border border-[rgba(255,255,255,0.1)] bg-[#30302e] shadow-[0_2px_8px_rgba(0,0,0,0.2)] flex items-center justify-center text-[rgba(236,230,219,0.5)] hover:text-[rgba(236,230,219,0.8)] hover:border-[rgba(255,255,255,0.18)] transition-all duration-150 cursor-pointer"
+                  onClick={() => {
+                    scrollToBottom();
+                  }}
                 >
-                  <IconPlus />
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M8 3v10M3 8.5l5 5 5-5" />
+                  </svg>
                 </button>
+              )}
+              <div
+                className={`composer-shell flex max-w-3xl w-full min-w-0 min-h-[96px] flex-col gap-3 mx-auto border rounded-[22px] bg-[#30302e] pt-[14px] px-[18px] pb-3.5 shadow-[0_4px_16px_rgba(0,0,0,0.12)] max-[980px]:w-full max-[980px]:max-w-full max-[980px]:m-0 max-[980px]:min-h-0 max-[980px]:gap-2.5 max-[980px]:pt-3 max-[980px]:px-3.5 max-[980px]:pb-2.5 max-[980px]:rounded-[18px] transition-[border-color] duration-150 ${isDraggingOver ? "border-[rgba(212,112,73,0.6)]" : "border-[rgba(255,255,255,0.08)]"}`}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setIsDraggingOver(true);
+                }}
+                onDragLeave={() => setIsDraggingOver(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setIsDraggingOver(false);
+                  if (e.dataTransfer?.files?.length) {
+                    void handleUpload(e.dataTransfer.files);
+                  }
+                }}
+              >
+                {composerAttachments.length > 0 || pendingFiles.length > 0 ? (
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {composerAttachments.map((attachment) => (
+                      <AttachmentChip
+                        key={attachment.id}
+                        attachment={attachment}
+                        previewUrl={previewUrlMapRef.current.get(attachment.id)}
+                        onRemove={() => {
+                          // Revoke cached preview URL when removing
+                          const cached = previewUrlMapRef.current.get(attachment.id);
+                          if (cached) {
+                            URL.revokeObjectURL(cached);
+                            previewUrlMapRef.current.delete(attachment.id);
+                          }
+                          setComposerAttachments((prev) => prev.filter((a) => a.id !== attachment.id));
+                          // Delete from Anthropic Files API + DB (fire-and-forget)
+                          void api.del(`/api/attachments/${attachment.id}`);
+                        }}
+                      />
+                    ))}
+                    {pendingFiles.map((pf) => (
+                      <AttachmentChip
+                        key={pf.clientId}
+                        pendingFile={pf}
+                        onRemove={
+                          pf.status !== "uploading"
+                            ? () => {
+                                setPendingFiles((prev) => {
+                                  const removed = prev.find((p) => p.clientId === pf.clientId);
+                                  if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl);
+                                  return prev.filter((p) => p.clientId !== pf.clientId);
+                                });
+                              }
+                            : undefined
+                        }
+                      />
+                    ))}
+                  </div>
+                ) : null}
 
-                {plusMenuOpen && (
-                  <ComposerPlusMenuPortal
-                    anchor={plusButtonRef.current}
-                    hasLinkedRepo={Boolean(activeConversation?.repoBinding || stagedRepoBinding)}
-                    connectors={mcpConnectors}
-                    onToggleConnector={(id, enabled) => toggleConnector.mutate({ id, enabled })}
-                    onAddFiles={() => {
-                      setPlusMenuOpen(false);
-                      fileInputRef.current?.click();
-                    }}
-                    onAddConnectors={() => {
-                      setPlusMenuOpen(false);
-                      setConnectorModalOpen(true);
-                    }}
-                    onConnectRepo={() => {
-                      setPlusMenuOpen(false);
-                      setRepoModalOpen(true);
+                <textarea
+                  ref={composerInputRef}
+                  className="composer-input max-h-[220px] resize-none border-0 bg-transparent text-foreground outline-0 p-0 text-base leading-[1.55] overflow-y-auto max-[980px]:max-h-[160px] max-[980px]:text-[0.95rem]"
+                  placeholder={isLandingState ? "How can I help today?" : "Reply..."}
+                  value={composerValue}
+                  onChange={(event) => {
+                    setComposerValue(event.target.value);
+                    resizeComposer(event.currentTarget);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      void handleSend();
+                    }
+                  }}
+                  onPaste={(event) => {
+                    const items = event.clipboardData?.items;
+                    if (!items) return;
+
+                    const files: File[] = [];
+                    for (const item of Array.from(items)) {
+                      if (item.kind === "file") {
+                        const file = item.getAsFile();
+                        if (file) files.push(file);
+                      }
+                    }
+
+                    if (files.length > 0) {
+                      event.preventDefault();
+                      const dt = new DataTransfer();
+                      for (const f of files) dt.items.add(f);
+                      void handleUpload(dt.files);
+                    }
+                  }}
+                  rows={1}
+                />
+
+                <div className="flex items-center justify-between gap-[18px] max-[980px]:gap-2">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    hidden
+                    multiple
+                    accept="image/*,.pdf,.txt,.md,.json"
+                    onChange={(event) => {
+                      void handleUpload(event.target.files);
                     }}
                   />
-                )}
 
-                {(() => {
-                  const displayedRepo =
-                    activeConversation?.repoBinding ??
-                    (stagedRepoBinding
-                      ? {
-                          id: stagedRepoBinding.id,
-                          repoFullName: stagedRepoBinding.repoFullName,
-                          repoName: stagedRepoBinding.repoFullName.split("/")[1],
-                        }
-                      : null);
-                  if (!displayedRepo) return null;
-                  const isStaged = !activeConversation?.repoBinding;
-                  return (
-                    <div className="relative min-w-0 shrink">
-                      {/* Desktop: full chip with name + × */}
-                      <div
-                        className="hidden min-[981px]:inline-flex items-center gap-1.5 rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-2.5 py-1 text-[0.78rem] text-[rgba(245,240,232,0.65)]"
-                        title={displayedRepo.repoFullName}
+                  <button
+                    type="button"
+                    className="inline-grid h-8 w-8 place-items-center rounded-full border-0 bg-transparent text-[rgba(255,255,255,0.6)] cursor-pointer hover:bg-[#2f2f2d] hover:text-[rgba(255,255,255,0.88)]"
+                    ref={plusButtonRef}
+                    onClick={() => setPlusMenuOpen((v) => !v)}
+                    title="Add files, connectors, and more"
+                    aria-label="Add files, connectors, and more"
+                  >
+                    <IconPlus />
+                  </button>
+
+                  {stagedSchedule ? (
+                    <button
+                      ref={scheduleButtonRef}
+                      type="button"
+                      className="inline-flex items-center gap-1.5 rounded-full border border-[rgba(221,113,72,0.25)] bg-[rgba(221,113,72,0.08)] pl-2 pr-1 py-0.5 text-[0.78rem] text-accent cursor-pointer hover:bg-[rgba(221,113,72,0.12)] transition-colors"
+                      onClick={() => setSchedulePopoverOpen((v) => !v)}
+                      title={stagedSchedule.cronDescription}
+                    >
+                      <IconClock />
+                      <span className="max-w-[140px] truncate">{stagedSchedule.cronDescription}</span>
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        className="inline-grid h-5 w-5 place-items-center rounded-full text-[rgba(221,113,72,0.5)] hover:text-accent hover:bg-[rgba(221,113,72,0.15)] transition-colors"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setStagedSchedule(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.stopPropagation();
+                            setStagedSchedule(null);
+                          }
+                        }}
+                        aria-label="Remove schedule"
                       >
-                        <IconGithub />
-                        <span className="max-w-[160px] truncate">{displayedRepo.repoName}</span>
-                        {!isStaged && (
+                        <IconClose />
+                      </span>
+                    </button>
+                  ) : (
+                    <button
+                      ref={scheduleButtonRef}
+                      type="button"
+                      className="inline-grid h-8 w-8 place-items-center rounded-full border-0 bg-transparent text-[rgba(255,255,255,0.6)] cursor-pointer hover:bg-[#2f2f2d] hover:text-[rgba(255,255,255,0.88)] transition-colors"
+                      onClick={() => setSchedulePopoverOpen((v) => !v)}
+                      title="Schedule this prompt"
+                      aria-label="Schedule this prompt"
+                    >
+                      <IconClock />
+                    </button>
+                  )}
+
+                  {schedulePopoverOpen && (
+                    <SchedulePopoverPortal
+                      anchor={scheduleButtonRef.current}
+                      onSchedule={handleStageSchedule}
+                      onClose={() => setSchedulePopoverOpen(false)}
+                    />
+                  )}
+
+                  {plusMenuOpen && (
+                    <ComposerPlusMenuPortal
+                      anchor={plusButtonRef.current}
+                      hasLinkedRepo={Boolean(activeConversation?.repoBinding || stagedRepoBinding)}
+                      connectors={mcpConnectors}
+                      onToggleConnector={(id, enabled) => toggleConnector.mutate({ id, enabled })}
+                      onAddFiles={() => {
+                        setPlusMenuOpen(false);
+                        fileInputRef.current?.click();
+                      }}
+                      onAddConnectors={() => {
+                        setPlusMenuOpen(false);
+                        setConnectorModalOpen(true);
+                      }}
+                      onConnectRepo={() => {
+                        setPlusMenuOpen(false);
+                        setRepoModalOpen(true);
+                      }}
+                    />
+                  )}
+
+                  {(() => {
+                    const displayedRepo =
+                      activeConversation?.repoBinding ??
+                      (stagedRepoBinding
+                        ? {
+                            id: stagedRepoBinding.id,
+                            repoFullName: stagedRepoBinding.repoFullName,
+                            repoName: stagedRepoBinding.repoFullName.split("/")[1],
+                          }
+                        : null);
+                    if (!displayedRepo) return null;
+                    const isStaged = !activeConversation?.repoBinding;
+                    return (
+                      <div className="relative min-w-0 shrink">
+                        {/* Desktop: full chip with name + × */}
+                        <div
+                          className="hidden min-[981px]:inline-flex items-center gap-1.5 rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-2.5 py-1 text-[0.78rem] text-[rgba(245,240,232,0.65)]"
+                          title={displayedRepo.repoFullName}
+                        >
+                          <IconGithub />
+                          <span className="max-w-[160px] truncate">{displayedRepo.repoName}</span>
+                          {!isStaged && (
+                            <button
+                              type="button"
+                              className="inline-grid h-4 w-4 place-items-center border-0 bg-transparent text-[rgba(245,240,232,0.35)] cursor-pointer rounded-full p-0 transition-colors duration-140 hover:text-[rgba(245,240,232,0.7)]"
+                              onClick={() => setSecretsModalOpen(true)}
+                              aria-label="Manage environment variables"
+                            >
+                              <IconKey />
+                            </button>
+                          )}
                           <button
                             type="button"
                             className="inline-grid h-4 w-4 place-items-center border-0 bg-transparent text-[rgba(245,240,232,0.35)] cursor-pointer rounded-full p-0 transition-colors duration-140 hover:text-[rgba(245,240,232,0.7)]"
-                            onClick={() => setSecretsModalOpen(true)}
-                            aria-label="Manage environment variables"
+                            onClick={() => {
+                              if (isStaged) {
+                                setStagedRepoBinding(null);
+                              } else if (activeConversation) {
+                                linkRepoMutation.mutate({ conversationId: activeConversation.id, repoBindingId: null });
+                              }
+                            }}
+                            aria-label="Unlink repository"
                           >
-                            <IconKey />
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          className="inline-grid h-4 w-4 place-items-center border-0 bg-transparent text-[rgba(245,240,232,0.35)] cursor-pointer rounded-full p-0 transition-colors duration-140 hover:text-[rgba(245,240,232,0.7)]"
-                          onClick={() => {
-                            if (isStaged) {
-                              setStagedRepoBinding(null);
-                            } else if (activeConversation) {
-                              linkRepoMutation.mutate({ conversationId: activeConversation.id, repoBindingId: null });
-                            }
-                          }}
-                          aria-label="Unlink repository"
-                        >
-                          <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3 w-3">
-                            <path
-                              d="M4 12L12 4M12 12L4 4"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="1.5"
-                              strokeLinecap="round"
-                            />
-                          </svg>
-                        </button>
-                      </div>
-                      {/* Mobile: icon-only button with click popover */}
-                      <button
-                        type="button"
-                        className="min-[981px]:hidden inline-grid h-8 w-8 place-items-center rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] text-[rgba(245,240,232,0.65)] cursor-pointer p-0 transition-colors duration-140 hover:bg-[rgba(255,255,255,0.06)]"
-                        onClick={() => setRepoChipOpen((v) => !v)}
-                        aria-label={`Linked repo: ${displayedRepo.repoFullName}`}
-                      >
-                        <IconGithub />
-                      </button>
-                      {repoChipOpen && (
-                        <div className="min-[981px]:hidden absolute bottom-full left-0 mb-2 z-50">
-                          <div className="rounded-[10px] border border-[rgba(255,255,255,0.1)] bg-[rgba(28,26,22,0.96)] shadow-[0_8px_24px_rgba(0,0,0,0.4)] backdrop-blur-xl px-3 py-2.5 whitespace-nowrap">
-                            <div className="text-[0.78rem] text-[rgba(245,240,232,0.85)] font-medium">
-                              {displayedRepo.repoFullName}
-                            </div>
-                            {!isStaged && (
-                              <button
-                                type="button"
-                                className="mt-2 w-full text-left text-[0.75rem] text-[rgba(245,240,232,0.6)] cursor-pointer border-0 bg-transparent p-0 hover:text-[rgba(245,240,232,0.9)]"
-                                onClick={() => {
-                                  setSecretsModalOpen(true);
-                                  setRepoChipOpen(false);
-                                }}
-                              >
-                                Manage env vars
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              className="mt-2 w-full text-left text-[0.75rem] text-[rgba(243,199,180,0.7)] cursor-pointer border-0 bg-transparent p-0 hover:text-[rgba(243,199,180,1)] flex items-center gap-1.5"
-                              onClick={() => {
-                                if (isStaged) {
-                                  setStagedRepoBinding(null);
-                                } else if (activeConversation) {
-                                  linkRepoMutation.mutate({
-                                    conversationId: activeConversation.id,
-                                    repoBindingId: null,
-                                  });
-                                }
-                                setRepoChipOpen(false);
-                              }}
-                              aria-label="Disconnect repo"
-                            >
-                              <svg
-                                aria-hidden="true"
-                                viewBox="0 0 16 16"
-                                className="h-3.5 w-3.5 shrink-0"
+                            <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3 w-3">
+                              <path
+                                d="M4 12L12 4M12 12L4 4"
                                 fill="none"
                                 stroke="currentColor"
                                 strokeWidth="1.5"
                                 strokeLinecap="round"
-                                strokeLinejoin="round"
-                              >
-                                <path d="M6 10l-1.5 1.5a2.121 2.121 0 0 1-3-3L4 7" />
-                                <path d="M10 6l1.5-1.5a2.121 2.121 0 0 0-3-3L7 4" />
-                                <path d="M2 2l12 12" />
-                              </svg>
-                              Disconnect repo
-                            </button>
-                          </div>
+                              />
+                            </svg>
+                          </button>
                         </div>
-                      )}
-                    </div>
-                  );
-                })()}
-
-                {activeMcpCount > 0 && (
-                  <div className="group/mcp relative">
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-1.5 rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-2.5 py-1 max-[980px]:px-2 text-[0.78rem] text-[rgba(245,240,232,0.55)] cursor-pointer transition-colors duration-140 hover:bg-[rgba(255,255,255,0.06)] hover:text-[rgba(245,240,232,0.8)]"
-                      onClick={() => setConnectorModalOpen(true)}
-                      aria-label={`${activeMcpCount} MCP connector${activeMcpCount > 1 ? "s" : ""} connected`}
-                    >
-                      <svg
-                        aria-hidden="true"
-                        viewBox="0 0 16 16"
-                        className="h-3.5 w-3.5"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.4"
-                        strokeLinecap="round"
-                      >
-                        <path d="M6 2v3M10 2v3M6 11v3M10 11v3M2 6h3M2 10h3M11 6h3M11 10h3" />
-                        <rect x="5" y="5" width="6" height="6" rx="1" />
-                      </svg>
-                      <span className="max-[980px]:hidden">{activeMcpCount} MCP</span>
-                      <span className="hidden max-[980px]:inline text-[0.7rem]">{activeMcpCount}</span>
-                    </button>
-                    <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 opacity-0 scale-95 group-hover/mcp:opacity-100 group-hover/mcp:scale-100 transition-[opacity,transform] duration-150 origin-bottom">
-                      <div className="rounded-[10px] border border-[rgba(255,255,255,0.1)] bg-[rgba(28,26,22,0.96)] shadow-[0_8px_24px_rgba(0,0,0,0.4)] backdrop-blur-xl px-3 py-2 whitespace-nowrap">
-                        {mcpConnectors
-                          .filter((c) => c.status === "ACTIVE")
-                          .map((c) => (
-                            <div key={c.id} className="flex items-center gap-2 py-0.5">
-                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0" />
-                              <span className="text-[0.76rem] text-[rgba(245,240,232,0.85)]">{c.name}</span>
+                        {/* Mobile: icon-only button with click popover */}
+                        <button
+                          type="button"
+                          className="min-[981px]:hidden inline-grid h-8 w-8 place-items-center rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] text-[rgba(245,240,232,0.65)] cursor-pointer p-0 transition-colors duration-140 hover:bg-[rgba(255,255,255,0.06)]"
+                          onClick={() => setRepoChipOpen((v) => !v)}
+                          aria-label={`Linked repo: ${displayedRepo.repoFullName}`}
+                        >
+                          <IconGithub />
+                        </button>
+                        {repoChipOpen && (
+                          <div className="min-[981px]:hidden absolute bottom-full left-0 mb-2 z-50">
+                            <div className="rounded-[10px] border border-[rgba(255,255,255,0.1)] bg-[rgba(28,26,22,0.96)] shadow-[0_8px_24px_rgba(0,0,0,0.4)] backdrop-blur-xl px-3 py-2.5 whitespace-nowrap">
+                              <div className="text-[0.78rem] text-[rgba(245,240,232,0.85)] font-medium">
+                                {displayedRepo.repoFullName}
+                              </div>
+                              {!isStaged && (
+                                <button
+                                  type="button"
+                                  className="mt-2 w-full text-left text-[0.75rem] text-[rgba(245,240,232,0.6)] cursor-pointer border-0 bg-transparent p-0 hover:text-[rgba(245,240,232,0.9)]"
+                                  onClick={() => {
+                                    setSecretsModalOpen(true);
+                                    setRepoChipOpen(false);
+                                  }}
+                                >
+                                  Manage env vars
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                className="mt-2 w-full text-left text-[0.75rem] text-[rgba(243,199,180,0.7)] cursor-pointer border-0 bg-transparent p-0 hover:text-[rgba(243,199,180,1)] flex items-center gap-1.5"
+                                onClick={() => {
+                                  if (isStaged) {
+                                    setStagedRepoBinding(null);
+                                  } else if (activeConversation) {
+                                    linkRepoMutation.mutate({
+                                      conversationId: activeConversation.id,
+                                      repoBindingId: null,
+                                    });
+                                  }
+                                  setRepoChipOpen(false);
+                                }}
+                                aria-label="Disconnect repo"
+                              >
+                                <svg
+                                  aria-hidden="true"
+                                  viewBox="0 0 16 16"
+                                  className="h-3.5 w-3.5 shrink-0"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="1.5"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <path d="M6 10l-1.5 1.5a2.121 2.121 0 0 1-3-3L4 7" />
+                                  <path d="M10 6l1.5-1.5a2.121 2.121 0 0 0-3-3L7 4" />
+                                  <path d="M2 2l12 12" />
+                                </svg>
+                                Disconnect repo
+                              </button>
                             </div>
-                          ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {activeMcpCount > 0 && (
+                    <div className="group/mcp relative">
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1.5 rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-2.5 py-1 max-[980px]:px-2 text-[0.78rem] text-[rgba(245,240,232,0.55)] cursor-pointer transition-colors duration-140 hover:bg-[rgba(255,255,255,0.06)] hover:text-[rgba(245,240,232,0.8)]"
+                        onClick={() => setConnectorModalOpen(true)}
+                        aria-label={`${activeMcpCount} MCP connector${activeMcpCount > 1 ? "s" : ""} connected`}
+                      >
+                        <svg
+                          aria-hidden="true"
+                          viewBox="0 0 16 16"
+                          className="h-3.5 w-3.5"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.4"
+                          strokeLinecap="round"
+                        >
+                          <path d="M6 2v3M10 2v3M6 11v3M10 11v3M2 6h3M2 10h3M11 6h3M11 10h3" />
+                          <rect x="5" y="5" width="6" height="6" rx="1" />
+                        </svg>
+                        <span className="max-[980px]:hidden">{activeMcpCount} MCP</span>
+                        <span className="hidden max-[980px]:inline text-[0.7rem]">{activeMcpCount}</span>
+                      </button>
+                      <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 opacity-0 scale-95 group-hover/mcp:opacity-100 group-hover/mcp:scale-100 transition-[opacity,transform] duration-150 origin-bottom">
+                        <div className="rounded-[10px] border border-[rgba(255,255,255,0.1)] bg-[rgba(28,26,22,0.96)] shadow-[0_8px_24px_rgba(0,0,0,0.4)] backdrop-blur-xl px-3 py-2 whitespace-nowrap">
+                          {mcpConnectors
+                            .filter((c) => c.status === "ACTIVE")
+                            .map((c) => (
+                              <div key={c.id} className="flex items-center gap-2 py-0.5">
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0" />
+                                <span className="text-[0.76rem] text-[rgba(245,240,232,0.85)]">{c.name}</span>
+                              </div>
+                            ))}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                <div className="flex items-center gap-2.5 ml-auto">
-                  <div className="relative" data-chat-action-menu>
+                  <div className="flex items-center gap-2.5 ml-auto">
+                    <div className="relative" data-chat-action-menu>
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-2 rounded-full border-0 bg-transparent text-[rgba(245,240,232,0.68)] text-[0.82rem] leading-none cursor-pointer py-2 px-2.5 transition-[background,color] duration-[180ms] ease-linear hover:bg-[rgba(255,255,255,0.045)] hover:text-[rgba(245,240,232,0.9)]"
+                        aria-label="Select model"
+                        aria-expanded={modelMenuOpen}
+                        ref={modelButtonRef}
+                        onClick={() => setModelMenuOpen((current) => !current)}
+                      >
+                        <span>{formatModelDisplayName(selectedMainModelId)}</span>
+                        <IconChevron />
+                      </button>
+
+                      {modelMenuOpen && catalog ? (
+                        <ComposerModelMenuPortal
+                          anchor={modelButtonRef.current}
+                          models={catalog.availableMainModels}
+                          selectedModelId={selectedMainModelId}
+                          isUpdating={updateModelMutation.isPending}
+                          onSelect={(modelId) => {
+                            handleSelectMainModel(modelId);
+                          }}
+                          preferences={agentPreferences}
+                          onPreferencesChange={(prefs) => {
+                            savePreferences({ agent: { ...userPreferences.agent, ...prefs } });
+                          }}
+                        />
+                      ) : null}
+                    </div>
+
                     <button
                       type="button"
-                      className="inline-flex items-center gap-2 rounded-full border-0 bg-transparent text-[rgba(245,240,232,0.68)] text-[0.82rem] leading-none cursor-pointer py-2 px-2.5 transition-[background,color] duration-[180ms] ease-linear hover:bg-[rgba(255,255,255,0.045)] hover:text-[rgba(245,240,232,0.9)]"
-                      aria-label="Select model"
-                      aria-expanded={modelMenuOpen}
-                      ref={modelButtonRef}
-                      onClick={() => setModelMenuOpen((current) => !current)}
-                    >
-                      <span>{formatModelDisplayName(selectedMainModelId)}</span>
-                      <IconChevron />
-                    </button>
-
-                    {modelMenuOpen && catalog ? (
-                      <ComposerModelMenuPortal
-                        anchor={modelButtonRef.current}
-                        models={catalog.availableMainModels}
-                        selectedModelId={selectedMainModelId}
-                        isUpdating={updateModelMutation.isPending}
-                        onSelect={(modelId) => {
-                          handleSelectMainModel(modelId);
-                        }}
-                        preferences={agentPreferences}
-                        onPreferencesChange={(prefs) => {
-                          savePreferences({ agent: { ...userPreferences.agent, ...prefs } });
-                        }}
-                      />
-                    ) : null}
-                  </div>
-
-                  <button
-                    type="button"
-                    className={`inline-grid h-[40px] w-[40px] place-items-center rounded-[12px] border-0 cursor-pointer transition-[transform,background,opacity] duration-[180ms] ease-linear max-[980px]:h-[36px] max-[980px]:w-[36px] max-[980px]:rounded-[10px] ${
-                      liveRun?.status === "running"
-                        ? "bg-[#30302e] text-[rgba(236,230,219,0.7)] border border-[rgba(255,255,255,0.15)] hover:text-[rgba(236,230,219,0.95)] hover:border-[rgba(255,255,255,0.25)]"
-                        : "bg-[#d47049] text-[#fff8f0] shadow-[0_6px_16px_rgba(207,109,67,0.25)] hover:not-disabled:-translate-y-px hover:not-disabled:bg-[#dd7851] disabled:opacity-50 disabled:cursor-not-allowed"
-                    }`}
-                    onClick={() => {
-                      if (liveRun?.status === "running") {
-                        handleStop();
-                      } else {
-                        void handleSend();
+                      className={`inline-grid h-[40px] w-[40px] place-items-center rounded-[12px] border-0 cursor-pointer transition-[transform,background,opacity] duration-[180ms] ease-linear max-[980px]:h-[36px] max-[980px]:w-[36px] max-[980px]:rounded-[10px] ${
+                        liveRun?.status === "running"
+                          ? "bg-[#30302e] text-[rgba(236,230,219,0.7)] border border-[rgba(255,255,255,0.15)] hover:text-[rgba(236,230,219,0.95)] hover:border-[rgba(255,255,255,0.25)]"
+                          : "bg-[#d47049] text-[#fff8f0] shadow-[0_6px_16px_rgba(207,109,67,0.25)] hover:not-disabled:-translate-y-px hover:not-disabled:bg-[#dd7851] disabled:opacity-50 disabled:cursor-not-allowed"
+                      }`}
+                      onClick={() => {
+                        if (liveRun?.status === "running") {
+                          handleStop();
+                        } else {
+                          void handleSend();
+                        }
+                      }}
+                      disabled={
+                        liveRun?.status !== "running" &&
+                        (!composerValue.trim() || isSending || pendingFiles.some((pf) => pf.status === "uploading"))
                       }
-                    }}
-                    disabled={
-                      liveRun?.status !== "running" &&
-                      (!composerValue.trim() || isSending || pendingFiles.some((pf) => pf.status === "uploading"))
-                    }
-                    aria-label={liveRun?.status === "running" ? "Stop response" : "Send message"}
-                  >
-                    {liveRun?.status === "running" ? (
-                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                        <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5" />
-                        <rect x="5.5" y="5.5" width="5" height="5" rx="0.5" fill="currentColor" />
-                      </svg>
-                    ) : isSending ? (
-                      <div className="h-4 w-4 rounded-full border-2 border-[rgba(255,255,255,0.3)] border-t-white animate-spin" />
-                    ) : (
-                      <IconArrowUp />
-                    )}
-                  </button>
+                      aria-label={liveRun?.status === "running" ? "Stop response" : "Send message"}
+                    >
+                      {liveRun?.status === "running" ? (
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                          <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5" />
+                          <rect x="5.5" y="5.5" width="5" height="5" rx="0.5" fill="currentColor" />
+                        </svg>
+                      ) : isSending ? (
+                        <div className="h-4 w-4 rounded-full border-2 border-[rgba(255,255,255,0.3)] border-t-white animate-spin" />
+                      ) : (
+                        <IconArrowUp />
+                      )}
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="mt-2 text-center text-[rgba(255,255,255,0.36)] text-[0.72rem]">
-              AI can make mistakes. Please double-check responses.
-            </div>
-          </footer>
-        </div>
-      </main>
+              <div className="mt-2 text-center text-[rgba(255,255,255,0.36)] text-[0.72rem]">
+                AI can make mistakes. Please double-check responses.
+              </div>
+            </footer>
+          </div>
+        </main>
+      )}
 
       {renamingConversation && (
         <RenameModal

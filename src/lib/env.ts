@@ -31,6 +31,8 @@ const envSchema = z.object({
   GOOGLE_AI_API_KEY: z.string().optional(),
   UPSTASH_REDIS_REST_URL: z.string().optional(),
   UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
+  INNGEST_EVENT_KEY: z.string().optional(),
+  INNGEST_SIGNING_KEY: z.string().optional(),
   DEBUG_AGENT_EVENTS: booleanLike,
 });
 

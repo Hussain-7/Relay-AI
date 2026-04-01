@@ -50,3 +50,4 @@ next-env.d.ts
 # packages
 packages/**/dist
 packages/**/node_modules
+.playwright-mcp/
