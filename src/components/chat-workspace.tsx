@@ -77,9 +77,11 @@ import { peekPendingMessage, setPendingMessage } from "@/lib/pending-message";
 export function ChatWorkspace({
   conversationId,
   view = "chat",
+  greeting,
 }: {
   conversationId?: string;
   view?: "chat" | "schedules";
+  greeting?: string;
 }) {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -1095,9 +1097,10 @@ export function ChatWorkspace({
                     <IconSpark />
                   </span>
                   <h1 className="m-0 font-serif text-[clamp(2rem,4vw,4.2rem)] leading-[0.94] tracking-[-0.04em]">
-                    {authUser?.fullName
-                      ? `What shall we think through, ${authUser.fullName.split(" ")[0]}?`
-                      : "What shall we think through?"}
+                    {greeting ||
+                      (authUser?.fullName
+                        ? `How can I help, ${authUser.fullName.split(" ")[0]}?`
+                        : "How can I help today?")}
                   </h1>
                 </div>
                 <p className="max-w-[58rem] m-0 text-[rgba(245,240,232,0.6)] text-base leading-[1.7] max-[980px]:text-[0.88rem] max-[980px]:leading-[1.55]">

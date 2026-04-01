@@ -50,6 +50,53 @@ export async function requireRequestUser(headers: Headers): Promise<RequestUser>
   return user;
 }
 
+/**
+ * Fast user getter for Server Components (pages/layouts).
+ * Decodes the Supabase JWT from cookies without an API call — just base64 parsing.
+ * Returns null if not authenticated. Safe for non-auth-critical uses (greetings, UI hints).
+ */
+export async function getPageUser(): Promise<RequestUser | null> {
+  try {
+    const { cookies } = await import("next/headers");
+    const cookieStore = await cookies();
+
+    // Supabase cookie: sb-{ref}-auth-token (may be chunked as -auth-token.0, .1, etc.)
+    const ref = env.NEXT_PUBLIC_SUPABASE_URL?.match(/\/\/([^.]+)\./)?.[1];
+    if (!ref) return null;
+
+    const baseName = `sb-${ref}-auth-token`;
+    let raw = cookieStore.get(baseName)?.value;
+    if (!raw) {
+      // Try chunked cookies
+      const chunks: string[] = [];
+      for (let i = 0; ; i++) {
+        const chunk = cookieStore.get(`${baseName}.${i}`)?.value;
+        if (!chunk) break;
+        chunks.push(chunk);
+      }
+      if (chunks.length > 0) raw = chunks.join("");
+    }
+    if (!raw) return null;
+
+    // Parse the JWT payload (second segment) — no verification, just for display data
+    const payload = raw.startsWith("base64-") ? raw.slice(7) : raw;
+    const jwtParts = payload.split(".");
+    if (jwtParts.length < 2) return null;
+
+    const decoded = JSON.parse(Buffer.from(jwtParts[1]!, "base64url").toString());
+    const meta = decoded.user_metadata ?? {};
+
+    return {
+      userId: decoded.sub ?? "",
+      email: decoded.email ?? "",
+      fullName: meta.full_name ?? meta.name ?? null,
+      avatarUrl: meta.avatar_url ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function getSupabaseUser(): Promise<RequestUser | null> {
   try {
     // Dynamic import to avoid pulling in cookies() for non-Supabase paths
