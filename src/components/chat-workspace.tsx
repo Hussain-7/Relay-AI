@@ -201,6 +201,7 @@ export function ChatWorkspace({
     timezone: string;
     maxRuns?: number;
     label?: string;
+    notifyEmail?: boolean;
   } | null>(null);
   const createScheduleMutation = useCreateScheduledPrompt();
   const deferredSidebarQuery = useDeferredValue(sidebarQuery);
@@ -411,6 +412,7 @@ export function ChatWorkspace({
             memory: agentPreferences.memory,
           },
           mcpConnectorIds: activeMcpIds.length > 0 ? activeMcpIds : undefined,
+          notifyEmail: stagedSchedule.notifyEmail,
         },
         {
           onSuccess: (schedule) => {

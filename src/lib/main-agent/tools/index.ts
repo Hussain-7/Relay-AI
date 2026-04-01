@@ -3,6 +3,7 @@ export type { ToolCatalogEntry, ToolRuntimeContext } from "./context";
 import { askUserCatalog, createAskUserTool } from "./ask-user";
 import { type ActiveCodingSessionHint, codingSessionCatalog, createCodingTools } from "./coding-session";
 import type { ToolRuntimeContext } from "./context";
+import { createEmailTool, emailCatalog } from "./email";
 import { createGithubCreateRepoTool, githubCatalog } from "./github";
 import { createImageGenerationTool, imageGenerationCatalog } from "./image-generation";
 import { memoryCatalog } from "./memory";
@@ -80,6 +81,7 @@ export function getMainAgentTools(ctx: ToolRuntimeContext, activeCodingSessionHi
     createGithubCreateRepoTool(ctx),
     createAskUserTool(ctx),
     createImageGenerationTool(ctx),
+    createEmailTool(ctx),
   ];
 }
 
@@ -102,6 +104,7 @@ export const TOOL_CATALOG = [
   githubCatalog,
   askUserCatalog,
   imageGenerationCatalog,
+  emailCatalog,
   // Memory (available when memory preference is on)
   memoryCatalog,
 ];

@@ -321,6 +321,7 @@ model ScheduledPrompt {
   preferencesJson Json?
   mcpConnectorIds Json?
   label           String?
+  notifyEmail     Boolean               @default(false)
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
 

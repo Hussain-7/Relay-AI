@@ -67,6 +67,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
           : null,
         preferencesJson: schedule.preferencesJson,
         mcpConnectorIds: schedule.mcpConnectorIds,
+        notifyEmail: schedule.notifyEmail,
         createdAt: schedule.createdAt.toISOString(),
         executions: schedule.executions.map((e) => ({
           id: e.id,

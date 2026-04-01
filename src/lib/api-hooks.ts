@@ -749,6 +749,7 @@ export interface ScheduledPromptDto {
   repoBinding: { id: string; repoFullName: string } | null;
   preferencesJson: Record<string, unknown> | null;
   mcpConnectorIds: string[] | null;
+  notifyEmail: boolean;
   executionCount: number;
   createdAt: string;
 }
@@ -815,6 +816,7 @@ export function useCreateScheduledPrompt() {
       repoBindingId?: string;
       preferencesJson?: Record<string, unknown>;
       mcpConnectorIds?: string[];
+      notifyEmail?: boolean;
     }) => {
       const data = await api.post<{ schedule: ScheduledPromptDto }>("/api/scheduled-prompts", input);
       return data.schedule;

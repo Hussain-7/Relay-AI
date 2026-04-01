@@ -33,6 +33,8 @@ const envSchema = z.object({
   UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
   INNGEST_EVENT_KEY: z.string().optional(),
   INNGEST_SIGNING_KEY: z.string().optional(),
+  RESEND_API_KEY: z.string().optional(),
+  RESEND_FROM_EMAIL: z.string().default("Relay AI <notifications@relay-ai.com>"),
   DEBUG_AGENT_EVENTS: booleanLike,
 });
 
@@ -60,4 +62,8 @@ export function hasGoogleAiConfig() {
 
 export function hasGitHubAppConfig() {
   return Boolean(env.GITHUB_APP_ID && env.GITHUB_APP_PRIVATE_KEY?.includes("BEGIN") && env.GITHUB_APP_SLUG);
+}
+
+export function hasResendConfig() {
+  return Boolean(env.RESEND_API_KEY);
 }

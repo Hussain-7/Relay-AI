@@ -21,6 +21,7 @@ const createSchema = z.object({
     })
     .optional(),
   mcpConnectorIds: z.array(z.string()).optional(),
+  notifyEmail: z.boolean().optional(),
 });
 
 export async function GET(request: Request) {
@@ -70,6 +71,7 @@ export async function GET(request: Request) {
       repoBinding: s.repoBinding ? { id: s.repoBinding.id, repoFullName: s.repoBinding.repoFullName } : null,
       preferencesJson: s.preferencesJson,
       mcpConnectorIds: s.mcpConnectorIds,
+      notifyEmail: s.notifyEmail,
       executionCount: s._count.executions,
       createdAt: s.createdAt.toISOString(),
     }));
@@ -110,6 +112,7 @@ export async function POST(request: Request) {
         repoBindingId: body.repoBindingId ?? null,
         preferencesJson: body.preferencesJson ?? Prisma.JsonNull,
         mcpConnectorIds: body.mcpConnectorIds ?? Prisma.JsonNull,
+        notifyEmail: body.notifyEmail ?? false,
         nextRunAt,
       },
     });

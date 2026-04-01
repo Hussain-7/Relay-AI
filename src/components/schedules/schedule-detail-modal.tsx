@@ -115,7 +115,7 @@ export function ScheduleDetailModal({ scheduleId, onClose }: { scheduleId: strin
             </div>
 
             {/* Preferences snapshot */}
-            {schedule.preferencesJson && (
+            {(schedule.preferencesJson || schedule.notifyEmail) && (
               <div>
                 <label className="block text-[0.72rem] uppercase tracking-wider text-[rgba(245,240,232,0.4)] mb-1">
                   Preferences
@@ -139,6 +139,11 @@ export function ScheduleDetailModal({ scheduleId, onClose }: { scheduleId: strin
                         {prefs.effort ? (
                           <span className="rounded-full bg-[rgba(255,255,255,0.06)] px-2 py-0.5 text-[0.72rem] text-[rgba(245,240,232,0.6)]">
                             Effort: {String(prefs.effort)}
+                          </span>
+                        ) : null}
+                        {schedule.notifyEmail ? (
+                          <span className="rounded-full bg-[rgba(221,113,72,0.12)] px-2 py-0.5 text-[0.72rem] text-accent">
+                            Email reports
                           </span>
                         ) : null}
                       </>

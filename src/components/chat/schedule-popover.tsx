@@ -17,6 +17,7 @@ interface SchedulePopoverProps {
     timezone: string;
     maxRuns?: number;
     label?: string;
+    notifyEmail?: boolean;
   }) => void;
   onClose: () => void;
 }
@@ -32,6 +33,7 @@ export function SchedulePopoverPortal({ anchor, onSchedule, onClose }: ScheduleP
   const [maxRuns, setMaxRuns] = useState<number | undefined>(undefined);
   const [hasRunLimit, setHasRunLimit] = useState(false);
   const [label, setLabel] = useState("");
+  const [notifyEmail, setNotifyEmail] = useState(false);
   const [customCron, setCustomCron] = useState("");
   const [showCustom, setShowCustom] = useState(false);
 
@@ -87,6 +89,7 @@ export function SchedulePopoverPortal({ anchor, onSchedule, onClose }: ScheduleP
       timezone,
       maxRuns: hasRunLimit ? maxRuns : undefined,
       label: label.trim() || undefined,
+      notifyEmail: notifyEmail || undefined,
     });
   }
 
@@ -324,6 +327,24 @@ export function SchedulePopoverPortal({ anchor, onSchedule, onClose }: ScheduleP
                   <Plus size={13} />
                   Custom cron expression
                 </button>
+
+                {/* Notify by email */}
+                <div className="flex items-center justify-between">
+                  <span className="text-[0.82rem] text-[rgba(245,240,232,0.6)]">Notify by email</span>
+                  <button
+                    type="button"
+                    onClick={() => setNotifyEmail(!notifyEmail)}
+                    className={`relative inline-flex h-[20px] w-[36px] shrink-0 cursor-pointer items-center rounded-full border-0 transition-colors duration-200 ${
+                      notifyEmail ? "bg-accent" : "bg-[rgba(255,255,255,0.12)]"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-[16px] w-[16px] rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                        notifyEmail ? "translate-x-[18px]" : "translate-x-[2px]"
+                      }`}
+                    />
+                  </button>
+                </div>
 
                 {/* Timezone */}
                 <p className="text-[0.7rem] text-[rgba(245,240,232,0.3)]">{timezone}</p>

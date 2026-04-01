@@ -1,5 +1,8 @@
 import { RunStatus } from "@/generated/prisma/client";
 import { createConversationForUser } from "@/lib/conversations";
+import { sendEmail } from "@/lib/email";
+import { scheduleReportEmail } from "@/lib/email-templates";
+import { env } from "@/lib/env";
 import { inngest } from "@/lib/inngest/client";
 import { executeMainAgentHeadless } from "@/lib/main-agent/headless";
 import { prisma } from "@/lib/prisma";
@@ -50,6 +53,7 @@ export const scheduleExecutor = inngest.createFunction(
         preferencesJson: s.preferencesJson as Record<string, unknown> | null,
         mcpConnectorIds: s.mcpConnectorIds as string[] | null,
         label: s.label,
+        notifyEmail: s.notifyEmail,
       };
     });
 
@@ -170,6 +174,29 @@ export const scheduleExecutor = inngest.createFunction(
       executionId,
       status: result.success ? "COMPLETED" : "FAILED",
     });
+
+    // Send email notification if enabled
+    if (schedule.notifyEmail && result.success) {
+      try {
+        const user = await prisma.userProfile.findUnique({
+          where: { userId: schedule.userId },
+          select: { email: true },
+        });
+        if (user?.email) {
+          const email = scheduleReportEmail({
+            prompt: schedule.prompt,
+            responseText: result.finalText,
+            conversationUrl: `${env.APP_URL}/chat/${conversationId}`,
+            scheduleName: schedule.label ?? undefined,
+            runCount: updatedSchedule.totalRuns,
+          });
+          const emailResult = await sendEmail({ to: user.email, ...email });
+          console.log("[executor] email notification:", emailResult.success ? "sent" : emailResult.error);
+        }
+      } catch (err) {
+        console.error("[executor] email notification failed:", err);
+      }
+    }
 
     console.log("[executor] done for schedule", schedule.id);
     return {
