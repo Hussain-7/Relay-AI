@@ -138,16 +138,22 @@ export const scheduleExecutor = inngest.createFunction(
       textLength: result.finalText.length,
     });
 
-    // Record execution result
-    await prisma.scheduledExecution.update({
-      where: { id: executionId },
-      data: {
-        runId: result.runId,
-        status: result.success ? RunStatus.COMPLETED : RunStatus.FAILED,
-        completedAt: new Date(),
-        errorMessage: result.error ?? null,
-      },
-    });
+    // Record execution result and increment totalRuns
+    await Promise.all([
+      prisma.scheduledExecution.update({
+        where: { id: executionId },
+        data: {
+          runId: result.runId,
+          status: result.success ? RunStatus.COMPLETED : RunStatus.FAILED,
+          completedAt: new Date(),
+          errorMessage: result.error ?? null,
+        },
+      }),
+      prisma.scheduledPrompt.update({
+        where: { id: schedule.id },
+        data: { totalRuns: { increment: 1 }, lastRunAt: new Date() },
+      }),
+    ]);
 
     void invalidateCache(`conv:${conversationId}`, `convos:${schedule.userId}`);
     console.log("[executor] execution recorded", {

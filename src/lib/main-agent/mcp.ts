@@ -17,9 +17,14 @@ export interface ConfiguredMcpServer {
 const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000; // refresh 5 min before expiry
 const TOKEN_REFRESH_TIMEOUT_MS = 3000; // max 3s for token refresh
 
-export async function getConfiguredMcpServers(userId: string): Promise<ConfiguredMcpServer[]> {
+/**
+ * Load MCP servers for a user. If connectorIds is provided, load those specific connectors
+ * (used by scheduled prompts to use the snapshot of connectors at schedule time).
+ * Otherwise, load all ACTIVE connectors.
+ */
+export async function getConfiguredMcpServers(userId: string, connectorIds?: string[]): Promise<ConfiguredMcpServer[]> {
   const connectors = await prisma.mcpConnector.findMany({
-    where: { userId, status: "ACTIVE" },
+    where: connectorIds?.length ? { userId, id: { in: connectorIds } } : { userId, status: "ACTIVE" },
     orderBy: { createdAt: "asc" },
   });
 

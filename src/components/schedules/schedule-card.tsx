@@ -2,12 +2,28 @@
 
 import type { ScheduledPromptDto } from "@/lib/api-hooks";
 
-const STATUS_STYLES: Record<string, { bg: string; text: string; label: string }> = {
-  ACTIVE: { bg: "bg-[rgba(122,168,148,0.15)]", text: "text-accent-2", label: "Active" },
-  PAUSED: { bg: "bg-[rgba(255,193,7,0.12)]", text: "text-[#ffc107]", label: "Paused" },
-  COMPLETED: { bg: "bg-[rgba(255,255,255,0.06)]", text: "text-[rgba(245,240,232,0.5)]", label: "Completed" },
-  CANCELLED: { bg: "bg-[rgba(255,255,255,0.04)]", text: "text-[rgba(245,240,232,0.35)]", label: "Cancelled" },
+const STATUS_STYLES: Record<string, { dot: string; text: string; label: string }> = {
+  ACTIVE: { dot: "bg-emerald-400", text: "text-emerald-400", label: "Active" },
+  PAUSED: { dot: "bg-yellow-400", text: "text-yellow-400", label: "Paused" },
+  COMPLETED: { dot: "bg-[rgba(245,240,232,0.3)]", text: "text-[rgba(245,240,232,0.4)]", label: "Done" },
+  CANCELLED: { dot: "bg-[rgba(245,240,232,0.15)]", text: "text-[rgba(245,240,232,0.3)]", label: "Cancelled" },
 };
+
+function formatNextRun(nextRunAt: string | null): string {
+  if (!nextRunAt) return "—";
+  const d = new Date(nextRunAt);
+  const now = new Date();
+  const diffMs = d.getTime() - now.getTime();
+  const diffMins = Math.round(diffMs / 60000);
+
+  if (diffMins < 1) return "now";
+  if (diffMins < 60) return `in ${diffMins}m`;
+  if (diffMins < 1440) {
+    const h = Math.floor(diffMins / 60);
+    return `in ${h}h`;
+  }
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
 
 export function ScheduleCard({
   schedule,
@@ -36,39 +52,36 @@ export function ScheduleCard({
   return (
     <button
       type="button"
-      className="w-full text-left border border-[rgba(255,255,255,0.08)] rounded-[12px] bg-[rgba(255,255,255,0.02)] p-3.5 cursor-pointer transition-[background,border-color] duration-150 hover:bg-[rgba(255,255,255,0.04)] hover:border-[rgba(255,255,255,0.14)]"
+      className="w-full text-left border border-[rgba(255,255,255,0.06)] rounded-[12px] bg-[rgba(255,255,255,0.02)] px-4 py-3.5 cursor-pointer transition-[background,border-color] duration-150 hover:bg-[rgba(255,255,255,0.04)] hover:border-[rgba(255,255,255,0.12)]"
       onClick={onClick}
     >
-      <div className="flex items-start justify-between gap-2 mb-1.5">
-        <h4 className="text-[0.88rem] font-medium text-[rgba(245,240,232,0.9)] line-clamp-1">
-          {schedule.label || schedule.prompt.slice(0, 60)}
-        </h4>
-        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[0.68rem] font-medium ${status.bg} ${status.text}`}>
-          {status.label}
-        </span>
-      </div>
-
-      {schedule.label && (
-        <p className="text-[0.78rem] text-[rgba(245,240,232,0.5)] line-clamp-2 mb-1.5">
-          {schedule.prompt.slice(0, 100)}
-        </p>
-      )}
-
-      <div className="flex items-center gap-3 text-[0.75rem] text-[rgba(245,240,232,0.45)]">
-        <span>{schedule.cronDescription}</span>
-        <span>&middot;</span>
-        <span>
-          {schedule.totalRuns} run{schedule.totalRuns !== 1 ? "s" : ""}
-          {schedule.maxRuns ? ` / ${schedule.maxRuns}` : ""}
-        </span>
-        {schedule.nextRunAt && (
-          <>
-            <span>&middot;</span>
+      <div className="flex items-start gap-3">
+        {/* Main content */}
+        <div className="flex-1 min-w-0">
+          <p className="text-[0.88rem] text-[rgba(245,240,232,0.88)] truncate leading-snug">
+            {schedule.label || schedule.prompt}
+          </p>
+          <div className="flex items-center gap-2 mt-1 text-[0.78rem] text-[rgba(245,240,232,0.4)] flex-wrap">
+            <span>{schedule.cronDescription}</span>
+            <span className="text-[rgba(255,255,255,0.15)]">&middot;</span>
             <span>
-              Next: {new Date(schedule.nextRunAt).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })}
+              {schedule.totalRuns} run{schedule.totalRuns !== 1 ? "s" : ""}
+              {schedule.maxRuns ? ` / ${schedule.maxRuns}` : ""}
             </span>
-          </>
-        )}
+            {schedule.nextRunAt && (
+              <>
+                <span className="text-[rgba(255,255,255,0.15)]">&middot;</span>
+                <span>Next: {formatNextRun(schedule.nextRunAt)}</span>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Status */}
+        <div className="flex items-center gap-1.5 shrink-0 pt-0.5">
+          <span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />
+          <span className={`text-[0.75rem] ${status.text}`}>{status.label}</span>
+        </div>
       </div>
     </button>
   );

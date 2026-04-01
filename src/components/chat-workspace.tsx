@@ -956,11 +956,11 @@ export function ChatWorkspace({
 
       {view === "schedules" ? (
         <main className="min-h-0 h-dvh overflow-hidden min-w-0 max-[980px]:h-dvh max-[980px]:min-h-dvh max-[980px]:w-full max-[980px]:max-w-full">
-          <ScheduleCalendar />
+          <ScheduleCalendar onOpenSidebar={() => setMobileSidebarOpen(true)} />
         </main>
       ) : (
         <main className="grid min-h-0 h-dvh grid-rows-[auto_minmax(0,1fr)] overflow-hidden min-w-0 max-[980px]:h-dvh max-[980px]:min-h-dvh max-[980px]:w-full max-[980px]:max-w-full">
-          <header className="flex items-center justify-start gap-[18px] p-3 max-[980px]:gap-2 max-[980px]:pt-3 max-[980px]:pb-1 max-[980px]:px-[18px]">
+          <header className="flex items-center justify-start gap-[18px] p-3 max-[980px]:gap-2 max-[980px]:pt-3 max-[980px]:pb-1 max-[980px]:px-2">
             <div className="flex min-w-0 w-full items-center gap-0 max-[980px]:w-full max-[980px]:gap-2">
               {isMobileViewport ? (
                 <button
@@ -981,7 +981,7 @@ export function ChatWorkspace({
                 >
                   <button
                     type="button"
-                    className={`inline-flex items-center gap-1.5 w-auto max-w-[min(100%,42rem)] min-w-0 border-0 rounded-[10px] bg-transparent text-[rgba(235,230,220,0.82)] cursor-pointer py-1.5 px-2.5 overflow-hidden transition-[color,background] duration-[140ms] ease-linear hover:bg-[#2f2f2d] hover:text-[rgba(245,240,232,0.96)] max-[980px]:max-w-full max-[980px]:border-0 max-[980px]:rounded-none max-[980px]:bg-transparent max-[980px]:p-0`}
+                    className={`inline-flex items-center gap-1.5 w-auto max-w-[min(100%,42rem)] min-w-0 border-0 rounded-[10px] bg-transparent text-[rgba(235,230,220,0.82)] cursor-pointer py-1.5 px-2.5 overflow-hidden transition-[color,background] duration-[140ms] ease-linear hover:bg-[#2f2f2d] hover:text-[rgba(245,240,232,0.96)] max-[980px]:max-w-[calc(100vw-80px)] max-[980px]:border-0 max-[980px]:rounded-none max-[980px]:bg-transparent max-[980px]:p-0`}
                     aria-label={`Open menu for ${activeConversation.title}`}
                     aria-expanded={headerMenuOpen}
                     data-header-menu-trigger

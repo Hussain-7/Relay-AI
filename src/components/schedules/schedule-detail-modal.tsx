@@ -1,10 +1,12 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { IconExternalLink, IconPause, IconPlay, IconTrash } from "@/components/icons";
 import { ModalBackdrop, ModalFooter, ModalHeader, ModalPanel } from "@/components/ui/modal";
 import {
   useDeleteScheduledPrompt,
+  useMcpConnectors,
   useRunScheduledPromptNow,
   useScheduledPromptDetail,
   useUpdateScheduledPrompt,
@@ -30,8 +32,17 @@ export function ScheduleDetailModal({ scheduleId, onClose }: { scheduleId: strin
   const updateMutation = useUpdateScheduledPrompt();
   const deleteMutation = useDeleteScheduledPrompt();
   const runNowMutation = useRunScheduledPromptNow();
+  const { data: allConnectors } = useMcpConnectors();
 
   const status = STATUS_STYLES[schedule?.status ?? "ACTIVE"] ?? STATUS_STYLES.ACTIVE;
+
+  // Resolve MCP connector IDs to names
+  const mcpNames = (() => {
+    const ids = schedule?.mcpConnectorIds as string[] | null;
+    if (!ids?.length || !allConnectors) return [];
+    const map = new Map(allConnectors.map((c) => [c.id, c.name]));
+    return ids.map((id) => map.get(id) ?? id.slice(0, 8)).filter(Boolean);
+  })();
 
   return (
     <ModalBackdrop onClose={onClose}>
@@ -137,6 +148,26 @@ export function ScheduleDetailModal({ scheduleId, onClose }: { scheduleId: strin
               </div>
             )}
 
+            {/* MCP connectors */}
+            {mcpNames.length > 0 && (
+              <div>
+                <label className="block text-[0.72rem] uppercase tracking-wider text-[rgba(245,240,232,0.4)] mb-1">
+                  MCP Connectors
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {mcpNames.map((name) => (
+                    <span
+                      key={name}
+                      className="inline-flex items-center gap-1.5 rounded-full bg-[rgba(255,255,255,0.06)] px-2 py-0.5 text-[0.72rem] text-[rgba(245,240,232,0.6)]"
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0" />
+                      {name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Conversation link */}
             {schedule.conversationId && (
               <button
@@ -206,10 +237,13 @@ export function ScheduleDetailModal({ scheduleId, onClose }: { scheduleId: strin
                   type="button"
                   className="inline-flex items-center gap-1.5 rounded-[8px] border border-[rgba(255,255,255,0.1)] bg-transparent px-3 py-1.5 text-[0.82rem] text-[rgba(245,240,232,0.7)] cursor-pointer hover:bg-[rgba(255,255,255,0.05)] transition-colors"
                   onClick={() => {
-                    updateMutation.mutate({
-                      id: schedule.id,
-                      status: schedule.status === "ACTIVE" ? "PAUSED" : "ACTIVE",
-                    });
+                    const newStatus = schedule.status === "ACTIVE" ? "PAUSED" : "ACTIVE";
+                    updateMutation.mutate(
+                      { id: schedule.id, status: newStatus },
+                      {
+                        onSuccess: () => toast.success(newStatus === "PAUSED" ? "Schedule paused" : "Schedule resumed"),
+                      },
+                    );
                   }}
                   disabled={updateMutation.isPending}
                 >
@@ -222,7 +256,12 @@ export function ScheduleDetailModal({ scheduleId, onClose }: { scheduleId: strin
                 <button
                   type="button"
                   className="inline-flex items-center gap-1.5 rounded-[8px] border border-[rgba(255,255,255,0.1)] bg-transparent px-3 py-1.5 text-[0.82rem] text-accent cursor-pointer hover:bg-[rgba(221,113,72,0.08)] transition-colors"
-                  onClick={() => runNowMutation.mutate(schedule.id)}
+                  onClick={() =>
+                    runNowMutation.mutate(schedule.id, {
+                      onSuccess: () =>
+                        toast.success("Run triggered", { description: "Execution started in the background" }),
+                    })
+                  }
                   disabled={runNowMutation.isPending}
                 >
                   <IconPlay />
@@ -236,7 +275,12 @@ export function ScheduleDetailModal({ scheduleId, onClose }: { scheduleId: strin
                 type="button"
                 className="inline-flex items-center gap-1.5 rounded-[8px] border border-[rgba(255,80,80,0.2)] bg-transparent px-3 py-1.5 text-[0.82rem] text-red-400 cursor-pointer hover:bg-[rgba(255,80,80,0.08)] transition-colors"
                 onClick={() => {
-                  deleteMutation.mutate(schedule.id, { onSuccess: onClose });
+                  deleteMutation.mutate(schedule.id, {
+                    onSuccess: () => {
+                      toast.success("Schedule deleted");
+                      onClose();
+                    },
+                  });
                 }}
                 disabled={deleteMutation.isPending}
               >

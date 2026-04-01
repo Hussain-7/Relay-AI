@@ -69,21 +69,10 @@ export async function executeMainAgentHeadless(input: HeadlessRunInput): Promise
           take: 200,
         })
         .then((msgs) => msgs.reverse()),
-      getConfiguredMcpServers(input.userId)
-        .then((servers) => {
-          // If specific connector IDs were captured at schedule time, filter to only those
-          if (input.mcpConnectorIds?.length) {
-            const allowed = new Set(input.mcpConnectorIds);
-            return servers.filter(
-              (s) => allowed.has(s.name) || allowed.has((s as unknown as Record<string, unknown>).id as string),
-            );
-          }
-          return servers;
-        })
-        .catch((err) => {
-          console.warn("[headless] Failed to load MCP servers:", err);
-          return [] as Awaited<ReturnType<typeof getConfiguredMcpServers>>;
-        }),
+      getConfiguredMcpServers(input.userId, input.mcpConnectorIds).catch((err) => {
+        console.warn("[headless] Failed to load MCP servers:", err);
+        return [] as Awaited<ReturnType<typeof getConfiguredMcpServers>>;
+      }),
       prisma.codingSession.findFirst({
         where: {
           conversationId: input.conversationId,
