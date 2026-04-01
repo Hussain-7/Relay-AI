@@ -60,35 +60,15 @@ export const scheduleDispatcher = inngest.createFunction(
       console.log("[dispatcher] sending", events.length, "execute events");
       await inngest.send(events);
 
-      // Advance nextRunAt for each schedule
+      // Advance nextRunAt for each schedule (totalRuns incremented by executor after completion)
       await Promise.all(
         dueSchedules.map(async (schedule) => {
-          const newTotalRuns = schedule.totalRuns + 1;
-          const reachedMax = schedule.maxRuns != null && newTotalRuns >= schedule.maxRuns;
-
-          if (reachedMax) {
-            console.log("[dispatcher] schedule", schedule.id, "reached maxRuns, marking COMPLETED");
-            await prisma.scheduledPrompt.update({
-              where: { id: schedule.id },
-              data: {
-                status: "COMPLETED",
-                totalRuns: newTotalRuns,
-                lastRunAt: new Date(),
-                nextRunAt: null,
-              },
-            });
-          } else {
-            const nextRunAt = computeNextRunAt(schedule.cronExpression, schedule.timezone);
-            console.log("[dispatcher] schedule", schedule.id, "advanced nextRunAt to", nextRunAt.toISOString());
-            await prisma.scheduledPrompt.update({
-              where: { id: schedule.id },
-              data: {
-                totalRuns: newTotalRuns,
-                lastRunAt: new Date(),
-                nextRunAt,
-              },
-            });
-          }
+          const nextRunAt = computeNextRunAt(schedule.cronExpression, schedule.timezone);
+          console.log("[dispatcher] schedule", schedule.id, "advanced nextRunAt to", nextRunAt.toISOString());
+          await prisma.scheduledPrompt.update({
+            where: { id: schedule.id },
+            data: { nextRunAt },
+          });
         }),
       );
     });

@@ -231,7 +231,7 @@ export function ScheduleDetailModal({ scheduleId, onClose }: { scheduleId: strin
 
         {schedule && (
           <ModalFooter>
-            <div className="flex items-center gap-2 w-full">
+            <div className="flex items-center gap-2 w-full pt-2">
               {(schedule.status === "ACTIVE" || schedule.status === "PAUSED") && (
                 <button
                   type="button"

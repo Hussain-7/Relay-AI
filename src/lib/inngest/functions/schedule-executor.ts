@@ -139,7 +139,7 @@ export const scheduleExecutor = inngest.createFunction(
     });
 
     // Record execution result and increment totalRuns
-    await Promise.all([
+    const [, updatedSchedule] = await Promise.all([
       prisma.scheduledExecution.update({
         where: { id: executionId },
         data: {
@@ -152,8 +152,18 @@ export const scheduleExecutor = inngest.createFunction(
       prisma.scheduledPrompt.update({
         where: { id: schedule.id },
         data: { totalRuns: { increment: 1 }, lastRunAt: new Date() },
+        select: { totalRuns: true, maxRuns: true },
       }),
     ]);
+
+    // Check if maxRuns reached after this execution
+    if (updatedSchedule.maxRuns != null && updatedSchedule.totalRuns >= updatedSchedule.maxRuns) {
+      await prisma.scheduledPrompt.update({
+        where: { id: schedule.id },
+        data: { status: "COMPLETED", nextRunAt: null },
+      });
+      console.log("[executor] schedule reached maxRuns, marked COMPLETED");
+    }
 
     void invalidateCache(`conv:${conversationId}`, `convos:${schedule.userId}`);
     console.log("[executor] execution recorded", {
