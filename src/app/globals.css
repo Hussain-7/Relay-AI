@@ -104,7 +104,8 @@
 .sidebar-conversation-list,
 .repo-scroll,
 .chat-stage-inner,
-.composer-input {
+.composer-input,
+.search-modal-list {
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
 }
@@ -113,28 +114,32 @@
 .repo-scroll:hover,
 .chat-stage-inner:hover,
 .composer-input:hover,
-.composer-input:focus {
+.composer-input:focus,
+.search-modal-list:hover {
   scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
 }
 
 .sidebar-conversation-list::-webkit-scrollbar,
 .repo-scroll::-webkit-scrollbar,
 .chat-stage-inner::-webkit-scrollbar,
-.composer-input::-webkit-scrollbar {
+.composer-input::-webkit-scrollbar,
+.search-modal-list::-webkit-scrollbar {
   width: 4px;
 }
 
 .sidebar-conversation-list::-webkit-scrollbar-track,
 .repo-scroll::-webkit-scrollbar-track,
 .chat-stage-inner::-webkit-scrollbar-track,
-.composer-input::-webkit-scrollbar-track {
+.composer-input::-webkit-scrollbar-track,
+.search-modal-list::-webkit-scrollbar-track {
   background: transparent;
 }
 
 .sidebar-conversation-list::-webkit-scrollbar-thumb,
 .repo-scroll::-webkit-scrollbar-thumb,
 .chat-stage-inner::-webkit-scrollbar-thumb,
-.composer-input::-webkit-scrollbar-thumb {
+.composer-input::-webkit-scrollbar-thumb,
+.search-modal-list::-webkit-scrollbar-thumb {
   background: transparent;
   border-radius: 4px;
   transition: background 0.2s;
@@ -144,14 +149,16 @@
 .repo-scroll:hover::-webkit-scrollbar-thumb,
 .chat-stage-inner:hover::-webkit-scrollbar-thumb,
 .composer-input:hover::-webkit-scrollbar-thumb,
-.composer-input:focus::-webkit-scrollbar-thumb {
+.composer-input:focus::-webkit-scrollbar-thumb,
+.search-modal-list:hover::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.1);
 }
 
 .sidebar-conversation-list::-webkit-scrollbar-thumb:hover,
 .repo-scroll::-webkit-scrollbar-thumb:hover,
 .chat-stage-inner::-webkit-scrollbar-thumb:hover,
-.composer-input::-webkit-scrollbar-thumb:hover {
+.composer-input::-webkit-scrollbar-thumb:hover,
+.search-modal-list::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.18);
 }
 

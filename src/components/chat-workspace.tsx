@@ -1682,7 +1682,7 @@ export function ChatWorkspace({
           onClick={() => setSearchModalOpen(false)}
         >
           <div
-            className="w-[min(560px,90vw)] max-h-[60vh] flex flex-col border border-[rgba(255,255,255,0.1)] rounded-[16px] bg-[rgba(28,26,22,0.98)] shadow-[0_24px_64px_rgba(0,0,0,0.5)] overflow-hidden"
+            className="w-[min(560px,90vw)] max-h-[60vh] flex flex-col border border-[rgba(255,255,255,0.1)] rounded-[16px] bg-[rgba(28,26,22,0.98)] shadow-[0_24px_64px_rgba(0,0,0,0.5)] overflow-clip"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center gap-2.5 px-4 py-3.5 border-b border-[rgba(255,255,255,0.08)] text-[rgba(245,240,232,0.5)]">
@@ -1706,7 +1706,7 @@ export function ChatWorkspace({
                 <IconClose />
               </button>
             </div>
-            <div className="overflow-y-auto p-1.5">
+            <div className="search-modal-list overflow-y-auto p-1.5">
               {filteredConversations.map((conversation) => (
                 <button
                   key={conversation.id}
