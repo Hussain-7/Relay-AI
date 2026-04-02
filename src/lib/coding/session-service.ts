@@ -613,7 +613,7 @@ export async function runCodingTask(input: {
     // Wrap in sh -c so the outer command always exits 0 (avoids E2B CommandExitError).
     // The real exit code is captured via ===CLI_EXIT:$?===.
     // stderr is merged into stdout so we capture error messages from the CLI.
-    const innerCmd = `cd "${session.workspacePath}" && claude --dangerously-skip-permissions --bare --output-format stream-json --verbose${modelFlag} -p '${escapedTask}'${sessionFlag}`;
+    const innerCmd = `cd "${session.workspacePath}" && claude --dangerously-skip-permissions --output-format stream-json --verbose${modelFlag} -p '${escapedTask}'${sessionFlag}`;
     const cmd = `sh -c '${innerCmd.replace(/'/g, "'\\''")} 2>&1; echo "===CLI_EXIT:$?==="'`;
     log.info("Running Claude Code CLI", {
       workspacePath: session.workspacePath,
