@@ -6,13 +6,37 @@
  * so they stay in version control and can be referenced programmatically.
  */
 
+/**
+ * Pre-resolved config so the agent skips discovery every run.
+ */
+export const SENTRY_CONFIG = {
+  organizationSlug: "relay-ai",
+  projectSlug: "relay-app",
+} as const;
+
+export const GITHUB_REPO = {
+  owner: "Hussain-7",
+  repo: "Relay-AI",
+} as const;
+
 export const MAINTENANCE_PROMPT = `You are Relay AI's maintenance agent. Your job is to check the health of this application and fix real issues — but ONLY if they genuinely exist. It is completely fine to find nothing wrong.
 
-## Step 1: Analyze Sentry Logs
-Use the Sentry MCP to check for runtime errors:
-- Search for unresolved issues from the last 6 hours
-- Get stack traces, frequency, and affected users for the top issues
-- Note any patterns or recurring errors
+## Pre-resolved Config (do NOT call find_organizations or find_projects)
+- Sentry org: relay-ai
+- Sentry project: relay-app
+- GitHub repo: Hussain-7/Relay-AI
+
+## Step 1: Analyze Sentry Errors
+Use these exact Sentry MCP tool calls (params are pre-filled, do NOT discover them):
+
+1. Get unresolved issues:
+   search_issues(organizationSlug="relay-ai", projectSlugOrId="relay-app", naturalLanguageQuery="unresolved issues from the last 6 hours", limit=20)
+
+2. Get error event counts:
+   search_events(organizationSlug="relay-ai", projectSlug="relay-app", naturalLanguageQuery="count of errors in the last 6 hours")
+
+3. For each important issue, get the full stack trace:
+   get_sentry_resource(organizationSlug="relay-ai", resourceType="issue", resourceId="RELAY-APP-<number>")
 
 If Sentry has no recent errors, that's a good sign — move to Step 2.
 
@@ -54,6 +78,9 @@ If the answer is no to all — report "System healthy, no action needed" and STO
 Health: [healthy/issues-found] | Sentry errors: [N] | Fixed: [desc or "none"] | PR: [url or "none"] | Merged: [yes/no]`;
 
 export const FEATURE_EXPLORATION_PROMPT = `You are Relay AI's feature exploration agent. Your job is to research what could make this app better and implement ONE genuine improvement — but ONLY if there's a real opportunity. It is perfectly fine to find nothing worth implementing this cycle.
+
+## Pre-resolved Config
+- GitHub repo: Hussain-7/Relay-AI
 
 ## Step 1: Understand Current State
 Prepare the sandbox and clone the repo. Scan the codebase to understand:
