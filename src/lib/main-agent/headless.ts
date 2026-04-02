@@ -23,6 +23,8 @@ export interface HeadlessRunInput {
     memory?: boolean;
   };
   mcpConnectorIds?: string[];
+  /** When true, skip loading prior message history — each run starts with a clean context but messages still persist in the conversation for traceability. */
+  skipHistory?: boolean;
 }
 
 export interface HeadlessRunResult {
@@ -63,13 +65,15 @@ export async function executeMainAgentHeadless(input: HeadlessRunInput): Promise
           mainAgentSession: true,
         },
       }),
-      prisma.message
-        .findMany({
-          where: { conversationId: input.conversationId },
-          orderBy: { createdAt: "desc" },
-          take: 200,
-        })
-        .then((msgs) => msgs.reverse()),
+      input.skipHistory
+        ? Promise.resolve([])
+        : prisma.message
+            .findMany({
+              where: { conversationId: input.conversationId },
+              orderBy: { createdAt: "desc" },
+              take: 200,
+            })
+            .then((msgs) => msgs.reverse()),
       getConfiguredMcpServers(input.userId, input.mcpConnectorIds).catch((err) => {
         console.warn("[headless] Failed to load MCP servers:", err);
         return [] as Awaited<ReturnType<typeof getConfiguredMcpServers>>;

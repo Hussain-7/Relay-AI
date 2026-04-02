@@ -126,6 +126,7 @@ export const scheduleExecutor = inngest.createFunction(
         prompt: schedule.prompt,
         preferences: prefs ?? undefined,
         mcpConnectorIds: schedule.mcpConnectorIds ?? undefined,
+        skipHistory: schedule.freshConversation,
       });
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Unknown error";
@@ -172,14 +173,6 @@ export const scheduleExecutor = inngest.createFunction(
         data: { status: "COMPLETED", nextRunAt: null },
       });
       console.log("[executor] schedule reached maxRuns, marked COMPLETED");
-    }
-
-    // Unlink conversation so next run starts fresh (prevents context accumulation)
-    if (schedule.freshConversation) {
-      await prisma.scheduledPrompt.update({
-        where: { id: schedule.id },
-        data: { conversationId: null },
-      });
     }
 
     void invalidateCache(`conv:${conversationId}`, `convos:${schedule.userId}`);
