@@ -55,33 +55,35 @@ function ConnectorsSubmenu({
 
   return (
     <div
-      className="absolute left-full top-0 -ml-3 min-w-[220px] max-w-[280px] border border-[rgba(255,255,255,0.12)] rounded-[14px] bg-[rgb(53,51,47)] p-1.5 shadow-[0_16px_48px_rgba(0,0,0,0.5)] z-10 max-[980px]:left-0 max-[980px]:bottom-full max-[980px]:top-auto max-[980px]:ml-0 max-[980px]:mb-1.5"
+      className="absolute left-full bottom-0 -ml-3 min-w-[220px] max-w-[280px] border border-[rgba(255,255,255,0.12)] rounded-[14px] bg-[rgb(53,51,47)] p-1.5 shadow-[0_16px_48px_rgba(0,0,0,0.5)] z-10 max-[980px]:left-0 max-[980px]:bottom-full max-[980px]:top-auto max-[980px]:ml-0 max-[980px]:mb-1.5"
       data-chat-action-menu
     >
       {toggleable.length > 0 ? (
         <>
-          {toggleable.map((c) => (
-            <div
-              key={c.id}
-              className="flex items-center gap-3 rounded-[10px] px-3 py-2 transition-colors duration-100 hover:bg-[rgba(255,255,255,0.04)]"
-            >
-              <span className="flex-1 text-[0.84rem] text-[rgba(245,240,232,0.82)] truncate">{c.name}</span>
-              <Toggle checked={c.status === "ACTIVE"} onChange={() => onToggle(c.id, c.status !== "ACTIVE")} />
-            </div>
-          ))}
-          {needsAuth.length > 0 && (
-            <>
-              <div className="mx-3 my-1 h-px bg-[rgba(255,255,255,0.06)]" />
-              {needsAuth.map((c) => (
-                <div key={c.id} className="flex items-center gap-3 rounded-[10px] px-3 py-2">
-                  <span className="flex-1 text-[0.84rem] text-[rgba(245,240,232,0.45)] truncate">{c.name}</span>
-                  <span className="text-[0.68rem] text-[rgba(220,160,80,0.7)]">
-                    {c.status === "NEEDS_AUTH" ? "Needs auth" : "Error"}
-                  </span>
-                </div>
-              ))}
-            </>
-          )}
+          <div className="max-h-[260px] overflow-y-auto">
+            {toggleable.map((c) => (
+              <div
+                key={c.id}
+                className="flex items-center gap-3 rounded-[10px] px-3 py-2 transition-colors duration-100 hover:bg-[rgba(255,255,255,0.04)]"
+              >
+                <span className="flex-1 text-[0.84rem] text-[rgba(245,240,232,0.82)] truncate">{c.name}</span>
+                <Toggle checked={c.status === "ACTIVE"} onChange={() => onToggle(c.id, c.status !== "ACTIVE")} />
+              </div>
+            ))}
+            {needsAuth.length > 0 && (
+              <>
+                <div className="mx-3 my-1 h-px bg-[rgba(255,255,255,0.06)]" />
+                {needsAuth.map((c) => (
+                  <div key={c.id} className="flex items-center gap-3 rounded-[10px] px-3 py-2">
+                    <span className="flex-1 text-[0.84rem] text-[rgba(245,240,232,0.45)] truncate">{c.name}</span>
+                    <span className="text-[0.68rem] text-[rgba(220,160,80,0.7)]">
+                      {c.status === "NEEDS_AUTH" ? "Needs auth" : "Error"}
+                    </span>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
           <div className="mx-3 my-1 h-px bg-[rgba(255,255,255,0.06)]" />
         </>
       ) : (
