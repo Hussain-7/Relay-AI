@@ -43,24 +43,24 @@ export const scheduleDispatcher = inngest.createFunction(
 
     if (dueSchedules.length === 0) return { dispatched: 0 };
 
-    // Dispatch execute events and advance nextRunAt for each
-    await step.run("dispatch-and-advance", async () => {
-      const events = dueSchedules.map((schedule) => {
-        const nextRunStr = schedule.nextRunAt ? String(schedule.nextRunAt) : new Date().toISOString();
-        return {
-          name: "scheduled-prompt/execute" as const,
-          data: {
-            scheduledPromptId: schedule.id,
-            nextRunAt: nextRunStr,
-          },
-          id: `schedule-${schedule.id}-${nextRunStr}`,
-        };
-      });
+    // Dispatch execute events via step.sendEvent (no event key needed)
+    const events = dueSchedules.map((schedule) => {
+      const nextRunStr = schedule.nextRunAt ? String(schedule.nextRunAt) : new Date().toISOString();
+      return {
+        name: "scheduled-prompt/execute" as const,
+        data: {
+          scheduledPromptId: schedule.id,
+          nextRunAt: nextRunStr,
+        },
+        id: `schedule-${schedule.id}-${nextRunStr}`,
+      };
+    });
 
-      console.log("[dispatcher] sending", events.length, "execute events");
-      await inngest.send(events);
+    console.log("[dispatcher] sending", events.length, "execute events");
+    await step.sendEvent("dispatch-events", events);
 
-      // Advance nextRunAt for each schedule (totalRuns incremented by executor after completion)
+    // Advance nextRunAt for each schedule (totalRuns incremented by executor after completion)
+    await step.run("advance-next-run", async () => {
       await Promise.all(
         dueSchedules.map(async (schedule) => {
           const nextRunAt = computeNextRunAt(schedule.cronExpression, schedule.timezone);
