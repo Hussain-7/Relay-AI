@@ -36,6 +36,11 @@ const envSchema = z.object({
   RESEND_API_KEY: z.string().optional(),
   RESEND_FROM_EMAIL: z.string().default("Relay AI <onboarding@resend.dev>"),
   DEBUG_AGENT_EVENTS: booleanLike,
+  SENTRY_DSN: z.string().optional(),
+  NEXT_PUBLIC_SENTRY_DSN: z.string().optional(),
+  SENTRY_AUTH_TOKEN: z.string().optional(),
+  SENTRY_ORG: z.string().optional(),
+  SENTRY_PROJECT: z.string().optional(),
 });
 
 export const env = envSchema.parse(process.env);
@@ -66,4 +71,8 @@ export function hasGitHubAppConfig() {
 
 export function hasResendConfig() {
   return Boolean(env.RESEND_API_KEY);
+}
+
+export function hasSentryConfig() {
+  return Boolean(env.SENTRY_DSN);
 }

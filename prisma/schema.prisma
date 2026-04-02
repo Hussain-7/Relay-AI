@@ -320,9 +320,10 @@ model ScheduledPrompt {
   lastRunAt       DateTime?
   preferencesJson Json?
   mcpConnectorIds Json?
-  label           String?
-  notifyEmail     Boolean               @default(false)
-  createdAt       DateTime              @default(now())
+  label             String?
+  notifyEmail       Boolean               @default(false)
+  freshConversation Boolean               @default(false)
+  createdAt         DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
 
   user            UserProfile           @relation(fields: [userId], references: [userId], onDelete: Cascade)

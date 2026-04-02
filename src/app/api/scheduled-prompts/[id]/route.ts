@@ -11,6 +11,7 @@ const updateSchema = z.object({
   maxRuns: z.number().int().positive().nullable().optional(),
   label: z.string().max(200).nullable().optional(),
   status: z.enum(["ACTIVE", "PAUSED"]).optional(),
+  freshConversation: z.boolean().optional(),
 });
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -68,6 +69,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         preferencesJson: schedule.preferencesJson,
         mcpConnectorIds: schedule.mcpConnectorIds,
         notifyEmail: schedule.notifyEmail,
+        freshConversation: schedule.freshConversation,
         createdAt: schedule.createdAt.toISOString(),
         executions: schedule.executions.map((e) => ({
           id: e.id,
@@ -117,6 +119,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (body.label !== undefined) data.label = body.label;
     if (body.maxRuns !== undefined) data.maxRuns = body.maxRuns;
     if (body.status !== undefined) data.status = body.status;
+    if (body.freshConversation !== undefined) data.freshConversation = body.freshConversation;
 
     // If cron or timezone changed, recompute nextRunAt
     if (body.cronExpression !== undefined || body.timezone !== undefined) {

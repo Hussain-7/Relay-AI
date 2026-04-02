@@ -1,4 +1,5 @@
 import type { BetaContentBlockParam, BetaMessage } from "@anthropic-ai/sdk/resources/beta/messages/messages";
+import * as Sentry from "@sentry/nextjs";
 import { type Prisma, RunStatus } from "@/generated/prisma/client";
 
 import { env, hasAnthropicApiKey } from "@/lib/env";
@@ -348,6 +349,10 @@ export async function executeMainAgentHeadless(input: HeadlessRunInput): Promise
   } catch (error) {
     const message = getMainAgentErrorMessage(error);
     console.error("[headless] Agent run failed:", message);
+    Sentry.captureException(error, {
+      tags: { runId, userId: input.userId },
+      extra: { conversationId: input.conversationId, model: input.preferences?.model },
+    });
 
     // Persist failure state
     await prisma.agentRun

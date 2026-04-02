@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/nextjs";
 import { RunStatus } from "@/generated/prisma/client";
 import { createConversationForUser } from "@/lib/conversations";
 import { sendEmail } from "@/lib/email";
@@ -54,6 +55,7 @@ export const scheduleExecutor = inngest.createFunction(
         mcpConnectorIds: s.mcpConnectorIds as string[] | null,
         label: s.label,
         notifyEmail: s.notifyEmail,
+        freshConversation: s.freshConversation,
       };
     });
 
@@ -128,6 +130,9 @@ export const scheduleExecutor = inngest.createFunction(
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Unknown error";
       console.error("[executor] agent run threw:", errorMsg);
+      Sentry.captureException(err, {
+        tags: { scheduledPromptId: schedule.id, executionId },
+      });
       await prisma.scheduledExecution.update({
         where: { id: executionId },
         data: { status: RunStatus.FAILED, completedAt: new Date(), errorMessage: errorMsg },
@@ -167,6 +172,14 @@ export const scheduleExecutor = inngest.createFunction(
         data: { status: "COMPLETED", nextRunAt: null },
       });
       console.log("[executor] schedule reached maxRuns, marked COMPLETED");
+    }
+
+    // Unlink conversation so next run starts fresh (prevents context accumulation)
+    if (schedule.freshConversation) {
+      await prisma.scheduledPrompt.update({
+        where: { id: schedule.id },
+        data: { conversationId: null },
+      });
     }
 
     void invalidateCache(`conv:${conversationId}`, `convos:${schedule.userId}`);

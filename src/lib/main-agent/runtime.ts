@@ -3,6 +3,7 @@ import type {
   BetaMessage,
   BetaRawMessageStreamEvent,
 } from "@anthropic-ai/sdk/resources/beta/messages/messages";
+import * as Sentry from "@sentry/nextjs";
 import { type AttachmentKind, type Prisma, RunStatus } from "@/generated/prisma/client";
 
 import { uploadAttachment } from "@/lib/attachment-storage";
@@ -1136,6 +1137,10 @@ export async function streamMainAgentRun(input: {
         void invalidateCache(`conv:${input.conversationId}`, `convos:${input.userId}`);
       } catch (error) {
         const message = getMainAgentErrorMessage(error);
+        Sentry.captureException(error, {
+          tags: { runId },
+          extra: { conversationId: input.conversationId, userId: input.userId },
+        });
 
         if (titleUpdatePromise) {
           await titleUpdatePromise.catch((err) => console.warn("[runtime] title update failed:", err.message));
