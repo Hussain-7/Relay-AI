@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/nextjs";
 import { Resend } from "resend";
 
 import { env, hasResendConfig } from "@/lib/env";
@@ -32,6 +33,7 @@ export async function sendEmail(options: {
 
     if (error) {
       console.error("[email] send failed:", error.message);
+      Sentry.captureMessage(`[email] send failed: ${error.message}`, { level: "error" });
       return { success: false, error: error.message };
     }
 
@@ -40,6 +42,7 @@ export async function sendEmail(options: {
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     console.error("[email] send threw:", msg);
+    Sentry.captureException(err);
     return { success: false, error: msg };
   }
 }
