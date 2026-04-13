@@ -9,6 +9,7 @@
 ## Table of Contents
 
 - [Overview](#overview)
+- [Who It's For](#who-its-for)
 - [Features](#features)
 - [Tech Stack](#tech-stack)
 - [Getting Started](#getting-started)
@@ -28,6 +29,17 @@ Relay AI is an open-source, web-based alternative to terminal-based AI coding ag
 - A complete GitHub integration for cloning repos, committing changes, and opening pull requests
 
 Whether you need a quick AI chat, a deep research session, or a fully autonomous coding task, Relay AI handles it in one place.
+
+---
+
+## Who It's For
+
+Relay AI is built for:
+
+- Developers who want an AI coding agent without leaving the browser
+- Teams that want sandboxed execution before touching real repositories
+- Builders who need chat, research, code generation, and GitHub workflows in one product
+- Anyone exploring a browser-native alternative to terminal-based coding agents
 
 ---
 
