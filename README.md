@@ -39,7 +39,7 @@ Relay AI is built for:
 - Developers who want an AI coding agent without leaving the browser
 - Teams that want sandboxed execution before touching real repositories
 - Builders who need chat, research, code generation, and GitHub workflows in one product
-- Anyone exploring a browser-native alternative to terminal-based coding agents
+- Anyone exploring a browser-native alternative to terminal-based coding agents.
 
 ---
 
