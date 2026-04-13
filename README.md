@@ -21,7 +21,7 @@
 
 ## Overview
 
-Relay AI is an open-source, web-based alternative to terminal-based AI coding agents. It wraps Anthropic's Claude in a full-featured browser UI, giving you:
+Relay AI is an open-source, claude.ai inspired web-based alternative to terminal-based AI coding agents. It wraps Anthropic's Claude in a full-featured browser UI, giving you:
 
 - A persistent conversation workspace with Chat, Agent, and Coding modes
 - Real-time streaming of autonomous agent runs with a live timeline view
